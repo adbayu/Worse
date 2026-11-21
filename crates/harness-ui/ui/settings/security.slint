@@ -34,6 +34,8 @@ component SeverityPill inherits Rectangle {
 component HeaderCell inherits Text {
     in property <bool> grow: false;
     horizontal-stretch: root.grow ? 1 : 0;
+    preferred-width: 0px;
+    min-width: 0px;
     font-size: 11px;
     font-weight: Theme.weight-medium;
     color: Theme.muted;
@@ -45,6 +47,8 @@ component Cell inherits Text {
     in property <bool> grow: false;
     in property <bool> mono: false;
     horizontal-stretch: root.grow ? 1 : 0;
+    preferred-width: 0px;
+    min-width: 0px;
     font-size: 12px;
     color: Theme.foreground-subtle;
     vertical-alignment: center;

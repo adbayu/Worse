@@ -346,7 +346,10 @@ mod tests {
             "winget install astral-sh.uv, then uv tool install \"graphifyy[mcp]==0.9.87\""
         );
         assert_eq!(winget.steps().len(), 2);
-        assert_eq!(Installer::Uv.plan(), "uv tool install \"graphifyy[mcp]==0.9.87\"");
+        assert_eq!(
+            Installer::Uv.plan(),
+            "uv tool install \"graphifyy[mcp]==0.9.87\""
+        );
         for installer in [
             Installer::Pipx("pipx".into()),
             Installer::Pip("python".into()),

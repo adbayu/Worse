@@ -117,24 +117,53 @@ fn group_score(groups: &[Value], id: &str) -> Option<String> {
         .and_then(|value| score(&value))
 }
 
-/// First `affected[].ranges[].events[].fixed` of the advisory, empty when no fix exists yet.
-fn fixed(advisory: &Value) -> String {
-    advisory
+/// Numeric parts of a version (`v1.2.3-rc1` → `[1, 2, 3]`), for ordering fixed versions.
+fn version_key(value: &str) -> Vec<u64> {
+    value
+        .trim_start_matches('v')
+        .split(['-', '+'])
+        .next()
+        .unwrap_or_default()
+        .split('.')
+        .map(|part| part.parse().unwrap_or(0))
+        .collect()
+}
+
+/// The `fixed` version of `package` that is the lowest one above `version`, empty when no fix exists yet.
+fn fixed(advisory: &Value, package: &str, version: &str) -> String {
+    let affected: Vec<&Value> = advisory
         .get("affected")
         .and_then(Value::as_array)
         .into_iter()
         .flatten()
-        .filter_map(|affected| affected.get("ranges").and_then(Value::as_array))
+        .collect();
+    // 修复：一条公告可能列出多个包（如 @modelcontextprotocol/sdk 与 /client），原来取第一个 fixed，
+    // 导致 client 2.0.0 显示 "1.31.0"。只看与该行包名相同的 affected 条目，找不到时才退回全部。
+    let own: Vec<&Value> = affected
+        .iter()
+        .copied()
+        .filter(|entry| {
+            text(entry.get("package").unwrap_or(&Value::Null), "name").eq_ignore_ascii_case(package)
+        })
+        .collect();
+    let entries = if own.is_empty() { affected } else { own };
+    let mut versions: Vec<String> = entries
+        .into_iter()
+        .filter_map(|entry| entry.get("ranges").and_then(Value::as_array))
         .flatten()
         .filter_map(|range| range.get("events").and_then(Value::as_array))
         .flatten()
-        .find_map(|event| {
-            event
-                .get("fixed")
-                .and_then(Value::as_str)
-                .filter(|value| !value.is_empty())
-                .map(str::to_owned)
-        })
+        .filter_map(|event| event.get("fixed").and_then(Value::as_str))
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned)
+        .collect();
+    versions.sort_by_key(|value| version_key(value));
+    let current = version_key(version);
+    versions
+        .iter()
+        .find(|value| version_key(value) > current)
+        .or_else(|| versions.first())
+        .cloned()
         .unwrap_or_default()
 }
 
@@ -198,7 +227,11 @@ pub fn parse(bytes: &[u8]) -> Result<Vec<Vuln>, String> {
                     id,
                     severity,
                     summary: text(advisory, "summary"),
-                    fixed: fixed(advisory),
+                    fixed: fixed(
+                        advisory,
+                        &text(&package, "name"),
+                        &text(&package, "version"),
+                    ),
                     source: source.clone(),
                 });
             }
@@ -364,5 +397,31 @@ mod tests {
         assert_eq!(rows[0].severity, "medium");
         assert_eq!(rows[1].severity, "unknown");
         assert_eq!(counts(&rows), [0, 0, 1, 1]);
+    }
+
+    #[test]
+    fn fixed_version_belongs_to_the_row_package() {
+        let advisory = serde_json::json!({
+            "affected": [
+                { "package": { "name": "@modelcontextprotocol/sdk" },
+                  "ranges": [ { "events": [ { "introduced": "1.12.0" }, { "fixed": "1.31.0" } ] } ] },
+                { "package": { "name": "@modelcontextprotocol/client" },
+                  "ranges": [ { "events": [ { "introduced": "2.0.0" }, { "fixed": "2.2.0" } ] } ] }
+            ]
+        });
+        assert_eq!(
+            super::fixed(&advisory, "@modelcontextprotocol/client", "2.0.0"),
+            "2.2.0"
+        );
+        assert_eq!(
+            super::fixed(&advisory, "@modelcontextprotocol/sdk", "1.29.0"),
+            "1.31.0"
+        );
+        let branches = serde_json::json!({
+            "affected": [ { "package": { "name": "tar" }, "ranges": [
+                { "events": [ { "introduced": "0" }, { "fixed": "6.2.1" } ] },
+                { "events": [ { "introduced": "7.0.0" }, { "fixed": "7.5.19" } ] } ] } ]
+        });
+        assert_eq!(super::fixed(&branches, "tar", "7.5.13"), "7.5.19");
     }
 }
