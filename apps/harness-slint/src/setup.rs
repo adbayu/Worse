@@ -48,6 +48,15 @@ fn sv(s: impl AsRef<str>) -> SharedString {
     SharedString::from(s.as_ref())
 }
 
+/// A row Harness can install: a missing adapter, or a missing CLI it downloads itself.
+fn installable(row: &api::SetupAgent) -> bool {
+    match row.state {
+        api::SetupState::AdapterMissing => true,
+        api::SetupState::CliMissing => harness_agent_hub::setup::cli_downloadable(&row.cli),
+        api::SetupState::Ready => false,
+    }
+}
+
 fn request_status() {
     crate::bridge::send(Command::Setup(SetupCall::Status));
 }
@@ -71,6 +80,7 @@ impl State {
                 state: match r.state {
                     api::SetupState::Ready => 0,
                     api::SetupState::AdapterMissing => 1,
+                    api::SetupState::CliMissing if installable(r) => 3,
                     api::SetupState::CliMissing => 2,
                 },
             })
@@ -91,13 +101,7 @@ impl State {
         });
         ui.set_rows(ModelRc::new(VecModel::from(rows)));
         ui.set_busy(sv(self.busy.as_deref().unwrap_or_default()));
-        ui.set_any_missing(
-            self.gh.path.is_none()
-                || self
-                    .rows
-                    .iter()
-                    .any(|r| r.state == api::SetupState::AdapterMissing),
-        );
+        ui.set_any_missing(self.gh.path.is_none() || self.rows.iter().any(installable));
         let log: Vec<&str> = self.log.iter().map(String::as_str).collect();
         ui.set_log(sv(log.join("\n")));
     }
@@ -120,6 +124,21 @@ impl State {
         crate::bridge::send(Command::Setup(SetupCall::Install(agent)));
     }
 
+    /// Installs every missing tool one after another.
+    fn install_missing(&mut self) {
+        let gh = self.gh.path.is_none().then(|| GH.to_owned());
+        let mut missing = gh.into_iter().chain(
+            self.rows
+                .iter()
+                .filter(|r| installable(r))
+                .map(|r| r.agent.0.clone()),
+        );
+        if let Some(first) = missing.next() {
+            self.queue = missing.collect();
+            self.start(first);
+        }
+    }
+
     fn close(&mut self) {
         self.queue.clear();
         self.ui().set_open(false);
@@ -140,21 +159,7 @@ pub fn install(window: &AppWindow, first_run_done: bool) {
         request_status();
     });
     ui.on_install(|agent| with_state(|s| s.start(agent.to_string())));
-    ui.on_install_missing(|| {
-        with_state(|s| {
-            let gh = s.gh.path.is_none().then(|| GH.to_owned());
-            let mut missing = gh.into_iter().chain(
-                s.rows
-                    .iter()
-                    .filter(|r| r.state == api::SetupState::AdapterMissing)
-                    .map(|r| r.agent.0.clone()),
-            );
-            if let Some(first) = missing.next() {
-                s.queue = missing.collect();
-                s.start(first);
-            }
-        });
-    });
+    ui.on_install_missing(|| with_state(State::install_missing));
     ui.on_close(|| with_state(State::close));
     STATE.with(|cell| {
         *cell.borrow_mut() = Some(State {
@@ -185,27 +190,24 @@ pub fn status(result: Result<api::SetupStatus, String>) {
         s.ui().set_npm_steps(sv(&status.npm_steps));
         s.rows = status.agents;
         s.gh = status.gh;
-        let mut start_gh = false;
+        let mut auto_install = false;
         if s.first_run_pending {
             s.first_run_pending = false;
-            let missing = s
-                .rows
-                .iter()
-                .any(|r| r.state == api::SetupState::AdapterMissing);
+            let missing = s.rows.iter().any(installable);
             let none_ready =
                 !s.rows.is_empty() && !s.rows.iter().any(|r| r.state == api::SetupState::Ready);
             let gh_missing = s.gh.path.is_none();
             if missing || none_ready || gh_missing {
                 s.ui().set_open(true);
-                start_gh = gh_missing;
+                auto_install = true;
             } else {
                 // 所有适配器都在（或没有已知 CLI 的 agent）：静默记下，不打扰用户。
                 crate::settings::patch_setting(FLAG_PATH, serde_json::Value::Bool(true));
             }
         }
         s.render();
-        if start_gh {
-            s.start(GH.to_owned());
+        if auto_install {
+            s.install_missing();
         }
     });
 }
@@ -234,13 +236,10 @@ pub fn install_event(
                 s.push_log(message);
             }
         } else {
-            s.queue.clear();
             s.ui().set_error(sv(message.unwrap_or_default()));
         }
         s.render();
-        if agent == GH {
-            request_status();
-        }
+        request_status();
         if let Some(next) = s.queue.pop_front() {
             s.start(next);
         }

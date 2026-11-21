@@ -120,7 +120,8 @@ impl AgentPool {
                 tokio::spawn(async move { pool.on_process_exit(&key, generation).await });
             })
         };
-        let connection = AcpConnection::spawn(&program, &plan.args, &plan.env, generation, on_exit)
+        let env = crate::tools::with_path(&plan.env);
+        let connection = AcpConnection::spawn(&program, &plan.args, &env, generation, on_exit)
             .map_err(|e| format!("failed to start {}: {e}", plan.spec.display_name))?;
         if let Err(error) = connection.initialize().await {
             connection.shutdown().await;

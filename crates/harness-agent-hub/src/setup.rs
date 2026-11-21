@@ -1,9 +1,9 @@
 //! First-run setup: find and install missing ACP adapters (phase-9-parity.md §9.10).
 //!
 //! Owner: this module owns the table of known adapters, the process-wide adapter search directories (read by
-//! [`crate::agents::resolve_program`]) and the single-flight set of running installs. Harness installs only the
-//! npm adapter packages, never a CLI. Probing never runs a program; installing runs `npm install -g <package>`
-//! only when the user asks for it.
+//! [`crate::agents::resolve_program`]) and the single-flight set of running installs. Missing CLIs Harness can
+//! download (Claude Code, Codex, agy) and Node.js come from their official channels into `<home>/tools` ([`crate::tools`]);
+//! adapters are installed with `npm install -g <package>` under the Harness npm prefix. Probing never runs a program.
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -21,6 +21,7 @@ use tokio::process::Command;
 use crate::agents::{resolve_program, AgentSpec};
 use crate::hub::Hub;
 
+mod download;
 mod install;
 
 /// An agent CLI Harness knows, with the npm package of its ACP adapter (`None`: the CLI speaks ACP itself).
@@ -62,8 +63,8 @@ pub const KNOWN_CLIS: &[KnownCli] = &[
 pub const ENV_NPM: &str = "HARNESS_NPM";
 /// Shown when npm (Node.js) is missing.
 pub const NPM_STEPS: &str =
-    "npm was not found. Install Node.js LTS from https://nodejs.org (it includes npm), \
-then restart Harness and install the adapters again.";
+    "npm was not found and Node.js could not be downloaded. Check the connection to nodejs.org, or install \
+Node.js LTS from https://nodejs.org, then install the adapters again.";
 
 const INSTALL_TIMEOUT: Duration = Duration::from_secs(600);
 const PREFIX_TIMEOUT: Duration = Duration::from_secs(30);
@@ -134,6 +135,12 @@ pub(crate) fn probe_missing(spec: &AgentSpec) -> Availability {
     }
 }
 
+/// Whether Harness can download the cli CLI from its official channel.
+#[must_use]
+pub fn cli_downloadable(cli: &str) -> bool {
+    crate::tools::downloadable(cli)
+}
+
 /// The npm command: `HARNESS_NPM` (missing file = no npm), else `npm` on PATH (`npm.cmd` on Windows).
 #[must_use]
 pub fn npm_command() -> Option<PathBuf> {
@@ -141,7 +148,7 @@ pub fn npm_command() -> Option<PathBuf> {
         let path = PathBuf::from(value);
         return path.is_file().then_some(path);
     }
-    resolve_program("npm")
+    resolve_program("npm").or_else(crate::tools::harness_npm)
 }
 
 fn installing() -> &'static Mutex<HashSet<String>> {
@@ -176,6 +183,12 @@ pub(crate) fn npm(program: &Path, args: &[&str]) -> Command {
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true);
+    if let Some(prefix) = crate::tools::npm_prefix() {
+        command.env("npm_config_prefix", prefix);
+    }
+    if let Some(path) = crate::tools::path_env() {
+        command.env("PATH", path);
+    }
     #[cfg(windows)]
     command.creation_flags(CREATE_NO_WINDOW);
     command

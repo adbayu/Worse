@@ -67,6 +67,7 @@ impl Hub {
         let memory = MemoryFiles::new(config.home.clone());
         let machine = crate::machine::Machine::load(&config.home).await;
         crate::gh::set_home(&config.home);
+        crate::tools::set_home(&config.home);
         let ctx = Arc::new(HubCtx {
             config,
             store,

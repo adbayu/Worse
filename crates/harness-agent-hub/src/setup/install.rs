@@ -150,33 +150,36 @@ impl Hub {
             .get(&agent)
             .cloned()
             .ok_or_else(|| ApiError::NotFound(format!("agent {agent}")))?;
-        let known = known_cli(&spec.program)
-            .filter(|k| k.package.is_some())
-            .ok_or_else(|| {
-                ApiError::InvalidArgument(format!(
-                    "{} has no ACP adapter to install",
-                    spec.display_name
-                ))
-            })?;
-        let package = known.package.unwrap_or_default();
+        let known = known_cli(&spec.program).ok_or_else(|| {
+            ApiError::InvalidArgument(format!("Harness cannot install {}", spec.display_name))
+        })?;
+        let label = known.package.unwrap_or(known.cli);
         match spec.probe() {
             Availability::Available { .. } => {
                 return Ok(AdapterInstallResult {
                     agent,
                     ok: true,
-                    message: format!("{package} is already installed"),
+                    message: format!("{} is already installed", spec.display_name),
                 })
             }
-            Availability::NotInstalled { .. } => {
-                return Err(ApiError::InvalidArgument(format!(
-                    "install the `{}` CLI first",
-                    known.cli
-                )))
+            Availability::NotInstalled { .. } if resolve_program(known.cli).is_none() => {
+                if let Err(message) = self.download_cli(&agent, label, known.cli).await {
+                    return Ok(self.install_done(&agent, label, false, message));
+                }
+                if spec.probe().is_available() {
+                    let message = format!("{} installed", spec.display_name);
+                    return Ok(self.install_done(&agent, label, true, message));
+                }
             }
-            Availability::AdapterMissing { .. } => {}
+            Availability::NotInstalled { .. } | Availability::AdapterMissing { .. } => {}
         }
-        let Some(npm_path) = npm_command() else {
-            return Ok(self.install_done(&agent, package, false, NPM_STEPS.to_owned()));
+        let Some(package) = known.package else {
+            let message = format!("`{}` is still not found", known.program);
+            return Ok(self.install_done(&agent, label, false, message));
+        };
+        let npm_path = match self.npm_or_download(&agent, package).await {
+            Ok(path) => path,
+            Err(message) => return Ok(self.install_done(&agent, package, false, message)),
         };
         let Some(_slot) = InstallSlot::take(package) else {
             return Err(ApiError::Busy(format!(

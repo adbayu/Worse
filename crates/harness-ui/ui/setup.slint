@@ -114,7 +114,7 @@ component SetupRowView inherits Rectangle {
             alignment: center;
             Button {
                 text: "Download & install";
-                label: "Install GitHub CLI";
+                label: "Install " + root.item.name;
                 size: "sm";
                 enabled: SetupUi.busy == "";
                 clicked => {
@@ -128,7 +128,7 @@ component SetupRowView inherits Rectangle {
                 text: "Install";
                 label: "Install " + root.item.package;
                 size: "sm";
-                enabled: SetupUi.npm-ok && SetupUi.busy == "";
+                enabled: SetupUi.busy == "";
                 clicked => {
                     SetupUi.install(root.item.agent);
                 }
@@ -145,7 +145,7 @@ export component SetupDialog inherits Dialog {
         SetupUi.close();
     }
     Text {
-        text: "Harness talks to Claude Code and Codex through small ACP adapters (npm packages). Install the CLIs yourself; Harness can install the missing adapters and download the GitHub CLI (gh) used by the Inbox and Board. Signing in to GitHub stays with you.";
+        text: "Harness downloads missing tools from their official sources (Claude Code, Codex, agy, Node.js and the GitHub CLI) into its own folder and installs the ACP adapters there. Nothing is added to your PATH or shell. A CLI you already installed is used instead. Signing in stays with you.";
         font-size: 13px;
         color: Theme.muted;
         wrap: word-wrap;
@@ -159,23 +159,6 @@ export component SetupDialog inherits Dialog {
         spacing: 8px;
         for r in SetupUi.rows: SetupRowView {
             item: r;
-        }
-    }
-    if !SetupUi.npm-ok: Rectangle {
-        border-radius: Theme.radius-md;
-        background: Theme.warning-surface;
-        border-width: 1px;
-        border-color: Theme.warning-surface-foreground.with-alpha(0.3);
-        VerticalLayout {
-            padding: 10px;
-            padding-left: 12px;
-            Text {
-                text: SetupUi.npm-steps;
-                accessible-label: SetupUi.npm-steps;
-                font-size: 12px;
-                color: Theme.warning-surface-foreground;
-                wrap: word-wrap;
-            }
         }
     }
     if SetupUi.log != "": Rectangle {
