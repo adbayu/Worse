@@ -79,6 +79,10 @@ export struct AgentCard {
     model-label: string,
     effort-label: string,
     program: string,
+    // `program` is the user's own path (Settings), not the PATH lookup.
+    custom-program: bool,
+    // The saved path differs from the one the running hub started with.
+    restart: bool,
     args: string,
     env: string,
     // Connection test (hub test_agent): 0 not run, 1 running, 2 passed, 3 failed.

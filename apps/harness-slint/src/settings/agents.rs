@@ -6,6 +6,24 @@ use super::{
     SelectOption, State, Value,
 };
 
+static APPLIED: std::sync::Mutex<Option<std::collections::HashMap<String, String>>> =
+    std::sync::Mutex::new(None);
+
+/// Custom programs the running hub was started with (agent id → path, "" = PATH).
+pub fn programs_applied(map: std::collections::HashMap<String, String>) {
+    *APPLIED
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(map);
+}
+
+fn restart_needed(id: &str, wanted: &str) -> bool {
+    APPLIED
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .as_ref()
+        .is_some_and(|map| map.get(id).map_or("", String::as_str) != wanted)
+}
+
 impl State {
     // ---- agents ------------------------------------------------------------------------------------------
 
@@ -35,6 +53,7 @@ impl State {
                     })
                 };
                 let (program, args, env) = self.launch.get(id).cloned().unwrap_or_default();
+                let custom = prefs.program.clone().unwrap_or_default().trim().to_owned();
                 AgentCard {
                     id: sv(id),
                     name: sv(name),
@@ -57,7 +76,13 @@ impl State {
                     mode_label: sv(label(&opts.modes, &prefs.default_mode)),
                     model_label: sv(label(&opts.models, &prefs.default_model)),
                     effort_label: sv(label(&opts.efforts, &prefs.default_effort)),
-                    program: sv(program),
+                    program: sv(if custom.is_empty() {
+                        program
+                    } else {
+                        custom.clone()
+                    }),
+                    custom_program: !custom.is_empty(),
+                    restart: restart_needed(id, &custom),
                     args: sv(args),
                     env: sv(env),
                     test_state: self.tests.get(id).map_or(0, |t| t.0),
@@ -172,6 +197,25 @@ pub(super) fn wire(window: &AppWindow) {
         with_state(|s| s.patch(&format!("agents.{id}.{field}"), value));
     });
     agents.on_refresh(|| with_state(|s| s.open_page("agents")));
+    agents.on_pick_program(|id| {
+        let id = id.to_string();
+        // 文件选择框会阻塞，放到独立线程；选中的路径作为设置写回。
+        std::thread::spawn(move || {
+            let mut dialog = rfd::FileDialog::new();
+            if cfg!(windows) {
+                dialog = dialog.add_filter("Programs", &["exe", "cmd", "bat"]);
+            }
+            if let Some(path) = dialog.pick_file() {
+                let path = path.to_string_lossy().into_owned();
+                let _ = slint::invoke_from_event_loop(move || {
+                    with_state(|s| s.patch(&format!("agents.{id}.program"), Value::from(path)));
+                });
+            }
+        });
+    });
+    agents.on_clear_program(|id| {
+        with_state(|s| s.patch(&format!("agents.{id}.program"), Value::Null));
+    });
     agents.on_test(|id| {
         with_state(|s| {
             s.tests.insert(id.to_string(), (1, 0, String::new()));

@@ -297,6 +297,30 @@ export component AgentCardView inherits Rectangle {
                     VerticalLayout {
                         alignment: center;
                         DButton {
+                            text: root.card.custom-program ? "Change path" : "Set path";
+                            h: 26px;
+                            pad: 10px;
+                            size: 11.5px;
+                            clicked => {
+                                AgentsUi.pick-program(root.card.id);
+                            }
+                        }
+                    }
+                    if root.card.custom-program: VerticalLayout {
+                        alignment: center;
+                        DButton {
+                            text: "Use PATH";
+                            h: 26px;
+                            pad: 10px;
+                            size: 11.5px;
+                            clicked => {
+                                AgentsUi.clear-program(root.card.id);
+                            }
+                        }
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        DButton {
                             text: @tr("Test connection");
                             h: 26px;
                             pad: 10px;
@@ -308,6 +332,12 @@ export component AgentCardView inherits Rectangle {
                         }
                     }
                 }
+            }
+            if root.card.restart: Text {
+                text: "Restart Harness to launch this agent from the new path.";
+                font-size: 11px;
+                color: Theme.warning-surface-foreground;
+                wrap: word-wrap;
             }
             if root.card.test-state == 3: Text {
                 text: root.card.test-error != "" ? root.card.test-error : @tr("Connection test failed.");

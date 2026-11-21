@@ -227,6 +227,8 @@ export global AgentsUi {
     callback set-enabled(string, bool);
     callback set-default(string, string, string);
     callback test(string);
+    callback pick-program(string);
+    callback clear-program(string);
     callback refresh();
     in-out property <string> open-agent;
 }

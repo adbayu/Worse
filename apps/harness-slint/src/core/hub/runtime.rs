@@ -14,6 +14,17 @@ pub(super) async fn hub_config(home: &Path, store: &SettingsStore) -> Result<Hub
     config.helpers =
         harness_agent_hub::helpers::HelperLaunch::for_app(exe).map_err(|e| e.to_string())?;
     config.agent_defaults = prefs::agent_defaults(&store.snapshot());
+    let snapshot = store.snapshot();
+    let mut applied = HashMap::new();
+    for spec in &mut config.agents {
+        let custom = snapshot.agent(spec.id.as_str()).program.unwrap_or_default();
+        let custom = custom.trim();
+        if !custom.is_empty() {
+            spec.program = custom.to_owned();
+        }
+        applied.insert(spec.id.as_str().to_owned(), custom.to_owned());
+    }
+    crate::settings::programs_applied(applied);
     let policy = config.delegation.clone();
     let fact_check = config.fact_check.clone();
     let auto_update = config.auto_update.clone();

@@ -36,7 +36,7 @@ pub struct UpdateSettings {
     pub auto_download: bool,
 }
 
-/// Per-agent preferences (AGT-002, AGT-007). Program/args/env live in `agents.json` (hub-owned launch config).
+/// Per-agent preferences (AGT-002, AGT-007). Full launch definitions live in `agents.json` (hub-owned launch config).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct AgentPrefs {
@@ -45,6 +45,9 @@ pub struct AgentPrefs {
     pub default_model: Option<String>,
     /// Value for the agent's `effort`-like config option, when it advertises one.
     pub default_effort: Option<String>,
+    /// Launch program of this agent (an absolute path to its executable); `None` or empty = found on PATH.
+    /// Only the program is replaced; the built-in arguments and environment stay. Applies on the next hub start.
+    pub program: Option<String>,
 }
 
 impl Default for AgentPrefs {
@@ -54,6 +57,7 @@ impl Default for AgentPrefs {
             default_mode: None,
             default_model: None,
             default_effort: None,
+            program: None,
         }
     }
 }

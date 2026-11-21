@@ -186,7 +186,7 @@ pub fn patch_setting(path: &str, value: Value) {
 }
 
 pub use accounts::{accounts, providers};
-pub use agents::{agent_options, agent_tested, agents_changed, agents_overview};
+pub use agents::{agent_options, agent_tested, agents_changed, agents_overview, programs_applied};
 pub(crate) use diff::diff_lines;
 pub use projects::sessions_changed;
 pub use shortcuts::{run_command, shortcut_label};
