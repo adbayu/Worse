@@ -177,7 +177,7 @@ pub fn run_memory_mcp(args: impl IntoIterator<Item = String>) -> ExitCode {
 }
 
 /// `harness-delegate` MCP server over stdio, configured by the `HARNESS_DELEGATE_*` env vars (§9.8).
-#[must_use]
+#[must_use = "return the exit code from main"]
 pub fn run_delegate_mcp() -> ExitCode {
     let Some(env) = DelegateEnv::from_env() else {
         eprintln!("harness delegate: HARNESS_DELEGATE_ADDR/TOKEN/SESSION are not set");

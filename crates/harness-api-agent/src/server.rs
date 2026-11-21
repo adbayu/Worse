@@ -5,7 +5,7 @@ use super::{
 
 /// Runs the agent on stdio until stdin closes. Entry point of the `harness-api-agent` binary and of
 /// `harness-slint --api-agent` (phase-9-parity.md §9.9).
-#[must_use]
+#[must_use = "return the exit code from main"]
 pub fn run() -> std::process::ExitCode {
     let runtime = match tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)

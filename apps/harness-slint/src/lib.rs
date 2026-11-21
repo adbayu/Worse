@@ -58,7 +58,7 @@ use startup::{
     prepare_process, relaunch,
 };
 #[allow(clippy::too_many_lines)]
-#[must_use]
+#[must_use = "return the exit code from main"]
 pub fn run() -> ExitCode {
     if let Some(code) = helper_mode() {
         return code;
