@@ -94,14 +94,16 @@ pub(crate) async fn run(ctx: &HubCtx, op: AgyAccountOp) -> ApiResult<AgyAccounts
     let mut file = accounts::load(&home).await?;
     file.normalize();
     let before = file.clone();
+    let mut same_as = None;
     let (file, ()) = match op {
-        AgyAccountOp::List | AgyAccountOp::FinishSignIn => {
-            blocking(
-                store,
-                file,
-                Box::new(|s, f| accounts::finish_sign_in(s, f).map(drop)),
-            )
-            .await?
+        AgyAccountOp::List => (file, ()),
+        // 修复：之前每次 List（包括额度轮询）都会自动完成等待中的登录，旧登录被悄悄存进新账号；现在只在点 Done 时完成。
+        AgyAccountOp::FinishSignIn => {
+            let (file, finish) = blocking(store, file, Box::new(accounts::finish_sign_in)).await?;
+            if let accounts::Finish::SameAs(name) = finish {
+                same_as = Some(name);
+            }
+            (file, ())
         }
         AgyAccountOp::Add { name } => {
             let now = now_ms();
@@ -165,6 +167,12 @@ pub(crate) async fn run(ctx: &HubCtx, op: AgyAccountOp) -> ApiResult<AgyAccounts
     };
     if file != before {
         accounts::save(&home, &file).await?;
+    }
+    if let Some(name) = same_as {
+        return Err(ApiError::InvalidArgument(format!(
+            "agy is signed in to the same Google account as {name}. Sign out of Google in the browser (or use \
+             a private window), then press Sign in again and pick the other account."
+        )));
     }
     render(ctx, file).await
 }

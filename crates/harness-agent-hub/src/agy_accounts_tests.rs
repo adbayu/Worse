@@ -61,9 +61,9 @@ fn import_sign_in_use_and_remove() {
     assert_eq!(store.secret(&slot_target(&main)).unwrap(), b"one-refreshed");
     assert!(store.secret(AGY_LIVE_TARGET).is_none());
     assert_eq!(file.active, None);
-    assert!(!finish_sign_in(&store, &mut file).unwrap());
+    assert_eq!(finish_sign_in(&store, &mut file).unwrap(), Finish::Waiting);
     login(&store, b"two");
-    assert!(finish_sign_in(&store, &mut file).unwrap());
+    assert_eq!(finish_sign_in(&store, &mut file).unwrap(), Finish::Done);
     assert_eq!(file.active.as_deref(), Some(second.as_str()));
     assert_eq!(file.pending, None);
 
@@ -74,7 +74,7 @@ fn import_sign_in_use_and_remove() {
     remove(&store, &mut file, &main).unwrap();
     assert_eq!(file.active, None);
     assert!(store.secret(&slot_target(&main)).is_none());
-    assert_eq!(store.secret(AGY_LIVE_TARGET).unwrap(), b"one-refreshed");
+    assert!(store.secret(AGY_LIVE_TARGET).is_none());
     assert_eq!(file.order, vec![second]);
 }
 
@@ -201,4 +201,70 @@ fn same_email_with_new_token_is_not_imported_again() {
     begin_sign_in(&store, &mut file, &sek).unwrap();
     assert_eq!(file.accounts.len(), 2);
     assert!(file.accounts.iter().all(|a| a.name != "Main 2"));
+}
+
+fn google(email: &str, token: &str) -> Vec<u8> {
+    format!(r#"{{"token":{{"access_token":"{token}"}},"id_token_email":"{email}"}}"#).into_bytes()
+}
+
+#[test]
+fn signing_in_with_the_same_google_account_does_not_clone_it() {
+    let store = MemStore::default();
+    let mut file = AgyFile::default();
+    login(&store, &google("main@example.com", "m1"));
+    let main = import_live(&store, &mut file, "Main", 0).unwrap();
+    let sek = file.add("Sek2", 0).unwrap();
+    begin_sign_in(&store, &mut file, &sek).unwrap();
+    login(&store, &google("main@example.com", "m2"));
+    assert_eq!(
+        finish_sign_in(&store, &mut file).unwrap(),
+        Finish::SameAs("Main".into())
+    );
+    assert!(store.secret(&slot_target(&sek)).is_none());
+    assert_eq!(file.active.as_deref(), Some(main.as_str()));
+    assert_eq!(file.pending, None);
+    assert_eq!(
+        store.secret(&slot_target(&main)).unwrap(),
+        google("main@example.com", "m2")
+    );
+
+    begin_sign_in(&store, &mut file, &sek).unwrap();
+    login(&store, &google("sek2@example.com", "s1"));
+    assert_eq!(finish_sign_in(&store, &mut file).unwrap(), Finish::Done);
+    assert_eq!(
+        store.secret(&slot_target(&sek)).unwrap(),
+        google("sek2@example.com", "s1")
+    );
+}
+
+#[test]
+fn switching_while_a_sign_in_waits_does_not_store_the_old_login_in_it() {
+    let store = MemStore::default();
+    let mut file = AgyFile::default();
+    login(&store, &google("main@example.com", "m1"));
+    let main = import_live(&store, &mut file, "Main", 0).unwrap();
+    let sek = file.add("Sek2", 0).unwrap();
+    begin_sign_in(&store, &mut file, &sek).unwrap();
+    login(&store, &google("main@example.com", "m2"));
+    use_account(&store, &mut file, &main).unwrap();
+    assert!(store.secret(&slot_target(&sek)).is_none());
+    assert_eq!(file.pending, None);
+    assert_eq!(file.accounts.len(), 2);
+}
+
+#[test]
+fn removing_the_active_account_does_not_bring_it_back_as_main() {
+    let store = MemStore::default();
+    let mut file = AgyFile::default();
+    login(&store, &google("old@example.com", "o1"));
+    let old = import_live(&store, &mut file, "Old", 0).unwrap();
+    let sek = file.add("Sek2", 0).unwrap();
+    begin_sign_in(&store, &mut file, &sek).unwrap();
+    login(&store, &google("sek2@example.com", "s1"));
+    assert_eq!(finish_sign_in(&store, &mut file).unwrap(), Finish::Done);
+    use_account(&store, &mut file, &old).unwrap();
+    remove(&store, &mut file, &old).unwrap();
+    use_account(&store, &mut file, &sek).unwrap();
+    assert_eq!(file.accounts.len(), 1);
+    assert!(file.accounts.iter().all(|a| !a.name.starts_with("Main")));
 }

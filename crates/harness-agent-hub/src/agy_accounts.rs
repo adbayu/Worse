@@ -176,17 +176,17 @@ pub(crate) fn save_live(store: &dyn AgyCredStore, file: &mut AgyFile) -> Result<
     if let Some(active) = &file.active {
         return store.write(&slot_target(active), &live);
     }
+    // 修复：等待登录的新账号会把当前 live 登录（常常是 Main 的）存进自己的槽位，变成 Main 的克隆。
+    // live 属于已有账号时取消等待并刷新该账号的槽位；只有真正的新登录才存进等待中的账号。
+    let owner = owner_of(store, file, &live, file.pending.as_deref())?;
     if let Some(pending) = file.pending.take() {
-        store.write(&slot_target(&pending), &live)?;
-        file.active = Some(pending);
+        let target = owner.unwrap_or(pending);
+        store.write(&slot_target(&target), &live)?;
+        file.active = Some(target);
         return Ok(());
     }
-    for entry in &file.accounts {
-        if let Some(slot) = store.read(&slot_target(&entry.id))? {
-            if same_login(&slot, &live) {
-                return Ok(());
-            }
-        }
+    if owner.is_some() {
+        return Ok(());
     }
     let name = file.free_name("Main");
     let id = file.add(&name, now_ms())?;
@@ -209,6 +209,38 @@ fn same_login(a: &CredBlob, b: &CredBlob) -> bool {
     a == b || login_email(a).is_some_and(|e| login_email(b).as_deref() == Some(e.as_str()))
 }
 
+/// The account (other than `except`) whose saved login is the same Google account as `live`.
+fn owner_of(
+    store: &dyn AgyCredStore,
+    file: &AgyFile,
+    live: &CredBlob,
+    except: Option<&str>,
+) -> Result<Option<String>, String> {
+    for entry in &file.accounts {
+        if Some(entry.id.as_str()) == except {
+            continue;
+        }
+        if let Some(slot) = store.read(&slot_target(&entry.id))? {
+            if same_login(&slot, live) {
+                return Ok(Some(entry.id.clone()));
+            }
+        }
+    }
+    Ok(None)
+}
+
+/// Result of [`finish_sign_in`].
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum Finish {
+    /// No sign-in waiting, or agy has no login yet.
+    Waiting,
+    /// The new login is stored in the waiting account.
+    Done,
+    /// agy is signed in to the same Google account as this other account (its name); nothing was stored and
+    /// that account is active again.
+    SameAs(String),
+}
+
 /// Saves the current login, signs agy out and marks `id` as waiting for its login.
 pub(crate) fn begin_sign_in(
     store: &dyn AgyCredStore,
@@ -223,18 +255,33 @@ pub(crate) fn begin_sign_in(
     Ok(())
 }
 
-/// Stores a fresh live login into the pending account. True when it completed.
-pub(crate) fn finish_sign_in(store: &dyn AgyCredStore, file: &mut AgyFile) -> Result<bool, String> {
+/// Stores a fresh live login into the pending account, unless it is another account's Google login.
+pub(crate) fn finish_sign_in(
+    store: &dyn AgyCredStore,
+    file: &mut AgyFile,
+) -> Result<Finish, String> {
     let Some(id) = file.pending.clone() else {
-        return Ok(false);
+        return Ok(Finish::Waiting);
     };
     let Some(live) = store.read(AGY_LIVE_TARGET)? else {
-        return Ok(false);
+        return Ok(Finish::Waiting);
     };
+    // 修复：新账号直接接收任何 live 登录；浏览器自动选了已登录的 Google 账号时，新账号成了 Main 的克隆。
+    if let Some(owner) = owner_of(store, file, &live, Some(&id))? {
+        store.write(&slot_target(&owner), &live)?;
+        let name = file
+            .accounts
+            .iter()
+            .find(|a| a.id == owner)
+            .map_or_else(|| owner.clone(), |a| a.name.clone());
+        file.active = Some(owner);
+        file.pending = None;
+        return Ok(Finish::SameAs(name));
+    }
     store.write(&slot_target(&id), &live)?;
     file.active = Some(id);
     file.pending = None;
-    Ok(true)
+    Ok(Finish::Done)
 }
 
 /// Makes `id`'s saved login the live one.
@@ -274,6 +321,11 @@ pub(crate) fn import_live(
 pub(crate) fn remove(store: &dyn AgyCredStore, file: &mut AgyFile, id: &str) -> Result<(), String> {
     file.require(id)?;
     store.delete(&slot_target(id))?;
+    // 修复：删除当前账号后 agy 仍保留该登录，下一次切换又把它自动导入成 "Main 2"。删除当前账号时同时登出 agy。
+    if file.active.as_deref() == Some(id) {
+        store.delete(AGY_LIVE_TARGET)?;
+        file.active = None;
+    }
     file.accounts.retain(|a| a.id != id);
     file.normalize();
     Ok(())
