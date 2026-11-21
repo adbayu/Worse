@@ -63,8 +63,7 @@ pub(super) async fn bytes(
         .map_err(|e| format!("download of {label} failed: {e}"))?
     {
         out.extend_from_slice(&chunk);
-        if total > 0 {
-            let percent = out.len() as u64 * 100 / total;
+        if let Some(percent) = (out.len() as u64 * 100).checked_div(total) {
             if percent >= shown + 10 {
                 shown = percent - percent % 10;
                 progress(format!("Downloading {label}: {shown}%"));
@@ -203,6 +202,7 @@ pub(super) fn strip(path: &Path, n: usize) -> Option<PathBuf> {
     (!rest.as_os_str().is_empty()).then_some(rest)
 }
 
+#[cfg_attr(not(unix), allow(clippy::unnecessary_wraps))]
 pub(super) fn make_executable(path: &Path) -> Result<(), String> {
     #[cfg(unix)]
     {
@@ -254,10 +254,10 @@ mod tests {
     fn archive_paths_cannot_escape() {
         assert!(safe(Path::new("../x")).is_none());
         assert!(safe(Path::new("/etc/x")).is_none());
-        assert_eq!(safe(Path::new("a/b")).unwrap(), Path::new("a/b"));
+        assert_eq!(safe(Path::new("a/b")).as_deref(), Some(Path::new("a/b")));
         assert_eq!(
-            strip(Path::new("node-v1/bin/node"), 1).unwrap(),
-            Path::new("bin/node")
+            strip(Path::new("node-v1/bin/node"), 1).as_deref(),
+            Some(Path::new("bin/node"))
         );
         assert!(strip(Path::new("node-v1"), 1).is_none());
     }

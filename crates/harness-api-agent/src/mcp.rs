@@ -13,10 +13,11 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin};
 use tokio::sync::oneshot;
 
-#[cfg(windows)]
+// 修复：拆分时 #[cfg(windows)] 误贴到了 mod server 上，导致 Linux/macOS 编译失败；它只属于这个常量。
 mod server;
 
 use server::{sanitize, Server};
+#[cfg_attr(not(windows), allow(dead_code))]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 const CALL_TIMEOUT: Duration = Duration::from_secs(120);
 /// `initialize` and `tools/list`: a server that is not up by then (e.g. its desktop app is closed) is skipped.

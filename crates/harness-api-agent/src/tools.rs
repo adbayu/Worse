@@ -14,12 +14,13 @@ use crate::mcp::McpSet;
 use crate::Agent;
 
 mod command;
-#[cfg(windows)]
+// 修复：#[cfg(windows)] 误贴到 mod files 上，Linux/macOS 上缺少 read_file 等工具导致编译失败。
 mod files;
 mod provider;
 
 pub use provider::{providers, ToolEnv, ToolProvider};
 
+#[cfg_attr(not(windows), allow(dead_code))]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 /// Longest tool result handed back to the model.
 pub const OUTPUT_MAX: usize = 30_000;

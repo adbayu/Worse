@@ -39,9 +39,10 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::{mpsc, oneshot};
 
 mod prompt;
-#[cfg(windows)]
+// 修复：#[cfg(windows)] 误贴到 mod session 上，非 Windows 平台缺少会话实现。
 mod session;
 
+#[cfg_attr(not(windows), allow(dead_code))]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 struct SessionData {

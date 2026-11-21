@@ -20,7 +20,7 @@ pub(super) async fn hub_config(home: &Path, store: &SettingsStore) -> Result<Hub
         let custom = snapshot.agent(spec.id.as_str()).program.unwrap_or_default();
         let custom = custom.trim();
         if !custom.is_empty() {
-            spec.program = custom.to_owned();
+            custom.clone_into(&mut spec.program);
         }
         applied.insert(spec.id.as_str().to_owned(), custom.to_owned());
     }
