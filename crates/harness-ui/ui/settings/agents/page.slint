@@ -102,6 +102,8 @@ export component AgentsPage inherits VerticalLayout {
         // ---------------- Agents ----------------
         if root.tab == 0: VerticalLayout {
             spacing: 10px;
+            // 修复：Set up agents / Re-detect agents 原来在列表最底部很难找到，移到列表上方。
+            AgentsFooter { }
             // Toolbar: "5 AGENTS" + count pills … All / Enabled / Installed.
             HorizontalLayout {
                 height: 26px;
@@ -169,11 +171,6 @@ export component AgentsPage inherits VerticalLayout {
             // Account managers (not in the design frame; kept so sign-in / remove / order stay reachable).
             if AgentsUi.accounts.length > 0 || AgentsUi.account-error != "": ClaudeAccounts { }
             if AgentsUi.agy-available: AgyAccounts { }
-            Rectangle {
-                height: 40px;
-            }
-            // Footer (design: 1px #24272D rule, 46 tall row: hint left, "Re-detect agents" right).
-            AgentsFooter { }
         }
         // ---------------- API Providers ----------------
         if root.tab == 1: VerticalLayout {

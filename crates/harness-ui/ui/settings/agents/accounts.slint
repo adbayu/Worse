@@ -160,12 +160,8 @@ export component AgyAccounts inherits SectionCard {
 
 export component AgentsFooter inherits VerticalLayout {
     spacing: 10px;
-    Rectangle {
-        height: 1px;
-        background: Theme.border;
-    }
     HorizontalLayout {
-        height: 46px;
+        height: 40px;
         spacing: 8px;
         HorizontalLayout {
             spacing: 7px;
@@ -207,5 +203,9 @@ export component AgentsFooter inherits VerticalLayout {
                 }
             }
         }
+    }
+    Rectangle {
+        height: 1px;
+        background: Theme.border;
     }
 }
