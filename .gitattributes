@@ -1,0 +1,2 @@
+# rustfmt.toml uses newline_style = Unix; keep .rs files LF on every checkout (Windows CI included).
+*.rs text eol=lf
