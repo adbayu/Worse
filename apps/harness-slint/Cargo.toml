@@ -1,6 +1,6 @@
 [package]
 name = "harness-slint"
-version = "0.1.9"
+version = "0.1.10"
 edition.workspace = true
 # Slint 1.18 itself requires Rust 1.92 (enforced through its own rust-version).
 rust-version.workspace = true

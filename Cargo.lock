@@ -3039,7 +3039,7 @@ dependencies = [
 
 [[package]]
 name = "harness-slint"
-version = "0.1.9"
+version = "0.1.10"
 dependencies = [
  "alacritty_terminal",
  "clipboard-win",
