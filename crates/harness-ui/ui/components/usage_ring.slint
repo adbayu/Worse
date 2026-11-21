@@ -80,12 +80,12 @@ export component UsageRing inherits Rectangle {
                     font-size: Theme.ui-sm;
                     color: Theme.foreground-subtle;
                 }
-                if ChatUi.plan-simple.length == 0: Text {
-                    text: "Checking plan usage…";
+                if ChatUi.plan-current.length == 0: Text {
+                    text: "No plan usage for this agent";
                     font-size: Theme.ui-sm;
                     color: Theme.foreground-subtle;
                 }
-                for p in ChatUi.plan-simple: VerticalLayout {
+                for p in ChatUi.plan-current: VerticalLayout {
                     if p.known: LimitBar {
                         label: p.label;
                         reset: "";

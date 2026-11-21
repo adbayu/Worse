@@ -113,8 +113,15 @@ pub fn render(
         }
         simple.push(simple_of_agent(&a));
     }
+    let sticky: HashSet<String> = std::iter::once(window.get_sticky_agent().to_string()).collect();
+    let current: Vec<PlanSimple> = simple
+        .iter()
+        .filter(|p| row_bound(p.id.as_str(), &sticky, agy_active))
+        .cloned()
+        .collect();
     let chat = window.global::<ChatUi>();
     chat.set_agy_plan(agy_rows);
+    chat.set_plan_current(ModelRc::new(VecModel::from(current)));
     chat.set_plan_limits(ModelRc::new(VecModel::from(limits)));
     chat.set_plan_simple(ModelRc::new(VecModel::from(simple)));
 }
