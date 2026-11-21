@@ -43,7 +43,7 @@ export component UsagePage inherits VerticalLayout {
     }
     for p in ChatUi.plan-limits: RCard {
         title: p.label;
-        note: p.plan;
+        note: p.email == "" ? p.plan : p.plan == "" ? p.email : p.email + "  ·  " + p.plan;
         VerticalLayout {
             padding-left: 16px;
             padding-right: 16px;

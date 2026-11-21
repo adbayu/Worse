@@ -109,10 +109,16 @@ pub fn render(window: &AppWindow, all: &[PlanLimit], agy_active: &HashSet<String
         .filter(|p| row_bound(p.id.as_str(), &sticky, agy_active))
         .cloned()
         .collect();
+    // 修复：圆环弹窗只显示一个峰值条，看不到 5 小时/每周/Argon 各项额度；改为显示当前 agent 的全部额度条。
+    let active: Vec<PlanLimit> = limits
+        .iter()
+        .filter(|p| row_bound(p.id.as_str(), &sticky, agy_active))
+        .cloned()
+        .collect();
     let chat = window.global::<ChatUi>();
     chat.set_agy_plan(agy_rows);
+    chat.set_plan_active(ModelRc::new(VecModel::from(active)));
     chat.set_plan_current(ModelRc::new(VecModel::from(current)));
     chat.set_plan_limits(ModelRc::new(VecModel::from(limits)));
     chat.set_plan_simple(ModelRc::new(VecModel::from(simple)));
 }
-

@@ -85,13 +85,52 @@ export component UsageRing inherits Rectangle {
                     font-size: Theme.ui-sm;
                     color: Theme.foreground-subtle;
                 }
-                for p in ChatUi.plan-current: VerticalLayout {
-                    if p.known: LimitBar {
-                        label: p.label;
-                        reset: "";
-                        value: p.value;
+                for p in ChatUi.plan-active: VerticalLayout {
+                    spacing: 8px;
+                    HorizontalLayout {
+                        height: 20px;
+                        spacing: 8px;
+                        Text {
+                            text: p.label + (p.plan != "" ? " · " + p.plan : "");
+                            font-size: Theme.ui-sm;
+                            font-weight: Theme.weight-medium;
+                            color: Theme.foreground;
+                            vertical-alignment: center;
+                            overflow: elide;
+                            horizontal-stretch: 1;
+                        }
+                        if p.error != "": Text {
+                            text: p.error;
+                            font-size: Theme.ui-xs;
+                            color: Theme.warning-surface-foreground;
+                            vertical-alignment: center;
+                            overflow: elide;
+                            max-width: 200px;
+                        }
                     }
-                    if !p.known: HorizontalLayout {
+                    if p.known: LimitBar {
+                        label: p.five-label != "" ? p.five-label : "5-hour limit";
+                        reset: p.five-reset;
+                        value: p.five;
+                    }
+                    if p.known: LimitBar {
+                        label: p.week-label != "" ? p.week-label : "Weekly · all models";
+                        reset: p.week-reset;
+                        value: p.week;
+                    }
+                    if p.known && p.has-opus: LimitBar {
+                        label: p.opus-label != "" ? p.opus-label : "Weekly · Opus";
+                        reset: p.opus-reset;
+                        value: p.opus;
+                    }
+                    for b in p.bars: LimitBar {
+                        label: b.label;
+                        reset: b.reset;
+                        value: b.value;
+                    }
+                }
+                for p in ChatUi.plan-current: VerticalLayout {
+                    if p.agent: HorizontalLayout {
                         height: 22px;
                         spacing: 8px;
                         Text {

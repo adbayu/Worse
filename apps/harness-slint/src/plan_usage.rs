@@ -142,6 +142,7 @@ pub(crate) struct Fetched {
     pub id: String,
     pub label: String,
     pub plan: String,
+    pub email: String,
     pub error: String,
     pub five: Option<(f32, String)>,
     pub week: Option<(f32, String)>,
@@ -183,7 +184,6 @@ fn fetch(window: slint::Weak<AppWindow>, list: Vec<Account>, agy: Vec<crate::agy
     });
 }
 
-
 fn publish() {
     let job = STATE.with(|cell| {
         let cell = cell.borrow();
@@ -206,6 +206,7 @@ fn failed(a: Account, error: &str) -> Fetched {
         id: a.id,
         label: a.label,
         plan: String::new(),
+        email: String::new(),
         error: error.to_owned(),
         five: None,
         week: None,
@@ -241,6 +242,40 @@ async fn fetch_all(list: Vec<Account>, agy: Vec<crate::agy_usage::AgySlot>) -> V
 }
 
 async fn fetch_one(client: &reqwest::Client, account: Account) -> Fetched {
+    let email = account_email(&account).await;
+    let mut row = fetch_usage(client, account).await;
+    row.email = email;
+    row
+}
+
+/// Email of the Claude account (`oauthAccount.emailAddress` in `.claude.json`): inside the profile folder, or
+/// next to the default `~/.claude` folder.
+async fn account_email(account: &Account) -> String {
+    let mut files = vec![account.dir.join(".claude.json")];
+    if account.id == "claude-code" {
+        if let Some(parent) = account.dir.parent() {
+            files.push(parent.join(".claude.json"));
+        }
+    }
+    for file in files {
+        let Ok(bytes) = tokio::fs::read(&file).await else {
+            continue;
+        };
+        let Ok(json) = serde_json::from_slice::<Value>(&bytes) else {
+            continue;
+        };
+        if let Some(email) = json["oauthAccount"]["emailAddress"]
+            .as_str()
+            .map(str::trim)
+            .filter(|e| !e.is_empty())
+        {
+            return email.to_owned();
+        }
+    }
+    String::new()
+}
+
+async fn fetch_usage(client: &reqwest::Client, account: Account) -> Fetched {
     let path = account.dir.join(".credentials.json");
     let bytes = match tokio::fs::read(&path).await {
         Ok(bytes) => bytes,
@@ -322,6 +357,7 @@ fn to_row(f: Fetched) -> PlanLimit {
         id: sv(&f.id),
         label: sv(&f.label),
         plan: sv(&f.plan),
+        email: sv(&f.email),
         error: sv(&f.error),
         known,
         five: five / 100.0,

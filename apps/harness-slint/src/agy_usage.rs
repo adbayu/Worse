@@ -74,6 +74,7 @@ fn row(id: &str, label: &str, error: &str) -> Fetched {
         id: id.into(),
         label: label.into(),
         plan: String::new(),
+        email: String::new(),
         error: error.to_owned(),
         five: None,
         week: None,
@@ -171,6 +172,29 @@ pub(crate) async fn fetch(client: &reqwest::Client, slots: &[AgySlot]) -> Vec<Fe
 }
 
 async fn fetch_one(client: &reqwest::Client, target: &str, id: &str, label: &str) -> Fetched {
+    let mut out = fetch_quota(client, target, id, label).await;
+    out.email = login_email(target);
+    out
+}
+
+/// Google account email of a stored agy login (`id_token_email`); empty when unknown.
+fn login_email(target: &str) -> String {
+    let store = crate::agy_cred::shared();
+    let Ok(Some(blob)) = store.0.read(target) else {
+        return String::new();
+    };
+    serde_json::from_slice::<Value>(&blob.secret)
+        .ok()
+        .and_then(|json| {
+            json["id_token_email"]
+                .as_str()
+                .map(str::trim)
+                .map(str::to_owned)
+        })
+        .unwrap_or_default()
+}
+
+async fn fetch_quota(client: &reqwest::Client, target: &str, id: &str, label: &str) -> Fetched {
     match quota(client, target).await {
         Ok((plan, bars)) => {
             if let Ok(mut last) = LAST.lock() {
