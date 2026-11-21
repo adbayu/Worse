@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -6,7 +7,7 @@ use harness_core_api as api;
 use serde_json::Value;
 use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
 
-use crate::ui::{AppWindow, ChatUi, PlanBar, PlanLimit};
+use crate::ui::{AppWindow, PlanBar, PlanLimit};
 
 const USAGE_URL: &str = "https://api.anthropic.com/api/oauth/usage";
 const MIN_INTERVAL: Duration = Duration::from_secs(30);
@@ -24,6 +25,8 @@ struct State {
     last: Option<Instant>,
     busy: bool,
     wanted: bool,
+    all: Vec<PlanLimit>,
+    bound: HashSet<String>,
 }
 
 thread_local! {
@@ -39,6 +42,8 @@ pub fn install(window: &AppWindow) {
             last: None,
             busy: false,
             wanted: false,
+            all: Vec::new(),
+            bound: HashSet::new(),
         });
     });
 }
@@ -55,6 +60,7 @@ pub fn refresh() {
         s.wanted = true;
         true
     });
+    fetch_bound();
     if due {
         // agy 账号列表先到，随后的 Claude 账号列表触发读取。
         crate::bridge::send(crate::core::Command::AgyAccounts(api::AgyAccountOp::List));
@@ -166,17 +172,53 @@ fn fetch(window: slint::Weak<AppWindow>, list: Vec<Account>, agy: Vec<crate::agy
                     s.last = Some(Instant::now());
                 }
             });
-            if let Some(window) = window.upgrade() {
-                let agy = rows
-                    .iter()
-                    .any(|r| r.id.starts_with(crate::agy_usage::AGY_ID));
-                let model: Vec<PlanLimit> = rows.into_iter().map(to_row).collect();
-                let chat = window.global::<ChatUi>();
-                chat.set_agy_plan(agy);
-                chat.set_plan_limits(ModelRc::new(VecModel::from(model)));
+            let model: Vec<PlanLimit> = rows.into_iter().map(to_row).collect();
+            STATE.with(|cell| {
+                if let Some(s) = cell.borrow_mut().as_mut() {
+                    s.all = model;
+                }
+            });
+            if window.upgrade().is_some() {
+                publish();
             }
         });
     });
+}
+
+fn fetch_bound() {
+    let (reply, answer) = tokio::sync::oneshot::channel();
+    crate::bridge::send(crate::core::Command::Chat(
+        crate::core::ChatCall::GetOrchestra(reply),
+    ));
+    let _ = slint::spawn_local(async move {
+        let Ok(Ok(graph)) = answer.await else {
+            return;
+        };
+        let bound = crate::plan_view::bound_of(&graph);
+        STATE.with(|cell| {
+            if let Some(s) = cell.borrow_mut().as_mut() {
+                s.bound = bound;
+            }
+        });
+        publish();
+    });
+}
+
+fn publish() {
+    let job = STATE.with(|cell| {
+        let cell = cell.borrow();
+        let s = cell.as_ref()?;
+        let active: HashSet<String> = s
+            .agy
+            .iter()
+            .filter(|a| a.active)
+            .map(|a| a.id.clone())
+            .collect();
+        Some((s.window.upgrade()?, s.all.clone(), s.bound.clone(), active))
+    });
+    if let Some((window, all, bound, active)) = job {
+        crate::plan_view::render(&window, &all, &bound, &active);
+    }
 }
 
 fn failed(a: Account, error: &str) -> Fetched {

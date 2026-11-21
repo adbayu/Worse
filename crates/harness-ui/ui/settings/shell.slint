@@ -12,6 +12,7 @@ import { ConfigPage, DocPage } from "config.slint";
 import { Labels } from "labels.slint";
 import { ProjectsPage, ArchivePage } from "data.slint";
 import { OrchestraPage } from "orchestra.slint";
+import { UsagePage } from "usage.slint";
 import { InboxPage, SourceDialog, InboxUi } from "inbox.slint";
 import { ImportPage } from "import.slint";
 import { RemotePage } from "remote.slint";
@@ -228,6 +229,9 @@ export component SettingsShell inherits Rectangle {
                         }
                     }
                     if SettingsUi.page == "orchestra": OrchestraPage {
+                        stacked: root.stacked;
+                    }
+                    if SettingsUi.page == "usage": UsagePage {
                         stacked: root.stacked;
                     }
                     if SettingsUi.page == "inbox": InboxPage {

@@ -64,6 +64,7 @@ const NAV: &[(&str, i32)] = &[
     ("appearance", 0),
     ("agents", 0),
     ("orchestra", 0),
+    ("usage", 0),
     ("inbox", 0),
     ("remote", 0),
     ("security", 0),

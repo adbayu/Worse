@@ -80,96 +80,36 @@ export component UsageRing inherits Rectangle {
                     font-size: Theme.ui-sm;
                     color: Theme.foreground-subtle;
                 }
-                if ChatUi.plan-limits.length == 0: Text {
+                if ChatUi.plan-simple.length == 0: Text {
                     text: "Checking plan usage…";
                     font-size: Theme.ui-sm;
                     color: Theme.foreground-subtle;
                 }
-                for p in ChatUi.plan-limits: VerticalLayout {
-                    property <bool> open: ChatUi.plan-limits.length == 1 ? ChatUi.limit-open != p.id : ChatUi.limit-open == p.id;
-                    spacing: 8px;
-                    Rectangle {
-                        height: 24px;
-                        accessible-role: button;
-                        accessible-label: p.label;
-                        accessible-description: open ? "expanded" : "collapsed";
-                        accessible-action-default => {
-                            ChatUi.limit-open = open ? "" : p.id;
+                for p in ChatUi.plan-simple: VerticalLayout {
+                    if p.known: LimitBar {
+                        label: p.label;
+                        reset: "";
+                        value: p.value;
+                    }
+                    if !p.known: HorizontalLayout {
+                        height: 22px;
+                        spacing: 8px;
+                        Text {
+                            text: p.label;
+                            font-size: Theme.ui-sm;
+                            color: Theme.foreground;
+                            vertical-alignment: center;
+                            overflow: elide;
+                            horizontal-stretch: 1;
                         }
-                        pta := TouchArea {
-                            mouse-cursor: pointer;
-                            clicked => {
-                                ChatUi.limit-open = open ? "" : p.id;
-                            }
+                        Text {
+                            text: p.detail;
+                            font-size: Theme.ui-xs;
+                            vertical-alignment: center;
+                            overflow: elide;
+                            max-width: 200px;
+                            color: p.warn ? Theme.warning-surface-foreground : Theme.foreground-subtle;
                         }
-                        HorizontalLayout {
-                            spacing: 6px;
-                            Icon {
-                                y: (parent.height - self.height) / 2;
-                                source: open ? Icons.chevron-down : Icons.chevron-right;
-                                size: Theme.icon-xs;
-                                tint: pta.has-hover ? Theme.foreground : Theme.icon-subtle;
-                            }
-                            Text {
-                                text: p.label + (p.plan != "" ? " · " + p.plan : "");
-                                font-size: Theme.ui-sm;
-                                color: Theme.foreground;
-                                vertical-alignment: center;
-                                overflow: elide;
-                                horizontal-stretch: 1;
-                            }
-                            Text {
-                                text: p.error != "" ? p.error : (open ? "" : p.summary != "" ? p.summary : "5h " + round(p.five * 100) + "% · week " + round(p.week * 100) + "%");
-                                font-size: Theme.ui-xs;
-                                color: p.error != "" ? Theme.warning-surface-foreground : Theme.foreground-subtle;
-                                vertical-alignment: center;
-                                overflow: elide;
-                                max-width: 180px;
-                            }
-                        }
-                    }
-                    if open && p.known: LimitBar {
-                        label: p.five-label != "" ? p.five-label : "5-hour limit";
-                        reset: p.five-reset;
-                        value: p.five;
-                    }
-                    if open && p.known: LimitBar {
-                        label: p.week-label != "" ? p.week-label : "Weekly · all models";
-                        reset: p.week-reset;
-                        value: p.week;
-                    }
-                    if open && p.known && p.has-opus: LimitBar {
-                        label: p.opus-label != "" ? p.opus-label : "Weekly · Opus";
-                        reset: p.opus-reset;
-                        value: p.opus;
-                    }
-                    for b in (open ? p.bars : []): LimitBar {
-                        label: b.label;
-                        reset: b.reset;
-                        value: b.value;
-                    }
-                }
-                for a in root.agents: HorizontalLayout {
-                    property <bool> hidden: a.claude || (a.id == "agy" && ChatUi.agy-plan);
-                    visible: !self.hidden;
-                    height: self.hidden ? 0px : 22px;
-                    spacing: 8px;
-                    Rectangle {
-                        width: Theme.icon-xs;
-                    }
-                    Text {
-                        text: a.name;
-                        font-size: Theme.ui-sm;
-                        color: a.state == 1 ? Theme.foreground-subtlest : Theme.foreground;
-                        vertical-alignment: center;
-                        overflow: elide;
-                        horizontal-stretch: 1;
-                    }
-                    Text {
-                        text: a.state == 0 ? "Available" : a.state == 1 ? "Not installed" : (a.reset != "" ? "Limit reached · resets " + a.reset : "Limit reached");
-                        font-size: Theme.ui-xs;
-                        vertical-alignment: center;
-                        color: a.state == 0 ? Theme.foreground-subtle : a.state == 1 ? Theme.foreground-subtlest : Theme.warning-surface-foreground;
                     }
                 }
                 Divider { }
@@ -304,5 +244,3 @@ export component UsageRing inherits Rectangle {
         }
     }
 }
-
-

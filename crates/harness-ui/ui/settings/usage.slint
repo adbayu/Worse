@@ -1,0 +1,109 @@
+import { Theme } from "../theme/tokens.slint";
+import { ChatUi } from "../chat/globals.slint";
+import { LimitBar } from "../components/limit_bar.slint";
+import { RCard, Sep, RButton } from "./remote_parts.slint";
+
+export component UsagePage inherits VerticalLayout {
+    in property <bool> stacked;
+    spacing: 16px;
+    init => {
+        ChatUi.usage-action("refreshPlan");
+    }
+    HorizontalLayout {
+        spacing: 12px;
+        VerticalLayout {
+            spacing: 6px;
+            horizontal-stretch: 1;
+            Text {
+                text: "Usage";
+                font-family: Theme.display-font;
+                font-size: 22px;
+                font-weight: 700;
+                color: Theme.foreground;
+            }
+            Text {
+                text: "Plan limits of the agents bound in Orchestra. API providers are not listed.";
+                font-size: 13px;
+                color: Theme.muted;
+                wrap: word-wrap;
+            }
+        }
+        RButton {
+            y: (parent.height - self.height) / 2;
+            text: "Refresh";
+            clicked => {
+                ChatUi.usage-action("refreshPlan");
+            }
+        }
+    }
+    if ChatUi.plan-simple.length == 0: Text {
+        text: "Checking plan usage…";
+        font-size: 13px;
+        color: Theme.foreground-subtle;
+    }
+    for p in ChatUi.plan-limits: RCard {
+        title: p.label;
+        note: p.plan;
+        VerticalLayout {
+            padding-left: 16px;
+            padding-right: 16px;
+            padding-bottom: 16px;
+            spacing: 14px;
+            if p.error != "": Text {
+                text: p.error;
+                font-size: 12px;
+                color: Theme.warning-surface-foreground;
+                wrap: word-wrap;
+            }
+            if p.known: LimitBar {
+                label: p.five-label != "" ? p.five-label : "5-hour limit";
+                reset: p.five-reset;
+                value: p.five;
+            }
+            if p.known: LimitBar {
+                label: p.week-label != "" ? p.week-label : "Weekly · all models";
+                reset: p.week-reset;
+                value: p.week;
+            }
+            if p.known && p.has-opus: LimitBar {
+                label: p.opus-label != "" ? p.opus-label : "Weekly · Opus";
+                reset: p.opus-reset;
+                value: p.opus;
+            }
+            for b in p.bars: LimitBar {
+                label: b.label;
+                reset: b.reset;
+                value: b.value;
+            }
+        }
+    }
+    RCard {
+        title: "Other bound agents";
+        note: "No plan data";
+        VerticalLayout {
+            padding-left: 16px;
+            padding-right: 16px;
+            padding-bottom: 12px;
+            spacing: 4px;
+            for s in ChatUi.plan-simple: HorizontalLayout {
+                visible: s.agent;
+                height: self.visible ? 24px : 0px;
+                spacing: 8px;
+                Text {
+                    text: s.label;
+                    font-size: 13px;
+                    color: Theme.foreground;
+                    vertical-alignment: center;
+                    overflow: elide;
+                    horizontal-stretch: 1;
+                }
+                Text {
+                    text: s.detail;
+                    font-size: 12px;
+                    vertical-alignment: center;
+                    color: s.warn ? Theme.warning-surface-foreground : Theme.foreground-subtle;
+                }
+            }
+        }
+    }
+}

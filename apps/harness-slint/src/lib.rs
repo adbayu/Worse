@@ -23,6 +23,7 @@ mod panels;
 
 mod perf;
 mod plan_usage;
+mod plan_view;
 mod release_update;
 mod remote;
 mod security;

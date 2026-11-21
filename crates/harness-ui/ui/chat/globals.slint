@@ -1,7 +1,7 @@
 // Chat and workspace view state of Phase 9.2 (spec docs/specs/harness/phase-9-parity.md §7). Rust (src/chat)
 // owns every list here; Slint only renders it and reports input. Nothing in this global is a core fact.
-import { PaletteRow, ChipRow, ChatImage, ToolPart, UsagePart, PlanBar, PlanLimit, OutputRow, ChangeRow, PlanRow, SubagentRow, FleetGroup, BackgroundTaskRow, GroupRow, ScheduleRow, MdLink } from "./chat_types.slint";
-export { PaletteRow, ChipRow, ChatImage, ToolPart, UsagePart, PlanBar, PlanLimit, OutputRow, ChangeRow, PlanRow, SubagentRow, FleetGroup, BackgroundTaskRow, GroupRow, ScheduleRow, MdLink }
+import { PaletteRow, ChipRow, ChatImage, ToolPart, UsagePart, PlanBar, PlanLimit, PlanSimple, OutputRow, ChangeRow, PlanRow, SubagentRow, FleetGroup, BackgroundTaskRow, GroupRow, ScheduleRow, MdLink } from "./chat_types.slint";
+export { PaletteRow, ChipRow, ChatImage, ToolPart, UsagePart, PlanBar, PlanLimit, PlanSimple, OutputRow, ChangeRow, PlanRow, SubagentRow, FleetGroup, BackgroundTaskRow, GroupRow, ScheduleRow, MdLink }
 
 export global ChatUi {
     // ---- turns (R8 / R10 / R14) ----
@@ -49,6 +49,7 @@ export global ChatUi {
     in property <[OutputRow]> outputs;
     in property <[UsagePart]> usage-parts;
     in property <[PlanLimit]> plan-limits;
+    in property <[PlanSimple]> plan-simple;
     in property <bool> agy-plan;
     in-out property <string> limit-open;
     pure public function usage-tone(tone: int) -> color {

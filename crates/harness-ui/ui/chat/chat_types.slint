@@ -66,6 +66,16 @@ export struct PlanLimit {
     bars: [PlanBar],
 }
 
+export struct PlanSimple {
+    id: string,
+    label: string,
+    detail: string,
+    value: float,
+    known: bool,
+    warn: bool,
+    agent: bool,
+}
+
 export struct OutputRow {
     name: string,
     path: string,
