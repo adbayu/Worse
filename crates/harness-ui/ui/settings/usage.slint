@@ -22,7 +22,7 @@ export component UsagePage inherits VerticalLayout {
                 color: Theme.foreground;
             }
             Text {
-                text: "Plan limits of the agents bound in Orchestra. API providers are not listed.";
+                text: "Plan limits of every subscription signed in to Harness. API providers are not listed.";
                 font-size: 13px;
                 color: Theme.muted;
                 wrap: word-wrap;
@@ -78,7 +78,7 @@ export component UsagePage inherits VerticalLayout {
         }
     }
     RCard {
-        title: "Other bound agents";
+        title: "Other agents";
         note: "No plan data";
         VerticalLayout {
             padding-left: 16px;

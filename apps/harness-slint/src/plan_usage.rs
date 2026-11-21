@@ -26,7 +26,6 @@ struct State {
     busy: bool,
     wanted: bool,
     all: Vec<PlanLimit>,
-    bound: HashSet<String>,
 }
 
 thread_local! {
@@ -43,7 +42,6 @@ pub fn install(window: &AppWindow) {
             busy: false,
             wanted: false,
             all: Vec::new(),
-            bound: HashSet::new(),
         });
     });
 }
@@ -60,7 +58,7 @@ pub fn refresh() {
         s.wanted = true;
         true
     });
-    fetch_bound();
+    publish();
     if due {
         // agy 账号列表先到，随后的 Claude 账号列表触发读取。
         crate::bridge::send(crate::core::Command::AgyAccounts(api::AgyAccountOp::List));
@@ -185,24 +183,6 @@ fn fetch(window: slint::Weak<AppWindow>, list: Vec<Account>, agy: Vec<crate::agy
     });
 }
 
-fn fetch_bound() {
-    let (reply, answer) = tokio::sync::oneshot::channel();
-    crate::bridge::send(crate::core::Command::Chat(
-        crate::core::ChatCall::GetOrchestra(reply),
-    ));
-    let _ = slint::spawn_local(async move {
-        let Ok(Ok(graph)) = answer.await else {
-            return;
-        };
-        let bound = crate::plan_view::bound_of(&graph);
-        STATE.with(|cell| {
-            if let Some(s) = cell.borrow_mut().as_mut() {
-                s.bound = bound;
-            }
-        });
-        publish();
-    });
-}
 
 fn publish() {
     let job = STATE.with(|cell| {
@@ -214,10 +194,10 @@ fn publish() {
             .filter(|a| a.active)
             .map(|a| a.id.clone())
             .collect();
-        Some((s.window.upgrade()?, s.all.clone(), s.bound.clone(), active))
+        Some((s.window.upgrade()?, s.all.clone(), active))
     });
-    if let Some((window, all, bound, active)) = job {
-        crate::plan_view::render(&window, &all, &bound, &active);
+    if let Some((window, all, active)) = job {
+        crate::plan_view::render(&window, &all, &active);
     }
 }
 

@@ -87,18 +87,8 @@ fn simple_of_agent(a: &AgentRow) -> PlanSimple {
         agent: true,
     }
 }
-pub fn render(
-    window: &AppWindow,
-    all: &[PlanLimit],
-    bound: &HashSet<String>,
-    agy_active: &HashSet<String>,
-) {
-    let open = bound.is_empty();
-    let limits: Vec<PlanLimit> = all
-        .iter()
-        .filter(|p| open || row_bound(p.id.as_str(), bound, agy_active))
-        .cloned()
-        .collect();
+pub fn render(window: &AppWindow, all: &[PlanLimit], agy_active: &HashSet<String>) {
+    let limits: Vec<PlanLimit> = all.to_vec();
     let agy_rows = all
         .iter()
         .any(|p| p.id.starts_with(crate::agy_usage::AGY_ID));
@@ -108,7 +98,7 @@ pub fn render(
         let id = a.id.as_str();
         let covered = a.claude
             || (agy_rows && (id == crate::agy_usage::AGY_ID || id.starts_with(AGY_ACCOUNT)));
-        if covered || !subscription(id) || !(open || bound.contains(id)) {
+        if covered || !subscription(id) {
             continue;
         }
         simple.push(simple_of_agent(&a));
@@ -126,10 +116,3 @@ pub fn render(
     chat.set_plan_simple(ModelRc::new(VecModel::from(simple)));
 }
 
-pub fn bound_of(graph: &harness_core_api::Orchestra) -> HashSet<String> {
-    graph
-        .nodes
-        .iter()
-        .map(|n| n.agent.as_str().to_owned())
-        .collect()
-}
