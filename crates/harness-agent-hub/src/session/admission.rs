@@ -44,8 +44,14 @@ impl SessionActor {
             order: &order,
             tried: &tried,
         };
-        let usable =
-            |agent: &AgentId| self.ctx.is_installed(agent) && self.ctx.quota.is_usable(agent);
+        // 修复：设置里关闭的 agent（如 Codex）仍留在 hub 的 fallback 顺序中，额度用尽时会被自动切换过去；
+        // 关闭的 agent 只隐藏在 UI 里，hub 并不知道。依据设置 agents.<id>.enabled，failover 跳过它们。
+        let disabled = &self.ctx.config.disabled_agents;
+        let usable = |agent: &AgentId| {
+            (agent == &self.row.active_agent || !disabled.contains(agent))
+                && self.ctx.is_installed(agent)
+                && self.ctx.quota.is_usable(agent)
+        };
         self.ctx.config.agent_selector.0.select(&input, &usable)
     }
 

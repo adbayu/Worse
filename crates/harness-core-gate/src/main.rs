@@ -144,6 +144,7 @@ impl Env {
                 policy.set_on(false);
                 policy
             },
+            disabled_agents: harness_agent_hub::DisabledAgents::default(),
             agent_selector: harness_agent_hub::selector::SharedAgentSelector::default(),
         }
     }

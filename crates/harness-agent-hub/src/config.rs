@@ -16,7 +16,8 @@ mod agents_file;
 mod policy;
 
 pub use policy::{
-    AutoUpdatePolicy, DelegationPolicy, FactCheckPolicy, SharedAuthProbe, SharedFileSearch,
+    AutoUpdatePolicy, DelegationPolicy, DisabledAgents, FactCheckPolicy, SharedAuthProbe,
+    SharedFileSearch,
 };
 
 /// File name of the agent configuration under the hub home.
@@ -82,6 +83,9 @@ pub struct HubConfig {
     /// Automatic update of the npm-installed ACP adapters and agent CLIs (phase-9-parity.md §9.10). The UI
     /// keeps it in step with settings `setup.autoUpdateAdapters`. `from_env`: on.
     pub auto_update: AutoUpdatePolicy,
+    /// Agents turned off in settings; failover never switches to them. The UI keeps it in step with
+    /// settings `agents.<id>.enabled`. `from_env`: none.
+    pub disabled_agents: DisabledAgents,
     /// Failover policy of turns (spec §6.4). `from_env`: [`crate::selector::StickyThenFallback`].
     pub agent_selector: crate::selector::SharedAgentSelector,
 }
@@ -132,6 +136,7 @@ impl HubConfig {
             delegation: DelegationPolicy::default(),
             fact_check: FactCheckPolicy::default(),
             auto_update: AutoUpdatePolicy::default(),
+            disabled_agents: DisabledAgents::default(),
             agent_selector: crate::selector::SharedAgentSelector::default(),
         })
     }

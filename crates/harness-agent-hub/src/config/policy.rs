@@ -55,6 +55,26 @@ impl FactCheckPolicy {
     }
 }
 
+/// Agents turned off in settings (`agents.<id>.enabled = false`), shared between the UI and the hub.
+/// Failover skips them; an explicit pick still runs them.
+#[derive(Debug, Clone, Default)]
+pub struct DisabledAgents {
+    ids: Arc<std::sync::RwLock<std::collections::HashSet<harness_core_api::AgentId>>>,
+}
+
+impl DisabledAgents {
+    #[must_use]
+    pub fn contains(&self, agent: &harness_core_api::AgentId) -> bool {
+        self.ids.read().is_ok_and(|ids| ids.contains(agent))
+    }
+
+    pub fn set(&self, ids: impl IntoIterator<Item = harness_core_api::AgentId>) {
+        if let Ok(mut guard) = self.ids.write() {
+            *guard = ids.into_iter().collect();
+        }
+    }
+}
+
 /// Live delegation settings shared between the UI and the hub.
 #[derive(Debug, Clone)]
 pub struct DelegationPolicy {

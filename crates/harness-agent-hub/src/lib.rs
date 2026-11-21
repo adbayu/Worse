@@ -67,8 +67,8 @@ mod worktree;
 
 pub use agy_cred::{AgyCredStore, CredAttribute, CredBlob, SharedAgyCredStore};
 pub use config::{
-    AutoUpdatePolicy, DelegationPolicy, FactCheckPolicy, HubConfig, SharedAuthProbe,
-    SharedFileSearch,
+    AutoUpdatePolicy, DelegationPolicy, DisabledAgents, FactCheckPolicy, HubConfig,
+    SharedAuthProbe, SharedFileSearch,
 };
 pub use error::HubError;
 pub use hub::Hub;

@@ -17,7 +17,15 @@ pub(super) async fn hub_config(home: &Path, store: &SettingsStore) -> Result<Hub
     let policy = config.delegation.clone();
     let fact_check = config.fact_check.clone();
     let auto_update = config.auto_update.clone();
+    let disabled = config.disabled_agents.clone();
     let apply = move |settings: &harness_settings::Settings| {
+        disabled.set(
+            settings
+                .agents
+                .iter()
+                .filter(|(_, prefs)| !prefs.enabled)
+                .map(|(id, _)| api::AgentId::new(id.clone())),
+        );
         policy.set_limit(usize::from(settings.orchestra.max_concurrent));
         policy.set_nested(settings.orchestra.nested_subagents);
         policy.set_nested_limit(usize::from(settings.orchestra.max_nested_per_subagent));
