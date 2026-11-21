@@ -1,0 +1,320 @@
+import { Theme } from "../../theme/tokens.slint";
+import { Icon, Icons, Button, IconButton, Divider, Dialog, Spinner } from "../../components/controls.slint";
+import { AgentsUi, AgentCard, ProviderPreset } from "../globals.slint";
+import { Select, TextField, TextArea, Switch } from "../parts.slint";
+import { SetupUi } from "../../setup.slint";
+import { AgentLogo, AgentMark } from "../../components/agent_logo.slint";
+import { AgentsLook, Pill, Caps, SegBox, Seg, DButton, Glyph, Tile, AccountChip, Hint, DefaultSelect, SectionHead } from "./parts.slint";
+
+export component AgentCardView inherits Rectangle {
+    in property <AgentCard> card;
+    property <bool> open: AgentsUi.open-agent == root.card.id;
+    property <bool> adding: false;
+    property <bool> is-agy: root.card.id == "agy";
+    property <bool> is-claude: root.card.id == "claude-code";
+    property <bool> show-accounts: (root.is-agy && AgentsUi.agy-available) || (root.is-claude && AgentsUi.accounts.length > 0);
+    background: Theme.surface;
+    border-radius: 12px;
+    border-width: 1px;
+    border-color: Theme.border;
+    VerticalLayout {
+        padding-top: 12px;
+        padding-bottom: 12px;
+        padding-left: 14px;
+        padding-right: 14px;
+        spacing: 10px;
+        // row1: tile, name + meta, status pill / more / toggle.
+        HorizontalLayout {
+            spacing: 10px;
+            VerticalLayout {
+                alignment: center;
+                Tile {
+                    logo: AgentLogo.key(root.card.id) != "" ? AgentLogo.key(root.card.id) : AgentLogo.key(root.card.name);
+                    initial: AgentsLook.initial-of(root.card.id);
+                    tone: AgentsLook.color-of(root.card.id);
+                    ink: AgentsLook.ink-of(root.card.id);
+                    opacity: root.card.installed ? 1 : 0.85;
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                spacing: 2px;
+                horizontal-stretch: 1;
+                Text {
+                    text: root.card.name;
+                    font-size: 13.5px;
+                    font-weight: Theme.weight-semibold;
+                    color: root.card.installed ? Theme.foreground : Theme.foreground-subtle;
+                    overflow: elide;
+                }
+                Text {
+                    property <string> model: root.card.model-label != "" ? root.card.model-label : root.card.model;
+                    text: !root.card.installed ? (self.model != "" ? self.model + " · " : "") + (root.card.adapter-missing ? "ACP adapter missing" : "not found on PATH") : (self.model != "" ? self.model + " · " : "") + (root.card.version != "" ? "v" + root.card.version : "installed");
+                    font-size: 11px;
+                    color: Theme.icon-subtlest;
+                    overflow: elide;
+                }
+            }
+            HorizontalLayout {
+                spacing: 10px;
+                horizontal-stretch: 0;
+                if !root.card.installed && root.card.adapter-missing: VerticalLayout {
+                    alignment: center;
+                    DButton {
+                        text: SetupUi.busy == root.card.id ? "Installing…" : "Install adapter";
+                        h: 24px;
+                        pad: 9px;
+                        size: 11px;
+                        enabled: SetupUi.busy == "";
+                        clicked => {
+                            SetupUi.install(root.card.id);
+                        }
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    Pill {
+                        text: !root.card.installed ? (root.card.adapter-missing ? "Adapter missing" : @tr("Not installed")) : root.card.auth == 0 ? @tr("Signed in") : root.card.auth == 1 ? @tr("Not signed in") : @tr("Installed");
+                        tone: !root.card.installed ? (root.card.adapter-missing ? Theme.warning : Theme.icon-subtlest) : root.card.auth == 0 ? Theme.success : root.card.auth == 1 ? Theme.warning : Theme.icon-subtlest;
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    Glyph {
+                        text: "⋯";
+                        label: root.open ? @tr("Hide {0} settings", root.card.name) : @tr("Show {0} settings", root.card.name);
+                        active: root.open;
+                        clicked => {
+                            AgentsUi.open-agent = root.open ? "" : root.card.id;
+                        }
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    Switch {
+                        label: @tr("Enable {0}", root.card.name);
+                        checked: root.card.enabled;
+                        toggled(on) => {
+                            AgentsUi.set-enabled(root.card.id, on);
+                        }
+                    }
+                }
+            }
+        }
+        // row2: MODE segmented … MODEL select (indented 40 under the tile).
+        HorizontalLayout {
+            padding-left: 40px;
+            spacing: 10px;
+            height: 26px;
+            Caps {
+                text: "MODE";
+            }
+            SegBox {
+                Seg {
+                    text: @tr("Default");
+                    min-w: 69px;
+                    active: root.card.mode == "";
+                    clicked => {
+                        AgentsUi.set-default(root.card.id, "defaultMode", "");
+                    }
+                }
+                for m in root.card.modes: Seg {
+                    text: m.label;
+                    min-w: 69px;
+                    active: root.card.mode == m.id;
+                    clicked => {
+                        AgentsUi.set-default(root.card.id, "defaultMode", m.id);
+                    }
+                }
+            }
+            if root.card.modes.length == 0: Text {
+                text: root.card.installed ? @tr("Modes appear after the agent starts once") : "";
+                font-size: 11px;
+                color: Theme.icon-subtlest;
+                vertical-alignment: center;
+            }
+            Rectangle {
+                horizontal-stretch: 1;
+            }
+            Caps {
+                text: "MODEL";
+            }
+            DefaultSelect {
+                card: root.card;
+                kind: "model";
+                width: 168px;
+                horizontal-stretch: 0;
+            }
+        }
+        // ACCOUNTS (design: agy card; Claude shows its extra subscriptions the same way).
+        if root.show-accounts: HorizontalLayout {
+            padding-left: 40px;
+            spacing: 8px;
+            height: 24px;
+            alignment: start;
+            Caps {
+                text: "ACCOUNTS";
+            }
+            if root.is-agy: HorizontalLayout {
+                spacing: 8px;
+                for acc in AgentsUi.agy-accounts: AccountChip {
+                    text: acc.name;
+                    dot: acc.exhausted ? Theme.warning : acc.signed-in ? Theme.success : Theme.icon-subtlest;
+                    active: acc.active;
+                    hint: acc.signed-in && !acc.active ? "Use " + acc.name : acc.name;
+                    clicked => {
+                        if acc.signed-in && !acc.active {
+                            AgentsUi.agy-use(acc.id);
+                        } else if !acc.signed-in {
+                            AgentsUi.agy-sign-in(acc.id);
+                        }
+                    }
+                }
+            }
+            if root.is-claude: HorizontalLayout {
+                spacing: 8px;
+                for acc in AgentsUi.accounts: AccountChip {
+                    text: acc.label;
+                    dot: acc.auth == 0 ? Theme.success : acc.auth == 1 ? Theme.warning : Theme.icon-subtlest;
+                    hint: @tr("Sign in to {0}", acc.label);
+                    clicked => {
+                        if acc.auth != 0 {
+                            AgentsUi.login-account(acc.id);
+                        }
+                    }
+                }
+            }
+            if !root.adding: DButton {
+                text: @tr("Add account");
+                glyph: "+";
+                outline: true;
+                h: 24px;
+                pad: 9px;
+                size: 11px;
+                clicked => {
+                    root.adding = true;
+                }
+            }
+            if root.adding && root.is-agy: TextField {
+                width: 200px;
+                height: 24px;
+                horizontal-stretch: 0;
+                text <=> AgentsUi.agy-label;
+                placeholder: "Account name, e.g. Work";
+                label: "New Antigravity account name";
+                accepted(text) => {
+                    AgentsUi.agy-add(text);
+                    root.adding = false;
+                }
+            }
+            if root.adding && root.is-claude: TextField {
+                width: 200px;
+                height: 24px;
+                horizontal-stretch: 0;
+                text <=> AgentsUi.account-label;
+                placeholder: @tr("Account name, e.g. Work");
+                label: @tr("New account name");
+                accepted(text) => {
+                    AgentsUi.add-account(text);
+                    root.adding = false;
+                }
+            }
+            if root.adding: Glyph {
+                text: "✕";
+                size: 10px;
+                label: @tr("Cancel");
+                clicked => {
+                    root.adding = false;
+                }
+            }
+        }
+        // "⋯" details: sign-in hint, effort, launch command + connection test.
+        if root.open: VerticalLayout {
+            padding-left: 40px;
+            spacing: 10px;
+            if root.card.auth == 1 && root.card.installed: Hint {
+                text: @tr("Sign in from a terminal with the agent's own login command. Harness never reads or stores agent credentials.");
+            }
+            HorizontalLayout {
+                spacing: 10px;
+                height: 26px;
+                Caps {
+                    text: "EFFORT";
+                }
+                DefaultSelect {
+                    card: root.card;
+                    kind: "effort";
+                    width: 168px;
+                    horizontal-stretch: 0;
+                }
+                Rectangle {
+                    horizontal-stretch: 1;
+                }
+            }
+            Rectangle {
+                border-radius: 8px;
+                background: Theme.panel;
+                border-width: 1px;
+                border-color: Theme.border;
+                HorizontalLayout {
+                    padding-left: 12px;
+                    padding-right: 10px;
+                    padding-top: 8px;
+                    padding-bottom: 8px;
+                    spacing: 10px;
+                    VerticalLayout {
+                        alignment: center;
+                        spacing: 2px;
+                        horizontal-stretch: 1;
+                        Text {
+                            text: root.card.program != "" ? root.card.program : @tr("Found on PATH");
+                            font-family: root.card.program != "" ? Theme.mono-font : "";
+                            font-size: 11.5px;
+                            color: Theme.foreground-subtle;
+                            overflow: elide;
+                        }
+                        Text {
+                            text: (root.card.args != "" ? root.card.args : @tr("No extra arguments")) + (root.card.env != "" ? "  ·  " + root.card.env : "");
+                            font-family: root.card.args != "" ? Theme.mono-font : "";
+                            font-size: 11px;
+                            color: Theme.icon-subtlest;
+                            overflow: elide;
+                        }
+                    }
+                    if root.card.test-state == 1: VerticalLayout {
+                        alignment: center;
+                        Spinner {
+                            size: 14px;
+                            tint: Theme.foreground-subtle;
+                        }
+                    }
+                    if root.card.test-state == 1 || root.card.test-state == 2: Text {
+                        text: root.card.test-state == 1 ? @tr("Testing…") : @tr("{0}ms latency", root.card.test-latency);
+                        font-size: 11px;
+                        color: root.card.test-state == 2 ? Theme.success : Theme.muted;
+                        vertical-alignment: center;
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        DButton {
+                            text: @tr("Test connection");
+                            h: 26px;
+                            pad: 10px;
+                            size: 11.5px;
+                            enabled: root.card.installed && root.card.test-state != 1;
+                            clicked => {
+                                AgentsUi.test(root.card.id);
+                            }
+                        }
+                    }
+                }
+            }
+            if root.card.test-state == 3: Text {
+                text: root.card.test-error != "" ? root.card.test-error : @tr("Connection test failed.");
+                font-size: 11px;
+                color: Theme.destructive-surface-foreground;
+                wrap: word-wrap;
+            }
+        }
+    }
+}

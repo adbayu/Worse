@@ -1,0 +1,368 @@
+// The picture of the project graph (Settings › Memory › Graph, or over the whole window): frames drawn in
+// Rust (`harness-graph-view`), with the names, the controls and the list of nodes laid over them. Two styles:
+// "orbit", a flat solar system in the theme's colours, and "space", a galaxy around a black hole that is
+// light on black whatever the theme. Drag to turn the galaxy (to slide the solar system), Ctrl + wheel or
+// the buttons to zoom, click a name to look at one community, click a node to see what it is linked to.
+import { ListView } from "std-widgets.slint";
+import { Theme } from "../theme/tokens.slint";
+import { Icons, Icon } from "../components/controls.slint";
+import { ArtClock } from "../components/ascii.slint";
+import { GraphUi, GraphLabel, GraphHit } from "globals.slint";
+import { Knob, Chip, HitRow } from "./graph_parts.slint";
+export { Knob, Chip, HitRow }
+import { GraphZoomBar, GraphPanel } from "./graph_panel.slint";
+
+export component GraphCanvas inherits Rectangle {
+    // fills the window (then the wheel zooms without Ctrl, and Escape leaves)
+    in property <bool> wide;
+    property <bool> space: GraphUi.view-style == "space";
+    property <color> ink: root.space ? #f1f1f3 : Theme.foreground;
+    property <color> glass: root.space ? #16171be8 : Theme.popover;
+    property <color> rim: root.space ? #ffffff24 : Theme.border;
+    property <bool> panel: GraphUi.list-open || GraphUi.view-selected >= 0;
+    // Hold still while paused, while the window is in the background, and for those who asked for less motion.
+    property <bool> resting: GraphUi.view-paused || !ArtClock.focused || Theme.reduce-motion;
+    property <bool> dark: Theme.dark;
+    property <color> accent: Theme.accent-fg;
+    background: root.space ? #020203 : (root.wide ? Theme.canvas : Theme.card);
+    border-radius: root.wide ? 0px : 14px;
+    border-width: root.wide ? 0px : 1px;
+    border-color: root.space ? #ffffff14 : Theme.border;
+    clip: true;
+    forward-focus: keys;
+
+    pure function tone(i: int) -> color {
+        if i == 0 { return Theme.accent-fg; }
+        if i == 1 { return Theme.info; }
+        if i == 2 { return Theme.agent-agy; }
+        if i == 3 { return Theme.agent-claude; }
+        if i == 4 { return Theme.warning; }
+        if i == 5 { return Theme.success; }
+        if i == 6 { return Theme.dark ? #ed80a8 : #c74073; }
+        return Theme.foreground-subtlest;
+    }
+    function report() {
+        GraphUi.view-resized(self.width, self.height);
+    }
+    init => {
+        root.report();
+        GraphUi.view-inset(root.panel ? 312px : 0px);
+        GraphUi.view-rest(root.resting, Theme.reduce-motion);
+        if root.wide {
+            keys.focus();
+        }
+    }
+    changed width => {
+        root.report();
+    }
+    changed height => {
+        root.report();
+    }
+    changed panel => {
+        GraphUi.view-inset(root.panel ? 312px : 0px);
+    }
+    changed resting => {
+        GraphUi.view-rest(root.resting, Theme.reduce-motion);
+    }
+    changed dark => {
+        GraphUi.view-themed();
+    }
+    changed accent => {
+        GraphUi.view-themed();
+    }
+
+    // The frame clock: it runs while the picture moves and the window can be seen, and ends with this canvas.
+    Timer {
+        interval: 16ms;
+        running: GraphUi.view-busy && ArtClock.visible;
+        triggered => {
+            GraphUi.view-tick();
+        }
+    }
+
+    keys := FocusScope {
+        key-pressed(event) => {
+            if event.text == Key.Escape {
+                if GraphUi.view-selected >= 0 || GraphUi.list-open {
+                    GraphUi.list-open = false;
+                    GraphUi.view-pick(-1);
+                } else if GraphUi.view-focus >= 0 {
+                    GraphUi.view-focus-cluster(-1);
+                } else if root.wide {
+                    GraphUi.view-wide = false;
+                } else {
+                    return reject;
+                }
+                return accept;
+            }
+            if event.text == "/" {
+                GraphUi.list-open = true;
+                return accept;
+            }
+            return reject;
+        }
+    }
+
+    Image {
+        width: 100%;
+        height: 100%;
+        source: GraphUi.view-frame;
+        image-fit: fill;
+    }
+
+    touch := TouchArea {
+        mouse-cursor: GraphUi.tip-shown ? MouseCursor.pointer : self.pressed ? MouseCursor.grabbing : MouseCursor.grab;
+        pointer-event(event) => {
+            if event.button == PointerEventButton.left && event.kind == PointerEventKind.down {
+                keys.focus();
+                GraphUi.view-pointer(1, self.mouse-x, self.mouse-y);
+            } else if event.button == PointerEventButton.left && event.kind == PointerEventKind.up {
+                GraphUi.view-pointer(3, self.mouse-x, self.mouse-y);
+            } else if event.kind == PointerEventKind.move {
+                GraphUi.view-pointer(self.pressed ? 2 : 0, self.mouse-x, self.mouse-y);
+            } else if event.kind == PointerEventKind.cancel {
+                GraphUi.view-pointer(4, 0px, 0px);
+            }
+        }
+        changed has-hover => {
+            if !self.has-hover {
+                GraphUi.view-pointer(4, 0px, 0px);
+            }
+        }
+        scroll-event(event) => {
+            if root.wide || event.modifiers.control {
+                GraphUi.view-zoom(event.delta-y > 0 ? 1.12 : 0.893);
+                return accept;
+            }
+            return reject;
+        }
+    }
+
+    // The names of the communities: over the middle of their stars, or under their planet.
+    for label in GraphUi.view-labels: Rectangle {
+        x: label.x - self.width / 2;
+        y: root.space ? label.y - self.height / 2 : label.y;
+        width: max(title.preferred-width, note.preferred-width) + 12px;
+        height: 30px;
+        opacity: label.alpha;
+        visible: label.alpha > 0.03;
+        title := Text {
+            y: 2px;
+            width: parent.width;
+            text: label.title;
+            font-size: 11px;
+            font-weight: 600;
+            color: name.has-hover ? root.ink : root.ink.with-alpha(0.92);
+            horizontal-alignment: center;
+        }
+        note := Text {
+            y: 16px;
+            width: parent.width;
+            text: label.note;
+            font-size: 9.5px;
+            color: root.ink.with-alpha(0.48);
+            horizontal-alignment: center;
+        }
+        name := TouchArea {
+            mouse-cursor: pointer;
+            clicked => {
+                GraphUi.view-focus-cluster(label.cluster);
+            }
+        }
+    }
+
+    // The project's name, under the hole or the sun; a click goes back to the home view.
+    Rectangle {
+        x: GraphUi.core-x - self.width / 2;
+        y: GraphUi.core-y;
+        width: core.preferred-width + 20px;
+        height: 22px;
+        border-radius: 11px;
+        opacity: GraphUi.core-alpha;
+        visible: GraphUi.core-alpha > 0.03 && GraphUi.view-title != "";
+        background: root.glass;
+        border-width: 1px;
+        border-color: root.rim;
+        core := Text {
+            text: GraphUi.view-title;
+            font-size: 10.5px;
+            font-weight: 500;
+            color: root.ink.with-alpha(0.82);
+            vertical-alignment: center;
+            horizontal-alignment: center;
+        }
+        TouchArea {
+            mouse-cursor: pointer;
+            clicked => {
+                GraphUi.view-reset();
+            }
+        }
+    }
+
+    // The chosen node's name beside it.
+    if GraphUi.view-selected >= 0: Rectangle {
+        x: clamp(GraphUi.sel-x + 12px, 6px, root.width - self.width - 6px);
+        y: clamp(GraphUi.sel-y - self.height - 8px, 6px, root.height - self.height - 6px);
+        width: min(chosen.preferred-width + 18px, 260px);
+        height: 24px;
+        border-radius: 8px;
+        background: root.glass;
+        border-width: 1px;
+        border-color: root.rim;
+        chosen := Text {
+            x: 9px;
+            width: parent.width - 18px;
+            text: GraphUi.sel-title;
+            font-size: 11px;
+            font-weight: 600;
+            color: root.ink;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+    }
+
+    // The node under the pointer.
+    if GraphUi.tip-shown: Rectangle {
+        x: clamp(GraphUi.tip-x + 14px, 6px, root.width - self.width - 6px);
+        y: clamp(GraphUi.tip-y + 12px, 6px, root.height - self.height - 6px);
+        width: min(max(tip.preferred-width, tip-note.preferred-width) + 20px, 300px);
+        height: 40px;
+        border-radius: 9px;
+        background: root.glass;
+        border-width: 1px;
+        border-color: root.rim;
+        tip := Text {
+            x: 10px;
+            y: 6px;
+            width: parent.width - 20px;
+            text: GraphUi.tip-title;
+            font-size: 11px;
+            font-weight: 600;
+            color: root.ink;
+            overflow: elide;
+        }
+        tip-note := Text {
+            x: 10px;
+            y: 21px;
+            width: parent.width - 20px;
+            text: GraphUi.tip-note;
+            font-size: 9.5px;
+            color: root.ink.with-alpha(0.55);
+            overflow: elide;
+        }
+    }
+
+    // Top left: what this is, or the way back from one community.
+    if GraphUi.view-focus < 0: VerticalLayout {
+        x: 16px;
+        y: 13px;
+        width: 320px;
+        height: 34px;
+        spacing: 2px;
+        Text {
+            text: GraphUi.view-title == "" ? "Graph" : GraphUi.view-title;
+            font-size: 12px;
+            font-weight: 600;
+            color: root.ink;
+            overflow: elide;
+        }
+        Text {
+            text: GraphUi.view-fps == "" ? GraphUi.view-note : GraphUi.view-note + " · " + GraphUi.view-fps;
+            font-size: 10px;
+            color: root.ink.with-alpha(0.45);
+            overflow: elide;
+        }
+    }
+    if GraphUi.view-focus >= 0: Chip {
+        x: 14px;
+        y: 12px;
+        text: "←  " + GraphUi.view-focus-name;
+        ink: root.ink;
+        glass: root.glass;
+        rim: root.rim;
+        clicked => {
+            GraphUi.view-focus-cluster(-1);
+        }
+    }
+
+    // Top middle: home.
+    Chip {
+        x: (root.width - self.width) / 2;
+        y: 12px;
+        text: "Home";
+        ink: root.ink;
+        glass: root.glass;
+        rim: root.rim;
+        clicked => {
+            GraphUi.list-open = false;
+            GraphUi.view-pick(-1);
+            GraphUi.view-reset();
+        }
+    }
+
+    // Top right: the two styles and the list of nodes.
+    HorizontalLayout {
+        x: root.width - self.preferred-width - 14px;
+        y: 12px;
+        width: self.preferred-width;
+        height: 26px;
+        spacing: 6px;
+        Chip {
+            text: "Simple";
+            ink: root.ink;
+            glass: root.glass;
+            rim: root.rim;
+            on: !root.space;
+            clicked => {
+                GraphUi.view-set-style("orbit");
+            }
+        }
+        Chip {
+            text: "Galaxy";
+            ink: root.ink;
+            glass: root.glass;
+            rim: root.rim;
+            on: root.space;
+            clicked => {
+                GraphUi.view-set-style("space");
+            }
+        }
+        Chip {
+            text: "Nodes";
+            ink: root.ink;
+            glass: root.glass;
+            rim: root.rim;
+            on: GraphUi.list-open;
+            clicked => {
+                GraphUi.list-open = !GraphUi.list-open;
+            }
+        }
+    }
+
+    // Bottom middle: zoom, home view, pause, fill the window.
+    GraphZoomBar {
+        x: (root.width - self.width) / 2;
+        y: root.height - self.height - 14px;
+        ink: root.ink;
+        glass: root.glass;
+        rim: root.rim;
+        wide: root.wide;
+    }
+
+    // Right: the list of nodes with a search box, or the chosen node and what it is linked to.
+    if root.panel: GraphPanel {
+        x: root.width - self.width - 12px;
+        y: 48px;
+        width: min(300px, root.width - 24px);
+        height: root.height - 60px;
+        ink: root.ink;
+        glass: root.glass;
+        rim: root.rim;
+        tone(i) => {
+            return root.tone(i);
+        }
+        focus-canvas => {
+            keys.focus();
+        }
+    }
+}

@@ -1,0 +1,17 @@
+// Composer dock of 9.2B round 3 (spec docs/specs/harness/phase-9-parity.md §7.4 "UI contract for 9.2B round 3"):
+// queue operations, mode / model / effort pickers and the typed error banner. The hub owns the queue, the
+// per-session choices and the failure; Rust (src/bridge/dock.rs) mirrors its events here. UI-local state is
+// only which menu is open, the drag preview and whether the failure details are expanded.
+
+import { Theme } from "../theme/tokens.slint";
+import { Icon, Icons, Button, IconButton, MenuShell, MenuItem, SectionLabel } from "../components/controls.slint";
+import { ProgressTrack } from "../panels/common.slint";
+import { OptionItem, MenuRule, OptionSection, MenuHeading, PickerMenu } from "./picker_menu.slint";
+export { OptionItem, MenuRule, OptionSection, MenuHeading, PickerMenu }
+import { PickerButton, OptionsButton, PickerBar } from "./picker_bar.slint";
+export { PickerButton, OptionsButton, PickerBar }
+import { FailureBanner, ResumeBanner } from "./dock_banners.slint";
+export { FailureBanner, ResumeBanner }
+import { OptionRow, DockUi } from "./dock_ui.slint";
+export { OptionRow, DockUi }
+

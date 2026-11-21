@@ -1,0 +1,309 @@
+// Orchestra live view (design frame "Orchestra · live", FigCraft): every running session (plus the open one) as an
+// Orchestrator node, each with one node per active subagent it delegated to (ChatUi.fleet, §9.8) joined by curved edges, a legend chip, zoom
+// control and minimap on a pannable canvas, and a detail panel for the picked subagent (Message / Stop).
+// Not shown until the hub exposes them: claimed paths, token counts, progress %, the full live log and the queue.
+import { Theme } from "../theme/tokens.slint";
+import { Icon, Icons, IconButton } from "../components/controls.slint";
+import { ChatUi, SubagentRow, FleetGroup } from "../chat/globals.slint";
+import { AgentTint } from "../panels/common.slint";
+import { AgentLogo, AgentMark } from "../components/agent_logo.slint";
+import { SettingsUi } from "../settings/globals.slint";
+import { ArtClock } from "../components/ascii.slint";
+import { LiveStatus, StatusPill, Avatar, Progress, LiveButton, Caps } from "./live_parts.slint";
+export { LiveStatus, StatusPill, Avatar, Progress, LiveButton, Caps }
+import { SubNode, SessionGroup } from "./live_session.slint";
+export { SubNode, SessionGroup }
+import { LiveHeader, LiveDetail } from "./live_panels.slint";
+
+export global OrchLiveUi {
+    in-out property <bool> open;
+}
+
+export component OrchestraLive inherits Rectangle {
+    in property <string> session-title;
+    in property <string> agent-id;
+    in property <string> agent-name;
+    in property <string> model-name;
+    in property <bool> session-running;
+    callback close();
+    callback delegate();
+    callback open-settings();
+
+    property <int> max-conc: max(1, SettingsUi.get-int("orchestra.maxConcurrent", SettingsUi.rev));
+    property <int> sel-g: 0;
+    property <int> sel-s: 0;
+    property <bool> detail: true;
+    property <bool> has-sel: root.detail && root.sel-g >= 0 && root.sel-g < ChatUi.fleet.length && root.sel-s >= 0 && root.sel-s < ChatUi.fleet[max(0, root.sel-g)].subagents.length;
+    property <SubagentRow> cur: ChatUi.fleet[max(0, root.sel-g)].subagents[max(0, root.sel-s)];
+    // Canvas view state.
+    property <float> zoom: 1.0;
+    property <length> pan-x: 0px;
+    property <length> pan-y: 0px;
+    property <length> press-x;
+    property <length> press-y;
+    property <length> start-x;
+    property <length> start-y;
+
+    background: Theme.canvas;
+    accessible-role: AccessibleRole.groupbox;
+    accessible-label: @tr("Orchestra");
+    TouchArea { }
+
+    // Elapsed clock while anything runs.
+    Timer {
+        interval: 1s;
+        running: ChatUi.fleet-running > 0;
+        triggered => {
+            ChatUi.subagent-action("tick", "");
+        }
+    }
+
+    VerticalLayout {
+        // Header (design: 56px, "Orchestra" 15 semibold | running pill; Auto-layout + Delegate task right).
+        LiveHeader {
+            max-conc: root.max-conc;
+            zoom <=> root.zoom;
+            pan-x <=> root.pan-x;
+            pan-y <=> root.pan-y;
+            close => {
+                root.close();
+            }
+            delegate => {
+                root.delegate();
+            }
+            open-settings => {
+                root.open-settings();
+            }
+        }
+        HorizontalLayout {
+            vertical-stretch: 1;
+            // ---- Canvas ----
+            canvas := Rectangle {
+                horizontal-stretch: 1;
+                clip: true;
+                // Pan by dragging the background; wheel zooms.
+                pan := TouchArea {
+                    mouse-cursor: self.pressed ? MouseCursor.grabbing : MouseCursor.default;
+                    pointer-event(e) => {
+                        if e.kind == PointerEventKind.down && e.button == PointerEventButton.left {
+                            root.press-x = self.mouse-x;
+                            root.press-y = self.mouse-y;
+                            root.start-x = root.pan-x;
+                            root.start-y = root.pan-y;
+                        }
+                    }
+                    moved => {
+                        if self.pressed {
+                            root.pan-x = root.start-x + self.mouse-x - root.press-x;
+                            root.pan-y = root.start-y + self.mouse-y - root.press-y;
+                        }
+                    }
+                    scroll-event(e) => {
+                        root.zoom = clamp(root.zoom + (e.delta-y > 0 ? 0.1 : -0.1), 0.5, 1.6);
+                        accept
+                    }
+                }
+                world := Rectangle {
+                    property <length> top: max(70px, (self.height - ChatUi.fleet-height * 1px) / 2);
+                    x: root.pan-x;
+                    y: root.pan-y;
+                    width: canvas.width;
+                    height: max(canvas.height, ChatUi.fleet-height * 1px + 140px);
+                    transform-scale: root.zoom;
+                    for g[gi] in ChatUi.fleet: SessionGroup {
+                        x: 38px;
+                        y: world.top + g.y * 1px;
+                        width: world.width - 38px;
+                        g: g;
+                        model-name: g.open ? root.model-name : "";
+                        sel: root.detail && gi == root.sel-g ? root.sel-s : -1;
+                        picked(i) => {
+                            root.sel-g = gi;
+                            root.sel-s = i;
+                            root.detail = true;
+                        }
+                        open-session => {
+                            ChatUi.subagent-action("open", g.id);
+                        }
+                    }
+                    if ChatUi.fleet.length == 0: Text {
+                        x: 38px;
+                        y: world.top;
+                        text: @tr("No session is running. Open or start a session to see it here.");
+                        font-size: 12px;
+                        color: Theme.foreground-subtlest;
+                    }
+                }
+                // Legend chip (design: top-left, #121317, 1px #24272D, r8).
+                Rectangle {
+                    x: 16px;
+                    y: 14px;
+                    height: 30px;
+                    width: lg.preferred-width + 24px;
+                    border-radius: 8px;
+                    background: Theme.card;
+                    border-width: 1px;
+                    border-color: Theme.border;
+                    lg := HorizontalLayout {
+                        x: 12px;
+                        width: self.preferred-width;
+                        spacing: 14px;
+                        HorizontalLayout {
+                            spacing: 5px;
+                            VerticalLayout {
+                                alignment: center;
+                                Rectangle {
+                                    width: 5px;
+                                    height: 5px;
+                                    border-radius: 2.5px;
+                                    background: Theme.success;
+                                }
+                            }
+                            Text {
+                                text: @tr("{0} running", ChatUi.fleet-running - ChatUi.fleet-waiting);
+                                font-size: 11px;
+                                color: Theme.muted;
+                                vertical-alignment: center;
+                            }
+                        }
+                        HorizontalLayout {
+                            spacing: 5px;
+                            VerticalLayout {
+                                alignment: center;
+                                Rectangle {
+                                    width: 5px;
+                                    height: 5px;
+                                    border-radius: 2.5px;
+                                    background: Theme.warning;
+                                }
+                            }
+                            Text {
+                                text: @tr("{0} waiting", ChatUi.fleet-waiting);
+                                font-size: 11px;
+                                color: Theme.muted;
+                                vertical-alignment: center;
+                            }
+                        }
+                        HorizontalLayout {
+                            spacing: 5px;
+                            VerticalLayout {
+                                alignment: center;
+                                Rectangle {
+                                    width: 5px;
+                                    height: 5px;
+                                    border-radius: 2.5px;
+                                    background: Theme.foreground-subtlest;
+                                }
+                            }
+                            Text {
+                                text: @tr("max {0} concurrent", root.max-conc);
+                                font-size: 11px;
+                                color: Theme.muted;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+                }
+                // Zoom (design: bottom-left "− 100% +").
+                Rectangle {
+                    x: 16px;
+                    y: parent.height - self.height - 16px;
+                    height: 26px;
+                    width: 82px;
+                    border-radius: 8px;
+                    background: Theme.card;
+                    border-width: 1px;
+                    border-color: Theme.border;
+                    HorizontalLayout {
+                        Rectangle {
+                            width: 22px;
+                            Text {
+                                text: "−";
+                                font-size: 12px;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                                color: zo.has-hover ? Theme.foreground : Theme.muted;
+                            }
+                            zo := TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => {
+                                    root.zoom = max(0.5, root.zoom - 0.1);
+                                }
+                            }
+                        }
+                        Text {
+                            horizontal-stretch: 1;
+                            text: round(root.zoom * 100) + "%";
+                            font-size: 10px;
+                            color: Theme.foreground-subtle;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                        Rectangle {
+                            width: 22px;
+                            Text {
+                                text: "+";
+                                font-size: 12px;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                                color: zi.has-hover ? Theme.foreground : Theme.muted;
+                            }
+                            zi := TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => {
+                                    root.zoom = min(1.6, root.zoom + 0.1);
+                                }
+                            }
+                        }
+                    }
+                }
+                // Minimap (design: bottom-right 140x80, nodes as blocks).
+                Rectangle {
+                    x: parent.width - self.width - 16px;
+                    y: parent.height - self.height - 16px;
+                    width: 140px;
+                    height: 80px;
+                    border-radius: 8px;
+                    background: Theme.card;
+                    border-width: 1px;
+                    border-color: Theme.border;
+                    clip: true;
+                    property <float> k: 0.1;
+                    for g[gi] in ChatUi.fleet: Rectangle {
+                        property <float> k: 64 / max(1, ChatUi.fleet-height);
+                        x: 10px;
+                        y: 8px + g.y * self.k * 1px;
+                        width: 120px;
+                        height: max(3px, g.height * self.k * 1px);
+                        Rectangle {
+                            x: 0;
+                            y: (parent.height - self.height) / 2;
+                            width: 24px;
+                            height: max(3px, min(parent.height, 196 * parent.k * 1px));
+                            border-radius: 2px;
+                            background: g.open ? Theme.accent-fg.with-alpha(0.4) : #2A2D3A;
+                        }
+                        for r[i] in g.subagents: Rectangle {
+                            property <length> step: parent.height / max(1, g.active);
+                            x: 48px;
+                            y: i * self.step;
+                            width: 32px;
+                            height: max(2px, self.step - 2px);
+                            border-radius: 2px;
+                            background: gi == root.sel-g && i == root.sel-s && root.detail ? Theme.accent-fg.with-alpha(0.55) : #2F3446;
+                        }
+                    }
+                }
+            }
+            // ---- Detail panel (design: 270 wide, left border) ----
+            if root.has-sel: LiveDetail {
+                cur: root.cur;
+                has-sel: root.has-sel;
+                detail <=> root.detail;
+                close => {
+                    root.close();
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,254 @@
+// First-run setup dialog (phase-9-parity.md §9.10): which agent CLIs and ACP adapters are installed, and one-click
+// install of the missing adapters with npm. State owner: src/setup.rs. Strings are English only.
+import { Theme } from "./theme/tokens.slint";
+import { Button, Tag, Divider, Dialog } from "./components/controls.slint";
+import { Pill, ProgressTrack, CapsHeader } from "./panels/common.slint";
+
+export struct SetupRow {
+    agent: string,
+    name: string,
+    cli: string,
+    cli-path: string,
+    package: string,
+    // 0 ready, 1 adapter missing, 2 CLI missing, 3 tool Harness can download
+    state: int,
+}
+
+export global SetupUi {
+    in-out property <bool> open;
+    in property <[SetupRow]> rows;
+    // Agent id of the running install ("" when idle).
+    in property <string> busy;
+    // npm (Node.js) found; when false `npm-steps` is shown and Install is disabled.
+    in property <bool> npm-ok: true;
+    in property <string> npm-steps;
+    // Last output lines of the running (or last) install, newest last.
+    in property <string> log;
+    in property <string> error;
+    // Something was installed in this dialog: the footer shows Done instead of Skip for now.
+    in property <bool> installed-any;
+    in property <bool> any-missing;
+    callback open-setup();
+    callback install(string);
+    callback install-missing();
+    callback close();
+}
+
+// One tool / agent row (frame 11): bordered card, round status badge, name 13 semibold + path 11 muted,
+// status pill or action button on the right, indeterminate 4px track while installing.
+component SetupRowView inherits Rectangle {
+    in property <SetupRow> item;
+    property <bool> busy: SetupUi.busy == root.item.agent;
+    property <color> tone: root.busy ? Theme.accent-fg : root.item.state == 0 ? Theme.success-surface-foreground : root.item.state == 1 ? Theme.warning-surface-foreground : root.item.state == 3 ? Theme.warning-surface-foreground : Theme.muted;
+    border-radius: Theme.radius-lg;
+    background: root.item.state == 0 ? Theme.surface : Theme.raised;
+    border-width: 1px;
+    border-color: root.item.state == 0 ? Theme.border : Theme.border-hover;
+    HorizontalLayout {
+        padding-left: 14px;
+        padding-right: 12px;
+        padding-top: 10px;
+        padding-bottom: 10px;
+        spacing: 12px;
+        Rectangle {
+            y: (parent.height - self.height) / 2;
+            width: 20px;
+            height: 20px;
+            border-radius: 10px;
+            background: root.tone.with-alpha(0.14);
+            Text {
+                text: root.item.state == 0 ? "✓" : root.item.state == 2 ? "–" : "!";
+                font-size: 11px;
+                font-weight: 700;
+                color: root.tone;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                accessible-role: none;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 1;
+            spacing: 3px;
+            HorizontalLayout {
+                spacing: 8px;
+                Text {
+                    text: root.item.name;
+                    font-size: 13px;
+                    font-weight: Theme.weight-semibold;
+                    color: Theme.foreground;
+                    overflow: elide;
+                    vertical-alignment: center;
+                }
+                if root.item.state != 0 && !root.busy: Pill {
+                    y: (parent.height - self.height) / 2;
+                    text: root.item.state == 1 ? "Adapter missing" : "Not found";
+                    tint: root.item.state == 2 ? Theme.muted : Theme.warning-surface-foreground;
+                }
+                Rectangle {
+                    horizontal-stretch: 1;
+                }
+            }
+            Text {
+                text: root.item.cli-path != "" ? root.item.cli-path : "CLI not found (" + root.item.cli + ")";
+                font-family: Theme.mono-font;
+                font-size: 11px;
+                color: Theme.muted;
+                overflow: elide;
+            }
+            if root.busy: VerticalLayout {
+                padding-top: 4px;
+                ProgressTrack {
+                    tint: Theme.accent-fg;
+                }
+            }
+        }
+        if root.item.state == 0 || root.busy: VerticalLayout {
+            alignment: center;
+            Pill {
+                text: root.busy ? "Installing…" : "Ready";
+                tint: root.busy ? Theme.accent-fg : Theme.success-surface-foreground;
+            }
+        }
+        if root.item.state == 3 && !root.busy: VerticalLayout {
+            alignment: center;
+            Button {
+                text: "Download & install";
+                label: "Install GitHub CLI";
+                size: "sm";
+                enabled: SetupUi.busy == "";
+                clicked => {
+                    SetupUi.install(root.item.agent);
+                }
+            }
+        }
+        if root.item.state == 1 && !root.busy: VerticalLayout {
+            alignment: center;
+            Button {
+                text: "Install";
+                label: "Install " + root.item.package;
+                size: "sm";
+                enabled: SetupUi.npm-ok && SetupUi.busy == "";
+                clicked => {
+                    SetupUi.install(root.item.agent);
+                }
+            }
+        }
+    }
+}
+
+export component SetupDialog inherits Dialog {
+    title: "Set up Harness";
+    close-label: "Close setup";
+    dialog-width: 600px;
+    close => {
+        SetupUi.close();
+    }
+    Text {
+        text: "Harness talks to Claude Code and Codex through small ACP adapters (npm packages). Install the CLIs yourself; Harness can install the missing adapters and download the GitHub CLI (gh) used by the Inbox and Board. Signing in to GitHub stays with you.";
+        font-size: 13px;
+        color: Theme.muted;
+        wrap: word-wrap;
+    }
+    CapsHeader {
+        height: 18px;
+        text: "Required tools";
+        count: SetupUi.any-missing ? "" : "· all ready";
+    }
+    VerticalLayout {
+        spacing: 8px;
+        for r in SetupUi.rows: SetupRowView {
+            item: r;
+        }
+    }
+    if !SetupUi.npm-ok: Rectangle {
+        border-radius: Theme.radius-md;
+        background: Theme.warning-surface;
+        border-width: 1px;
+        border-color: Theme.warning-surface-foreground.with-alpha(0.3);
+        VerticalLayout {
+            padding: 10px;
+            padding-left: 12px;
+            Text {
+                text: SetupUi.npm-steps;
+                accessible-label: SetupUi.npm-steps;
+                font-size: 12px;
+                color: Theme.warning-surface-foreground;
+                wrap: word-wrap;
+            }
+        }
+    }
+    if SetupUi.log != "": Rectangle {
+        border-radius: Theme.radius-md;
+        background: Theme.card;
+        border-width: 1px;
+        border-color: Theme.border;
+        VerticalLayout {
+            padding: 10px;
+            Text {
+                text: SetupUi.log;
+                accessible-label: "Install output";
+                font-family: Theme.mono-font;
+                font-size: 11px;
+                color: Theme.muted;
+                wrap: word-wrap;
+            }
+        }
+    }
+    if SetupUi.error != "": Text {
+        text: SetupUi.error;
+        font-size: 12px;
+        color: Theme.destructive-surface-foreground;
+        wrap: word-wrap;
+    }
+    Rectangle {
+        height: 40px;
+        border-radius: Theme.radius-md;
+        background: Theme.info-surface;
+        HorizontalLayout {
+            padding-left: 12px;
+            padding-right: 12px;
+            spacing: 8px;
+            Text {
+                text: "ⓘ";
+                font-size: 12px;
+                color: Theme.info;
+                vertical-alignment: center;
+            }
+            Text {
+                text: "You can re-run this check any time from Settings › Agents › Set up agents…";
+                font-size: 12px;
+                color: Theme.foreground-subtle;
+                vertical-alignment: center;
+                overflow: elide;
+                horizontal-stretch: 1;
+            }
+        }
+    }
+    Divider { }
+    HorizontalLayout {
+        spacing: 8px;
+        alignment: end;
+        if !SetupUi.installed-any: Button {
+            text: "Skip for now";
+            variant: "ghost";
+            clicked => {
+                SetupUi.close();
+            }
+        }
+        if SetupUi.installed-any: Button {
+            text: "Done";
+            clicked => {
+                SetupUi.close();
+            }
+        }
+        Button {
+            text: "Install missing";
+            variant: "primary";
+            enabled: SetupUi.busy == "" && SetupUi.any-missing;
+            clicked => {
+                SetupUi.install-missing();
+            }
+        }
+    }
+}

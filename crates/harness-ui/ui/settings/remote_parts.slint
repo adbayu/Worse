@@ -1,0 +1,162 @@
+import { Theme } from "../theme/tokens.slint";
+import { Divider } from "../components/controls.slint";
+import { SettingRow, Switch, TextField } from "parts.slint";
+import { SettingsUi } from "globals.slint";
+
+export global RemoteLook {
+    out property <color> danger: Theme.destructive;
+    out property <color> offline: #3A3E45;
+}
+
+// Card (design S5: #111215, 1px #24272D, radius 12; header 40 tall pad [14,16,10,16], 13 title + 11 caps note).
+export component RCard inherits Rectangle {
+    in property <string> title;
+    in property <string> note;
+    background: Theme.card;
+    border-radius: 12px;
+    border-width: 1px;
+    border-color: Theme.border;
+    clip: true;
+    VerticalLayout {
+        HorizontalLayout {
+            padding-top: 14px;
+            padding-bottom: 10px;
+            padding-left: 16px;
+            padding-right: 16px;
+            Text {
+                text: root.title;
+                font-size: 13px;
+                font-weight: Theme.weight-semibold;
+                color: Theme.foreground;
+                vertical-alignment: center;
+                horizontal-stretch: 1;
+            }
+            Text {
+                text: root.note;
+                font-size: 11px;
+                color: Theme.caps-label;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+        }
+        @children
+    }
+}
+
+export component Sep inherits Rectangle {
+    height: 1px;
+    background: Theme.border;
+}
+
+// Raised button (design: pad [7,12], #1C1F24, 1px #2A2D33, radius 8, 12px text); `danger` = red tint.
+export component RButton inherits Rectangle {
+    in property <string> text;
+    in property <bool> danger: false;
+    in property <bool> enabled: true;
+    callback clicked;
+    height: root.danger ? 29px : 31px;
+    horizontal-stretch: 0;
+    border-radius: 8px;
+    background: root.danger ? RemoteLook.danger.with-alpha(ta.has-hover ? 0.2 : 0.12) : (ta.has-hover && root.enabled ? Theme.border-hover : Theme.raised);
+    border-width: 1px;
+    border-color: root.danger ? RemoteLook.danger.with-alpha(0.45) : Theme.border-hover;
+    opacity: root.enabled ? 1 : 0.5;
+    animate background { duration: Theme.dur-hover; }
+    accessible-role: button;
+    accessible-label: root.text;
+    accessible-enabled: root.enabled;
+    accessible-action-default => {
+        if root.enabled {
+            root.clicked();
+        }
+    }
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        Text {
+            text: root.text;
+            font-size: 12px;
+            font-weight: Theme.weight-medium;
+            color: root.danger ? RemoteLook.danger : Theme.foreground;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            accessible-role: none;
+        }
+    }
+    ta := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+export component ToggleRow inherits HorizontalLayout {
+    in property <string> title;
+    in property <string> description;
+    padding-top: 14px;
+    padding-bottom: 14px;
+    padding-left: 16px;
+    padding-right: 16px;
+    spacing: 16px;
+    VerticalLayout {
+        spacing: 3px;
+        horizontal-stretch: 1;
+        alignment: center;
+        Text {
+            text: root.title;
+            font-size: 13px;
+            color: Theme.foreground;
+        }
+        Text {
+            text: root.description;
+            font-size: 12px;
+            color: Theme.muted;
+            wrap: word-wrap;
+        }
+    }
+    VerticalLayout {
+        alignment: center;
+        @children
+    }
+}
+
+export component FieldRow inherits SettingRow {
+    in property <string> key;
+    in property <string> placeholder;
+    in property <bool> numeric: false;
+    property <string> stored: SettingsUi.get-string(root.key, SettingsUi.rev);
+    below: true;
+    HorizontalLayout {
+        spacing: 8px;
+        field := TextField {
+            text: root.stored;
+            label: root.title;
+            placeholder: root.placeholder;
+            mono: true;
+            accepted(value) => {
+                root.save(value);
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            RButton {
+                text: @tr("Save");
+                enabled: field.text != root.stored && (!root.numeric || field.text.is-float());
+                clicked => {
+                    root.save(field.text);
+                }
+            }
+        }
+    }
+    function save(value: string) {
+        if root.numeric {
+            if value.is-float() {
+                SettingsUi.set-int(root.key, value.to-float());
+            }
+        } else {
+            SettingsUi.set-string(root.key, value);
+        }
+    }
+}

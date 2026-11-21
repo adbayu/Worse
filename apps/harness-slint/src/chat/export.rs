@@ -6,6 +6,10 @@ use pulldown_cmark::{CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, T
 
 use crate::bridge::TranscriptRow;
 
+mod formats;
+
+pub use formats::formatter_for;
+
 /// File-name stem from a session title: ASCII letters/digits and `-`, at most 48 chars.
 pub fn slug(title: &str) -> String {
     let mut out = String::new();

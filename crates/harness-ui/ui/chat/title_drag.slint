@@ -1,0 +1,33 @@
+
+
+export component TitleDrag inherits TouchArea {
+    in property <bool> maximized;
+    in property <length> bar-width: 1px;
+    callback action(string);
+    property <bool> dragging;
+    // 修复：旧实现只看 pointer-event 并用 event.button 过滤，而 Slint 只在按下时把 button 设成 left，
+    // 移动/拖动事件的 button 是 other，于是“拖动已最大化窗口”永远到不了 drag-restore。位移判断改为
+    // 复用 TouchArea 的 moved 回调（按住期间持续触发）+ pointer-event 的非按下分支双保险。
+    function check-drag() {
+        if (self.pressed && root.maximized && !root.dragging) {
+            if (abs(self.mouse-x - self.pressed-x) > 4px || abs(self.mouse-y - self.pressed-y) > 4px) {
+                root.dragging = true;
+                // x as per-mille of the title bar width, y (physical px) from the window top.
+                root.action("drag-restore:" + round((self.absolute-position.x + self.mouse-x) * 1000 / root.bar-width) + ":" + round((self.absolute-position.y + self.mouse-y) / 1px));
+            }
+        }
+    }
+    moved => {
+        root.check-drag();
+    }
+    pointer-event(event) => {
+        if (event.kind == PointerEventKind.down) {
+            if (event.button == PointerEventButton.left) {
+                root.dragging = false;
+                root.action("drag");
+            }
+        } else if (event.kind != PointerEventKind.up && event.kind != PointerEventKind.cancel) {
+            root.check-drag();
+        }
+    }
+}

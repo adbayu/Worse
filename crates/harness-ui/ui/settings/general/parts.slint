@@ -1,0 +1,289 @@
+import { Theme } from "../../theme/tokens.slint";
+import { Look } from "../../theme/look.slint";
+import { ThinkGlyph, GlyphAnim, AsciiArt } from "../../components/ascii.slint";
+import { Button } from "../../components/controls.slint";
+import { SettingsUi } from "../globals.slint";
+import { PageHeader, Group, SettingRow, Switch, TextField, Stepper, RangeSlider, Select, SetButton, Pill, SegmentedControl, CapsLabel, Dot } from "../parts.slint";
+
+export component BoolRow inherits SettingRow {
+    in property <string> key;
+    Switch {
+        label: root.title;
+        checked: SettingsUi.get-bool(root.key, SettingsUi.rev);
+        toggled(on) => {
+            SettingsUi.set-bool(root.key, on);
+        }
+    }
+}
+
+export component TextRow inherits SettingRow {
+    in property <string> key;
+    in property <string> placeholder;
+    in property <bool> mono: false;
+    property <string> stored: SettingsUi.get-string(root.key, SettingsUi.rev);
+    below: true;
+    HorizontalLayout {
+        spacing: 8px;
+        field := TextField {
+            text: root.stored;
+            label: root.title;
+            placeholder: root.placeholder;
+            mono: root.mono;
+            accepted(value) => {
+                SettingsUi.set-string(root.key, value);
+            }
+        }
+        SetButton {
+            text: @tr("Save");
+            label: @tr("Save {0}", root.title);
+            enabled: field.text != root.stored;
+            clicked => {
+                SettingsUi.set-string(root.key, field.text);
+            }
+        }
+    }
+}
+
+export component SectionCaps inherits HorizontalLayout {
+    in property <string> text;
+    padding-top: 6px;
+    CapsLabel {
+        text: root.text;
+    }
+}
+
+export component MockLine inherits Rectangle {
+    in property <color> tint;
+    height: 6px;
+    border-radius: 3px;
+    background: root.tint;
+}
+
+export component ThemeOption inherits Rectangle {
+    in property <string> title;
+    in property <bool> selected;
+    // 0 = split (System), 1 = dark, 2 = light.
+    in property <int> kind;
+    callback picked;
+    horizontal-stretch: 1;
+    min-width: 150px;
+    height: 157px;
+    border-radius: 10px;
+    background: Theme.surface;
+    border-width: 1px;
+    border-color: root.selected ? Theme.accent-fg : (ta.has-hover ? Theme.border-hover : Theme.border);
+    animate border-color { duration: Theme.dur-hover; }
+    accessible-role: radio-button;
+    accessible-label: root.title;
+    accessible-checked: root.selected;
+    accessible-action-default => {
+        root.picked();
+    }
+    VerticalLayout {
+        padding: 10px;
+        spacing: 8px;
+        Rectangle {
+            height: 110px;
+            border-radius: 6px;
+            clip: true;
+            background: root.kind == 2 ? #f3f2ee : #08090a;
+            if root.kind != 0: HorizontalLayout {
+                Rectangle {
+                    width: 34px;
+                    background: root.kind == 2 ? #e7e5df : #131416;
+                }
+                VerticalLayout {
+                    padding-top: 18px;
+                    padding-left: 12px;
+                    padding-right: 12px;
+                    spacing: 8px;
+                    alignment: start;
+                    HorizontalLayout { alignment: start; MockLine { width: 150px; tint: root.kind == 2 ? #d5d3cc : #2c2d31; } }
+                    HorizontalLayout { alignment: start; MockLine { width: 110px; tint: root.kind == 2 ? #d5d3cc : #2c2d31; } }
+                    HorizontalLayout { alignment: start; MockLine { width: 70px; tint: root.kind == 2 ? #d5d3cc : #2c2d31; } }
+                }
+            }
+            if root.kind == 0: HorizontalLayout {
+                Rectangle {
+                    background: #08090a;
+                    HorizontalLayout {
+                        Rectangle { width: 16px; background: #131416; }
+                        VerticalLayout {
+                            padding-top: 14px;
+                            padding-left: 10px;
+                            padding-right: 10px;
+                            spacing: 6px;
+                            alignment: start;
+                            HorizontalLayout { alignment: start; MockLine { width: 78px; height: 5px; tint: #2c2d31; } }
+                            HorizontalLayout { alignment: start; MockLine { width: 58px; height: 5px; tint: #2c2d31; } }
+                            HorizontalLayout { alignment: start; MockLine { width: 36px; height: 5px; tint: #2c2d31; } }
+                        }
+                    }
+                }
+                Rectangle {
+                    background: #f3f2ee;
+                    HorizontalLayout {
+                        Rectangle { width: 16px; background: #e7e5df; }
+                        VerticalLayout {
+                            padding-top: 14px;
+                            padding-left: 10px;
+                            padding-right: 10px;
+                            spacing: 6px;
+                            alignment: start;
+                            HorizontalLayout { alignment: start; MockLine { width: 78px; height: 5px; tint: #d5d3cc; } }
+                            HorizontalLayout { alignment: start; MockLine { width: 58px; height: 5px; tint: #d5d3cc; } }
+                            HorizontalLayout { alignment: start; MockLine { width: 36px; height: 5px; tint: #d5d3cc; } }
+                        }
+                    }
+                }
+            }
+        }
+        Text {
+            text: root.title;
+            font-size: Theme.ui-sm;
+            color: root.selected ? Theme.foreground : Theme.muted;
+            accessible-role: none;
+        }
+    }
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.picked();
+        }
+    }
+}
+
+export component Swatch inherits Rectangle {
+    in property <color> tint;
+    in property <string> hex;
+    in property <bool> selected;
+    callback picked;
+    width: 22px;
+    height: 22px;
+    border-radius: 11px;
+    background: root.tint;
+    border-width: root.selected ? 2px : 0px;
+    border-color: Theme.foreground;
+    accessible-role: radio-button;
+    accessible-label: root.hex;
+    accessible-checked: root.selected;
+    accessible-action-default => {
+        root.picked();
+    }
+    TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.picked();
+        }
+    }
+}
+
+export component ThinkTile inherits Rectangle {
+    in property <string> title;
+    // Index into AsciiArt.think; -1 = shuffle (the tile walks through all of them).
+    in property <int> index;
+    in property <bool> selected;
+    callback picked;
+    property <int> walk;
+    horizontal-stretch: 1;
+    min-width: 64px;
+    height: 66px;
+    border-radius: 10px;
+    background: tta.has-hover ? Theme.surface-hover : Theme.surface;
+    border-width: 1px;
+    border-color: root.selected ? Theme.accent-fg : (tta.has-hover ? Theme.border-hover : Theme.border);
+    animate border-color, background { duration: Theme.dur-hover; }
+    accessible-role: radio-button;
+    accessible-label: root.title;
+    accessible-checked: root.selected;
+    accessible-action-default => {
+        root.picked();
+    }
+    Timer {
+        interval: 1.6s;
+        running: root.index < 0 && !Theme.reduce-motion;
+        triggered => {
+            root.walk = mod(root.walk + 1, AsciiArt.think.length);
+        }
+    }
+    Rectangle {
+        y: 8px;
+        height: 30px;
+        ThinkGlyph {
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            index: root.index < 0 ? root.walk : root.index;
+            clocked: false;
+            ink: root.selected ? Theme.foreground : Theme.foreground-subtle;
+        }
+    }
+    Text {
+        y: parent.height - self.height - 9px;
+        width: parent.width;
+        text: root.title;
+        font-size: Theme.ui-xs + 1px;
+        color: root.selected ? Theme.foreground : Theme.foreground-subtle;
+        horizontal-alignment: center;
+        overflow: elide;
+    }
+    tta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.picked();
+        }
+    }
+}
+
+export component FieldTile inherits Rectangle {
+    in property <string> title;
+    in property <string> id;
+    in property <bool> selected;
+    callback picked;
+    horizontal-stretch: 1;
+    min-width: 64px;
+    height: 80px;
+    border-radius: 10px;
+    background: fta.has-hover ? Theme.surface-hover : Theme.surface;
+    border-width: 1px;
+    border-color: root.selected ? Theme.accent-fg : (fta.has-hover ? Theme.border-hover : Theme.border);
+    animate border-color, background { duration: Theme.dur-hover; }
+    accessible-role: radio-button;
+    accessible-label: root.title;
+    accessible-checked: root.selected;
+    accessible-action-default => {
+        root.picked();
+    }
+    Rectangle {
+        x: 8px;
+        y: 8px;
+        width: parent.width - 16px;
+        height: 42px;
+        border-radius: 6px;
+        background: Theme.canvas;
+        clip: true;
+        if root.id != "none": GlyphAnim {
+            x: 5px;
+            y: -3px;
+            frames: root.id == "rain" ? AsciiArt.rain-left[0] : root.id == "stars" ? AsciiArt.stars-left[0] : root.id == "circuit" ? AsciiArt.circuit-left[0] : AsciiArt.field-left[0];
+            interval: root.id == "rain" ? 130ms : root.id == "circuit" ? 195ms : root.id == "stars" ? 325ms : 455ms;
+            font-size: 8px;
+            letter-spacing: 5px;
+            color: Theme.foreground.with-alpha(root.selected ? 0.6 : 0.4);
+        }
+    }
+    Text {
+        y: parent.height - self.height - 9px;
+        width: parent.width;
+        text: root.title;
+        font-size: Theme.ui-xs + 1px;
+        color: root.selected ? Theme.foreground : Theme.foreground-subtle;
+        horizontal-alignment: center;
+        overflow: elide;
+    }
+    fta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.picked();
+        }
+    }
+}

@@ -27,6 +27,13 @@ pub enum ErrorDialect {
     Generic,
 }
 
+/// Extra launch data of the code mode variant of an agent, appended to the normal launch.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CodeModeLaunch {
+    pub env: Vec<(String, String)>,
+    pub args: Vec<String>,
+}
+
 /// One configured agent. `Debug` prints env names only (values may be API keys, §9.7).
 #[derive(Clone)]
 pub struct AgentSpec {
@@ -74,58 +81,64 @@ impl AgentSpec {
     pub fn classify_error(&self, info: &AgentErrorInfo) -> ErrorClass {
         classify_generic(info, self.dialect)
     }
+
+    /// Launch data of the code mode variant of this agent, `None` when the agent has no code mode.
+    #[must_use]
+    pub fn code_mode_launch(&self) -> Option<CodeModeLaunch> {
+        match self.dialect {
+            ErrorDialect::ClaudeCode => Some(CodeModeLaunch {
+                env: vec![(ENV_CLAUDE_CODE_MODE.into(), "on".into())],
+                args: Vec::new(),
+            }),
+            ErrorDialect::Codex => Some(CodeModeLaunch {
+                env: Vec::new(),
+                args: vec!["-c".into(), "features.code_mode=true".into()],
+            }),
+            ErrorDialect::Agy => None,
+            ErrorDialect::Generic => self
+                .args
+                .iter()
+                .any(|arg| arg == crate::helpers::FLAG_API_AGENT)
+                .then(|| CodeModeLaunch {
+                    env: vec![(ENV_HARNESS_CODE_MODE.into(), "1".into())],
+                    args: Vec::new(),
+                }),
+        }
+    }
 }
 
-/// Built-in agents in default failover order: Claude Code, Codex, agy, Command Code.
+/// Opt-in switch of the native code mode of [CC].
+pub const ENV_CLAUDE_CODE_MODE: &str = "CLAUDE_CODE_EXPERIMENTAL_CODE_MODE";
+/// Switch read by the Harness API agent helper (`<exe> --api-agent`).
+pub const ENV_HARNESS_CODE_MODE: &str = "HARNESS_CODE_MODE";
+
+/// Built-in agents in default failover order, from `harness-config` `assets/agents.toml`.
 #[must_use]
 pub fn builtin_agents() -> Vec<AgentSpec> {
-    vec![
-        AgentSpec {
-            id: AgentId::new("claude-code"),
-            display_name: "Claude Code".into(),
-            // 修复：@zed-industries/claude-code-acp 已弃用并改名为 @agentclientprotocol/claude-agent-acp（bin 为 claude-agent-acp）。
-            program: "claude-agent-acp".into(),
-            args: Vec::new(),
+    harness_config::builtin_agents()
+        .into_iter()
+        .map(|agent| AgentSpec {
+            id: AgentId::new(agent.id),
+            display_name: agent.display_name,
+            program: agent.program,
+            args: agent.args,
             env: Vec::new(),
-            install_hint: "install the ACP adapter: npm i -g @agentclientprotocol/claude-agent-acp (uses your `claude` login)".into(),
+            install_hint: agent.install_hint,
             transport: Transport::Acp,
-            dialect: ErrorDialect::ClaudeCode,
-        },
-        AgentSpec {
-            id: AgentId::new("codex"),
-            display_name: "Codex".into(),
-            // 修复：@zed-industries/codex-acp 已弃用，改由 @agentclientprotocol/codex-acp 提供（bin 名不变）。
-            program: "codex-acp".into(),
-            args: Vec::new(),
-            env: Vec::new(),
-            install_hint: "install the ACP adapter: npm i -g @agentclientprotocol/codex-acp (uses your `codex` login)".into(),
-            transport: Transport::Acp,
-            dialect: ErrorDialect::Codex,
-        },
-        AgentSpec {
-            id: AgentId::new("agy"),
-            display_name: "Antigravity (agy)".into(),
-            program: "agy".into(),
-            // agy 1.5.x: ACP 是子命令 `agy acp`，旧的 `--acp` 参数会让进程直接退出（-32099）。
-            args: vec!["acp".into()],
-            env: Vec::new(),
-            install_hint: "install the Antigravity CLI (agy) and sign in by running `agy`; Harness starts it as `agy acp`".into(),
-            transport: Transport::Acp,
-            dialect: ErrorDialect::Agy,
-        },
-        AgentSpec {
-            id: AgentId::new(COMMAND_CODE),
-            display_name: "Command Code".into(),
-            // The CLI speaks ACP itself (`command-code acp`, checked with 1.89.2). The npm package also
-            // installs `cmd`, but that name is the Windows shell, so the long name is used everywhere.
-            program: "command-code".into(),
-            args: vec!["acp".into()],
-            env: Vec::new(),
-            install_hint: "install Command Code: npm i -g command-code, then sign in with `command-code login`, or add API keys under Settings › Agents › API providers".into(),
-            transport: Transport::Acp,
-            dialect: ErrorDialect::Generic,
-        },
-    ]
+            dialect: agent.dialect.into(),
+        })
+        .collect()
+}
+
+impl From<harness_config::Dialect> for ErrorDialect {
+    fn from(dialect: harness_config::Dialect) -> Self {
+        match dialect {
+            harness_config::Dialect::ClaudeCode => Self::ClaudeCode,
+            harness_config::Dialect::Codex => Self::Codex,
+            harness_config::Dialect::Agy => Self::Agy,
+            harness_config::Dialect::Generic => Self::Generic,
+        }
+    }
 }
 
 /// Agent id of the built-in Command Code agent (the one that uses the CLI's own login).
@@ -169,4 +182,59 @@ pub fn resolve_program(program: &str) -> Option<PathBuf> {
         }
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used)]
+    use super::*;
+
+    fn builtin(id: &str) -> AgentSpec {
+        builtin_agents()
+            .into_iter()
+            .find(|a| a.id.as_str() == id)
+            .unwrap()
+    }
+
+    #[test]
+    fn claude_code_has_a_code_mode_variant() {
+        let launch = builtin("claude-code").code_mode_launch().unwrap();
+        assert_eq!(
+            launch.env,
+            [(ENV_CLAUDE_CODE_MODE.to_owned(), "on".to_owned())]
+        );
+        assert_eq!(launch.args.len(), 0);
+    }
+
+    #[test]
+    fn codex_has_a_code_mode_variant() {
+        let launch = builtin("codex").code_mode_launch().unwrap();
+        assert_eq!(launch.args, ["-c", "features.code_mode=true"]);
+        assert_eq!(launch.env.len(), 0);
+    }
+
+    #[test]
+    fn agy_and_command_code_have_no_code_mode_variant() {
+        assert!(builtin("agy").code_mode_launch().is_none());
+        assert!(builtin(COMMAND_CODE).code_mode_launch().is_none());
+    }
+
+    #[test]
+    fn an_api_agent_gets_the_harness_switch() {
+        let spec = AgentSpec {
+            id: AgentId::new("deepseek"),
+            display_name: "DeepSeek (API)".into(),
+            program: "harness-slint".into(),
+            args: vec![crate::helpers::FLAG_API_AGENT.into()],
+            env: Vec::new(),
+            install_hint: String::new(),
+            transport: Transport::Acp,
+            dialect: ErrorDialect::Generic,
+        };
+        let launch = spec.code_mode_launch().unwrap();
+        assert_eq!(
+            launch.env,
+            [(ENV_HARNESS_CODE_MODE.to_owned(), "1".to_owned())]
+        );
+    }
 }

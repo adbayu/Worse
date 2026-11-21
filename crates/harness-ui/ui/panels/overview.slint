@@ -1,0 +1,269 @@
+import { ScrollView } from "std-widgets.slint";
+import { Theme } from "../theme/tokens.slint";
+import { Icon, Icons, Divider } from "../components/controls.slint";
+import { ChatUi, OutputRow } from "../chat/globals.slint";
+import { SubagentList, BackgroundTaskList } from "../chat/turns.slint";
+import { PanelGit, PanelNav } from "globals.slint";
+import { SectionHeader, InfoRow, LegendRow, OutputItem } from "./overview_parts.slint";
+export { SectionHeader, InfoRow, LegendRow, OutputItem }
+
+export component OverviewPanel inherits Rectangle {
+    in property <string> workspace;
+    property <float> used: ChatUi.usage-known ? clamp(ChatUi.usage-ratio, 0, 1) : 0;
+    init => {
+        PanelGit.refresh();
+    }
+    ScrollView {
+        VerticalLayout {
+            padding: 16px;
+            padding-top: 12px;
+            spacing: 14px;
+            alignment: start;
+            VerticalLayout {
+                spacing: 2px;
+                SectionHeader {
+                    text: "Environment";
+                    collapsible: false;
+                }
+                InfoRow {
+                    icon: Icons.monitor;
+                    text: "Local";
+                }
+                if root.workspace != "": InfoRow {
+                    icon: Icons.folder;
+                    text: root.workspace;
+                }
+                if root.workspace != "" && PanelGit.is-repo && PanelGit.branch != "": InfoRow {
+                    icon: Icons.git-branch;
+                    text: PanelGit.branch + (PanelGit.sync != "" ? "  " + PanelGit.sync : "");
+                }
+                if ChatUi.worktree-branch != "": InfoRow {
+                    icon: Icons.git-fork;
+                    text: "Worktree  " + ChatUi.worktree-branch;
+                }
+                if ChatUi.worktree-path != "": InfoRow {
+                    icon: Icons.folder;
+                    text: ChatUi.worktree-path;
+                }
+            }
+            Rectangle {
+                height: 1px;
+                background: Theme.section-line;
+            }
+            VerticalLayout {
+                spacing: 4px;
+                ctx := SectionHeader {
+                    text: "Context";
+                    open: true;
+                    detail: !ChatUi.usage-known ? "" : ctx.open ? ChatUi.usage-text : round(root.used * 100) + "%";
+                    bar: ctx.open || !ChatUi.usage-known ? -1 : root.used;
+                }
+                if ChatUi.session-cost != "": Text {
+                    text: ChatUi.session-cost;
+                    font-size: Theme.ui-sm;
+                    color: Theme.foreground-subtle;
+                    wrap: word-wrap;
+                }
+                if ctx.open && !ChatUi.usage-known: Text {
+                    text: "Not reported yet. The agent reports context usage after its first reply.";
+                    font-size: Theme.ui-sm;
+                    color: Theme.foreground-subtle;
+                    wrap: word-wrap;
+                }
+                if ctx.open && ChatUi.usage-known: VerticalLayout {
+                    spacing: 10px;
+                    bar := Rectangle {
+                        height: 6px;
+                        border-radius: 3px;
+                        clip: true;
+                        background: ChatUi.usage-tone(7);
+                        for part in ChatUi.usage-parts: Rectangle {
+                            x: bar.width * part.start;
+                            width: max(part.share > 0 ? 1px : 0px, bar.width * part.share - (part.tone == 7 ? 0px : 1px));
+                            height: bar.height;
+                            background: ChatUi.usage-tone(part.tone);
+                        }
+                    }
+                    VerticalLayout {
+                        spacing: 0px;
+                        for part in ChatUi.usage-parts: LegendRow {
+                            swatch: ChatUi.usage-tone(part.tone);
+                            label: part.label;
+                            amount: part.amount;
+                            share: part.share;
+                        }
+                    }
+
+                }
+            }
+            Rectangle {
+                height: 1px;
+                background: Theme.section-line;
+            }
+            VerticalLayout {
+                spacing: 2px;
+                outs := SectionHeader {
+                    text: "Outputs";
+                    open: false;
+                    detail: ChatUi.outputs.length > 0 ? ChatUi.outputs.length + "" : "";
+                }
+                if outs.open && ChatUi.outputs.length == 0: Text {
+                    text: "Files the agent changes in this session show here.";
+                    font-size: Theme.ui-sm;
+                    color: Theme.foreground-subtle;
+                    wrap: word-wrap;
+                }
+                if outs.open: VerticalLayout {
+                    spacing: 0px;
+                    for o in ChatUi.outputs: OutputItem {
+                        item: o;
+                    }
+                }
+            }
+            if PanelGit.is-repo: Rectangle {
+                height: 1px;
+                background: Theme.section-line;
+            }
+            if PanelGit.is-repo: VerticalLayout {
+                spacing: 4px;
+                SectionHeader {
+                    text: "Changes";
+                    collapsible: false;
+                }
+                HorizontalLayout {
+                    height: 30px;
+                    spacing: 8px;
+                    Icon {
+                        y: (parent.height - self.height) / 2;
+                        source: Icons.file-diff;
+                        size: Theme.icon-sm;
+                        tint: Theme.icon-subtle;
+                    }
+                    if PanelGit.staged.length + PanelGit.unstaged.length == 0: Text {
+                        text: "No changes";
+                        font-size: Theme.ui-sm;
+                        color: Theme.foreground-subtle;
+                        vertical-alignment: center;
+                    }
+                    if PanelGit.staged.length + PanelGit.unstaged.length > 0: Text {
+                        text: "+" + PanelGit.total-added;
+                        font-size: 12px;
+                        font-weight: Theme.weight-medium;
+                        color: Theme.success-surface-foreground;
+                        vertical-alignment: center;
+                    }
+                    if PanelGit.staged.length + PanelGit.unstaged.length > 0: Text {
+                        text: "−" + PanelGit.total-removed;
+                        font-size: 12px;
+                        font-weight: Theme.weight-medium;
+                        color: Theme.destructive-surface-foreground;
+                        vertical-alignment: center;
+                    }
+                    Rectangle {
+                        horizontal-stretch: 1;
+                    }
+                    Rectangle {
+                        y: (parent.height - self.height) / 2;
+                        width: rv.preferred-width + 20px;
+                        height: 26px;
+                        border-radius: Theme.radius-md;
+                        background: rta.has-hover ? Theme.surface-hover : Theme.raised;
+                        border-width: 1px;
+                        border-color: Theme.border-hover;
+                        accessible-role: button;
+                        accessible-label: "Review changes";
+                        accessible-action-default => {
+                            PanelNav.open-tab("diff");
+                        }
+                        rv := Text {
+                            text: "Review";
+                            font-size: 12px;
+                            font-weight: Theme.weight-medium;
+                            color: Theme.foreground;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                        rta := TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => {
+                                PanelNav.open-tab("diff");
+                            }
+                        }
+                    }
+                }
+            }
+            if ChatUi.subagents.length > 0 || ChatUi.background-tasks.length > 0: Rectangle {
+                height: 1px;
+                background: Theme.section-line;
+            }
+            if ChatUi.subagents.length > 0: VerticalLayout {
+                spacing: 6px;
+                sub := SectionHeader {
+                    text: "Subagents";
+                    open: true;
+                    detail: ChatUi.subagents-running + " / " + ChatUi.subagents.length;
+                }
+                // Running only by default; a small pill toggles the finished subagents in and out.
+                if sub.open && ChatUi.subagents.length > ChatUi.subagents-active.length: HorizontalLayout {
+                    height: 24px;
+                    spacing: 8px;
+                    Text {
+                        text: ChatUi.subagents-show-all
+                            ? @tr("All {0} subagents", ChatUi.subagents.length)
+                            : ChatUi.subagents-active.length > 0
+                                ? @tr("{0} running · {1} finished hidden", ChatUi.subagents-active.length, ChatUi.subagents.length - ChatUi.subagents-active.length)
+                                : @tr("Nothing running · {0} finished", ChatUi.subagents.length);
+                        font-size: 11px;
+                        color: Theme.muted;
+                        vertical-alignment: center;
+                        overflow: elide;
+                        horizontal-stretch: 1;
+                    }
+                    Rectangle {
+                        y: (parent.height - self.height) / 2;
+                        width: sal.preferred-width + 18px;
+                        height: 22px;
+                        border-radius: 11px;
+                        background: sat.has-hover ? Theme.surface-hover : Theme.raised;
+                        border-width: 1px;
+                        border-color: ChatUi.subagents-show-all ? Theme.border-hover : Theme.border;
+                        animate background { duration: Theme.dur-hover; easing: ease-out-quint; }
+                        accessible-role: button;
+                        accessible-label: ChatUi.subagents-show-all ? "Show running subagents only" : "Show all subagents";
+                        accessible-action-default => {
+                            ChatUi.subagents-show-all = !ChatUi.subagents-show-all;
+                        }
+                        sal := Text {
+                            text: ChatUi.subagents-show-all ? @tr("Running only") : @tr("Show all");
+                            font-size: 11px;
+                            font-weight: Theme.weight-medium;
+                            color: sat.has-hover ? Theme.foreground : Theme.muted;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                        sat := TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => {
+                                ChatUi.subagents-show-all = !ChatUi.subagents-show-all;
+                            }
+                        }
+                    }
+                }
+                if sub.open: SubagentList { }
+            }
+            if ChatUi.subagents.length > 0 && ChatUi.background-tasks.length > 0: Rectangle {
+                height: 1px;
+                background: Theme.section-line;
+            }
+            if ChatUi.background-tasks.length > 0: VerticalLayout {
+                spacing: 4px;
+                bg := SectionHeader {
+                    text: "Background tasks";
+                    open: true;
+                    detail: ChatUi.background-tasks-running > 0 ? ChatUi.background-tasks-running + " running" : ChatUi.background-tasks.length + " done";
+                }
+                if bg.open: BackgroundTaskList { }
+            }
+        }
+    }
+}

@@ -1,0 +1,297 @@
+import { RoundButton } from "../components/round_button.slint";
+import { UsageRing } from "../components/usage_ring.slint";
+import { AgentRow, AgentTint } from "../models.slint";
+import { DockUi, PickerBar } from "./dock.slint";
+import { ChatUi } from "./globals.slint";
+import { AgentLogo, AgentMark } from "../components/agent_logo.slint";
+import { Button, Icon, IconButton, Icons, IconsFill, MenuItem, MenuShell, Tag } from "../components/controls.slint";
+import { SettingsUi } from "../settings/globals.slint";
+import { Theme } from "../theme/tokens.slint";
+
+export component ChipStrip inherits Rectangle {
+    height: 28px;
+    min-width: 0px;
+    horizontal-stretch: 1;
+    clip: true;
+    Flickable {
+        width: parent.width;
+        height: parent.height;
+        content-width: max(self.width, chips-row.preferred-width);
+        content-height: self.height;
+        chips-row := HorizontalLayout {
+            spacing: 6px;
+            alignment: start;
+            padding-left: 4px;
+            for c[ci] in ChatUi.chips: Rectangle {
+                height: 28px;
+                width: chip-row.preferred-width;
+                border-radius: Theme.radius-full;
+                background: Theme.surface;
+                border-width: 1px;
+                border-color: Theme.glass-border;
+                accessible-role: AccessibleRole.text;
+                accessible-label: c.kind + " " + c.label;
+                accessible-description: c.detail;
+                chip-row := HorizontalLayout {
+                    padding-left: 10px;
+                    padding-right: 4px;
+                    spacing: 6px;
+                    Icon {
+                        source: c.kind == "paste" ? Icons.file-text : c.kind == "image" ? Icons.image : c.kind == "skill" ? Icons.wand-sparkles : Icons.paperclip;
+                        size: Theme.icon-sm;
+                        tint: Theme.icon-subtle;
+                    }
+                    Text {
+                        text: c.label;
+                        font-size: Theme.ui-sm;
+                        color: Theme.foreground;
+                        vertical-alignment: center;
+                        overflow: elide;
+                        max-width: 200px;
+                        accessible-role: none;
+                    }
+                    if c.detail != "": Text {
+                        text: c.detail;
+                        font-size: Theme.ui-xs;
+                        color: Theme.foreground-subtle;
+                        vertical-alignment: center;
+                        accessible-role: none;
+                    }
+                    if c.kind == "image": IconButton {
+                        y: (parent.height - self.height) / 2;
+                        icon: Icons.pencil;
+                        label: @tr("Annotate {0}", c.label);
+                        size: 20px;
+                        icon-size: 12px;
+                        clicked => {
+                            ChatUi.annotate-chip(ci);
+                        }
+                    }
+                    IconButton {
+                        y: (parent.height - self.height) / 2;
+                        icon: Icons.x;
+                        label: @tr("Remove attachment {0}", c.label);
+                        size: 20px;
+                        icon-size: 12px;
+                        clicked => {
+                            ChatUi.remove-chip(ci);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+export component ComposerToolbar inherits HorizontalLayout {
+    in property <[AgentRow]> agents;
+    in property <bool> running;
+    in property <int> queued;
+    in property <string> sticky-name;
+    in-out property <string> draft;
+    callback send();
+    callback stop();
+    callback toggle-picker();
+    callback stick-bottom-request();
+    callback open-plus();
+    height: 34px;
+    spacing: 2px;
+    plus-btn := Rectangle {
+        y: (parent.height - self.height) / 2;
+        width: 28px;
+        height: 28px;
+        border-radius: Theme.radius-md;
+        background: pta.has-hover ? Theme.border-hover : Theme.raised;
+        border-width: 1px;
+        border-color: pta.has-hover ? Theme.accent-line : Theme.border;
+        transform-scale: pta.pressed ? 0.9 : 1;
+        animate background, border-color { duration: Theme.dur-hover; easing: ease-out-quint; }
+        animate transform-scale { duration: Theme.dur-press; easing: ease-out-quint; }
+        accessible-role: button;
+        accessible-label: @tr("Add");
+        accessible-action-default => {
+            root.open-plus();
+        }
+        Icon {
+            source: Icons.plus;
+            size: Theme.icon-sm;
+            tint: pta.has-hover ? Theme.accent-fg : Theme.icon;
+        }
+        pta := TouchArea {
+            mouse-cursor: pointer;
+            clicked => {
+                root.open-plus();
+            }
+        }
+    }
+    Rectangle {
+        width: 4px;
+    }
+    if DockUi.research: Rectangle {
+        y: (parent.height - self.height) / 2;
+        height: 28px;
+        width: research-row.preferred-width;
+        border-radius: Theme.radius-md;
+        background: rta.has-hover ? Theme.accent-soft.darker(0.1) : Theme.accent-soft;
+        border-width: 1px;
+        border-color: Theme.accent-line;
+        accessible-role: button;
+        accessible-label: "Deep research on, turn off";
+        accessible-action-default => {
+            DockUi.pick-option("mode", "harness:research");
+        }
+        research-row := HorizontalLayout {
+            padding-left: 8px;
+            padding-right: 8px;
+            spacing: 6px;
+            Icon {
+                y: (parent.height - self.height) / 2;
+                source: Icons.globe;
+                size: Theme.icon-sm;
+                tint: Theme.accent-fg;
+            }
+            Text {
+                text: "Deep research";
+                font-size: Theme.ui-sm;
+                color: Theme.accent-fg;
+                vertical-alignment: center;
+            }
+            Icon {
+                y: (parent.height - self.height) / 2;
+                source: Icons.x;
+                size: 12px;
+                tint: Theme.accent-fg;
+            }
+        }
+        rta := TouchArea {
+            mouse-cursor: pointer;
+            clicked => {
+                DockUi.pick-option("mode", "harness:research");
+            }
+        }
+    }
+    if DockUi.research: Rectangle {
+        width: 4px;
+    }
+    // Agent picker chip: agent-colour dot + name + chevron (design 01).
+    Rectangle {
+        y: (parent.height - self.height) / 2;
+        height: 28px;
+        width: agent-chip.preferred-width;
+        border-radius: Theme.radius-md;
+        background: agta.has-hover ? Theme.border-hover : Theme.raised;
+        animate background { duration: Theme.dur-hover; easing: ease-out-quint; }
+        accessible-role: button;
+        accessible-label: @tr("Agent: {0}", root.sticky-name);
+        accessible-action-default => {
+            DockUi.anchor-x = self.absolute-position.x;
+            root.toggle-picker();
+        }
+        agent-chip := HorizontalLayout {
+            padding-left: 10px;
+            padding-right: 8px;
+            spacing: 7px;
+            if AgentLogo.key(root.sticky-name) != "": AgentMark {
+                y: (parent.height - self.height) / 2;
+                name: root.sticky-name;
+                size: 16px;
+            }
+            if AgentLogo.key(root.sticky-name) == "": Rectangle {
+                y: (parent.height - self.height) / 2;
+                width: 7px;
+                height: 7px;
+                border-radius: 3.5px;
+                background: AgentTint.of(root.sticky-name);
+            }
+            Text {
+                text: root.sticky-name;
+                font-size: Theme.ui-caption;
+                font-weight: Theme.weight-medium;
+                color: Theme.foreground;
+                vertical-alignment: center;
+                accessible-role: none;
+            }
+            Icon {
+                y: (parent.height - self.height) / 2;
+                source: Icons.chevron-down;
+                size: 12px;
+                tint: Theme.icon-subtle;
+            }
+        }
+        agta := TouchArea {
+            mouse-cursor: pointer;
+            clicked => {
+                DockUi.anchor-x = parent.absolute-position.x;
+                root.toggle-picker();
+            }
+        }
+    }
+    Rectangle {
+        width: 4px;
+    }
+    PickerBar {
+        horizontal-stretch: 1;
+    }
+    if root.queued > 0 && DockUi.editing-id == "": Tag {
+        y: (parent.height - self.height) / 2;
+        text: @tr("{0} queued", root.queued);
+        tone: "progress";
+    }
+    if DockUi.editing-id != "": HorizontalLayout {
+        spacing: 2px;
+        Tag {
+            y: (parent.height - self.height) / 2;
+            text: @tr("Editing queued message");
+            tone: "progress";
+        }
+        IconButton {
+            y: (parent.height - self.height) / 2;
+            icon: Icons.x;
+            label: @tr("Cancel editing");
+            size: 20px;
+            icon-size: 12px;
+            clicked => {
+                DockUi.queue-action("cancel-edit", DockUi.editing-id);
+            }
+        }
+    }
+    UsageRing {
+        y: (parent.height - self.height) / 2;
+        agents: root.agents;
+    }
+    Rectangle {
+        width: 4px;
+    }
+    if root.running && DockUi.editing-id == "" && (root.draft != "" || ChatUi.chips.length > 0): Button {
+        y: (parent.height - self.height) / 2;
+        variant: "secondary";
+        size: "sm";
+        text: @tr("Steer");
+        has-icon: true;
+        icon: Icons.corner-down-left;
+        label: @tr("Steer: run right after the current turn");
+        clicked => {
+            root.stick-bottom-request();
+            DockUi.steer();
+        }
+    }
+    if root.running: RoundButton {
+        y: (parent.height - self.height) / 2;
+        icon: IconsFill.stop;
+        label: @tr("Stop");
+        filled: false;
+        pulse: true;
+        clicked => {
+            root.stop();
+        }
+    }
+    if !root.running || root.draft != "" || ChatUi.chips.length > 0: RoundButton {
+        y: (parent.height - self.height) / 2;
+        icon: IconsFill.send;
+        label: @tr("Send");
+        enabled: root.draft != "" || ChatUi.chips.length > 0;
+        clicked => {
+            root.send();
+        }
+    }
+}

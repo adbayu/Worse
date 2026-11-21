@@ -1,0 +1,366 @@
+import { Theme } from "../theme/tokens.slint";
+import { Icon, Icons, Button, IconButton, Divider, Card, Tag, Dialog } from "../components/controls.slint";
+import { PageHeader, Group, SettingRow, Switch, TextField, Select, SelectOption, StatusLine } from "parts.slint";
+import { InboxTicketRow, InboxSourceRow, InboxNotice, InboxUi } from "./inbox_ui.slint";
+
+export component Caption inherits Text {
+    font-size: Theme.ui-xs;
+    color: Theme.icon-subtlest;
+    overflow: elide;
+}
+
+// Card header (design S4: 13 semibold + 11 faint hint, 15/16 padding).
+export component CardHead inherits HorizontalLayout {
+    in property <string> title;
+    in property <string> hint;
+    height: 46px;
+    padding-left: 16px;
+    padding-right: 16px;
+    alignment: space-between;
+    Text {
+        text: root.title;
+        font-size: Theme.ui-caption;
+        font-weight: Theme.weight-semibold;
+        color: Theme.foreground;
+        vertical-alignment: center;
+    }
+    if root.hint != "": Text {
+        text: root.hint;
+        font-size: Theme.ui-xs;
+        color: Theme.icon-subtlest;
+        vertical-alignment: center;
+    }
+}
+
+// Agent colour tile (design S4 "chip": 28px, radius 8, agent colour at 12%, initial in the colour).
+export component AgentChip inherits Rectangle {
+    in property <string> initial;
+    in property <color> tint: Theme.accent-fg;
+    width: 28px;
+    height: 28px;
+    border-radius: Theme.radius-md;
+    background: root.tint.with-alpha(0.12);
+    Text {
+        text: root.initial;
+        font-size: Theme.ui-xs;
+        font-weight: Theme.weight-semibold;
+        color: root.tint;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        accessible-role: none;
+    }
+}
+
+export component SourceRow inherits Rectangle {
+    in property <InboxSourceRow> item;
+    background: hta.has-hover ? Theme.surface-hover : transparent;
+    animate background { duration: Theme.dur-hover; }
+    hta := TouchArea { }
+    HorizontalLayout {
+        min-height: 58px;
+        padding-left: 16px;
+        padding-right: 12px;
+        padding-top: 10px;
+        padding-bottom: 10px;
+        spacing: 12px;
+        VerticalLayout {
+            alignment: center;
+            AgentChip {
+                initial: "◎";
+                tint: root.item.failing ? Theme.destructive : Theme.accent-fg;
+            }
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 3px;
+            Text {
+                text: root.item.repo;
+                font-size: Theme.ui-caption;
+                font-weight: Theme.weight-semibold;
+                color: Theme.foreground;
+                overflow: elide;
+            }
+            Caption {
+                text: root.item.folder;
+                font-family: Theme.mono-font;
+            }
+            Caption {
+                text: root.item.detail;
+                color: root.item.failing ? Theme.destructive : Theme.icon-subtlest;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Switch {
+                label: @tr("Watch {0}", root.item.repo);
+                checked: root.item.enabled;
+                toggled(on) => {
+                    InboxUi.action(on ? "enable" : "disable", root.item.id);
+                }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Button {
+                text: InboxUi.busy == root.item.id ? @tr("Checking…") : @tr("Check now");
+                size: "sm";
+                enabled: InboxUi.enabled && root.item.enabled && InboxUi.busy == "";
+                clicked => {
+                    InboxUi.action("poll", root.item.id);
+                }
+            }
+        }
+        if root.item.has-router: VerticalLayout {
+            alignment: center;
+            IconButton {
+                icon: Icons.network;
+                label: @tr("Open router");
+                size: Theme.control-sm;
+                icon-size: Theme.icon-xs;
+                clicked => {
+                    InboxUi.action("open-router", root.item.id);
+                }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            IconButton {
+                icon: Icons.pencil;
+                label: @tr("Edit {0}", root.item.repo);
+                size: Theme.control-sm;
+                icon-size: Theme.icon-xs;
+                clicked => {
+                    InboxUi.action("edit", root.item.id);
+                }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            IconButton {
+                icon: Icons.trash-2;
+                label: @tr("Remove {0}", root.item.repo);
+                size: Theme.control-sm;
+                icon-size: Theme.icon-xs;
+                clicked => {
+                    InboxUi.action("remove", root.item.id);
+                }
+            }
+        }
+    }
+}
+
+export component TicketRow inherits Rectangle {
+    in property <InboxTicketRow> item;
+    background: hta.has-hover ? Theme.surface-hover : transparent;
+    animate background { duration: Theme.dur-hover; }
+    hta := TouchArea { }
+    HorizontalLayout {
+        min-height: 60px;
+        padding-left: 16px;
+        padding-right: 12px;
+        padding-top: 10px;
+        padding-bottom: 10px;
+        spacing: 12px;
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 3px;
+            HorizontalLayout {
+                spacing: 6px;
+                alignment: start;
+                Text {
+                    text: root.item.title;
+                    font-size: Theme.ui-caption;
+                    font-weight: Theme.weight-medium;
+                    color: Theme.foreground;
+                    overflow: elide;
+                    horizontal-stretch: 1;
+                    vertical-alignment: center;
+                }
+                if root.item.shadow: Tag {
+                    text: @tr("Shadow");
+                    tone: "neutral";
+                }
+                Tag {
+                    text: root.item.status;
+                    tone: root.item.tone;
+                }
+            }
+            Caption {
+                text: root.item.meta;
+            }
+            if root.item.pr != "": Caption {
+                text: root.item.pr;
+                color: Theme.accent-fg;
+            }
+            if root.item.error != "": Caption {
+                text: root.item.error;
+                color: Theme.destructive;
+            }
+        }
+        if root.item.has-session: VerticalLayout {
+            alignment: center;
+            Button {
+                text: @tr("Open session");
+                size: "sm";
+                clicked => {
+                    InboxUi.action("open-session", root.item.id);
+                }
+            }
+        }
+        if root.item.can-post: VerticalLayout {
+            alignment: center;
+            Button {
+                text: root.item.shadow ? @tr("Promote") : @tr("Post");
+                variant: "primary";
+                size: "sm";
+                clicked => {
+                    InboxUi.action("post", root.item.id);
+                }
+            }
+        }
+        if root.item.can-stop: VerticalLayout {
+            alignment: center;
+            Button {
+                text: @tr("Stop");
+                size: "sm";
+                clicked => {
+                    InboxUi.action("stop", root.item.id);
+                }
+            }
+        }
+        if root.item.can-discard: VerticalLayout {
+            alignment: center;
+            IconButton {
+                icon: Icons.trash-2;
+                label: @tr("Discard {0}", root.item.title);
+                size: Theme.control-sm;
+                icon-size: Theme.icon-xs;
+                clicked => {
+                    InboxUi.action("discard", root.item.id);
+                }
+            }
+        }
+    }
+}
+
+export component Empty inherits VerticalLayout {
+    in property <string> text;
+    in property <image> icon: Icons.inbox;
+    padding: 32px;
+    spacing: 4px;
+    alignment: center;
+    HorizontalLayout {
+        alignment: center;
+        Icon {
+            source: root.icon;
+            size: 20px;
+            tint: Theme.icon-subtlest;
+        }
+    }
+    Text {
+        text: root.text;
+        font-size: Theme.ui-sm;
+        color: Theme.icon-subtlest;
+        horizontal-alignment: center;
+        wrap: word-wrap;
+    }
+}
+
+// Segment of the S4 toolbar: 26 tall, pad [0,6], r6, 12px; active #1C1F24 + #EDEEF0.
+export component FilterSeg inherits Rectangle {
+    in property <string> id;
+    in property <string> text;
+    width: max(82px, ft.preferred-width + 12px);
+    height: 26px;
+    border-radius: 6px;
+    background: InboxUi.filter == root.id ? Theme.surface-hover : (fta.has-hover ? Theme.surface-hover.with-alpha(0.5) : transparent);
+    accessible-role: tab;
+    accessible-label: root.text;
+    accessible-item-selected: InboxUi.filter == root.id;
+    accessible-action-default => { InboxUi.action("filter", root.id); }
+    ft := Text {
+        text: root.text;
+        font-size: 12px;
+        color: InboxUi.filter == root.id ? Theme.foreground : Theme.muted;
+        accessible-role: none;
+    }
+    fta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { InboxUi.action("filter", root.id); }
+    }
+}
+
+export component NoticeRow inherits Rectangle {
+    in property <InboxNotice> item;
+    height: 56px;
+    background: nta.has-hover && root.item.can-open ? Theme.surface-hover : (root.item.unread ? Theme.input : transparent);
+    nta := TouchArea {
+        mouse-cursor: root.item.can-open ? MouseCursor.pointer : MouseCursor.default;
+        clicked => {
+            if root.item.can-open {
+                InboxUi.action("open-notice", root.item.id);
+            }
+        }
+    }
+    HorizontalLayout {
+        padding-left: 16px;
+        padding-right: 16px;
+        spacing: 12px;
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 6px;
+                height: 6px;
+                border-radius: 3px;
+                background: root.item.unread ? Theme.accent-fg : transparent;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            AgentChip {
+                initial: root.item.chip;
+                tint: root.item.tint;
+            }
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 3px;
+            Text {
+                text: root.item.title;
+                font-size: 13px;
+                color: Theme.foreground;
+                overflow: elide;
+            }
+            Text {
+                text: root.item.meta;
+                font-size: 11px;
+                color: Theme.icon-subtlest;
+                overflow: elide;
+            }
+        }
+        if root.item.pill != "": VerticalLayout {
+            alignment: center;
+            Rectangle {
+                height: 19px;
+                width: pt.preferred-width + 16px;
+                border-radius: 999px;
+                background: root.item.pill-tint.with-alpha(0.12);
+                pt := Text {
+                    text: root.item.pill;
+                    font-size: 11px;
+                    font-weight: Theme.weight-semibold;
+                    color: root.item.pill-tint;
+                }
+            }
+        }
+        if root.item.trailing != "": Text {
+            text: root.item.trailing;
+            font-size: 11px;
+            color: Theme.icon-subtlest;
+            vertical-alignment: center;
+        }
+    }
+}

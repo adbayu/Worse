@@ -9,7 +9,7 @@ use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
 use crate::ui::{AppWindow, ChatUi, PlanBar, PlanLimit};
 
 const USAGE_URL: &str = "https://api.anthropic.com/api/oauth/usage";
-const MIN_INTERVAL: Duration = Duration::from_secs(60);
+const MIN_INTERVAL: Duration = Duration::from_secs(30);
 
 struct Account {
     id: String,

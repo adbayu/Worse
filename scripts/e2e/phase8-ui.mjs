@@ -256,6 +256,7 @@ async function scenarios(agentsFile) {
   try {
     await step("start: shell visible", async () => {
       await button(mcp, "New session");
+      await press(mcp, "Files");
       await mcp.waitFor("file tree README.md", byLabel("README.md"));
       await mcp.waitFor("picker shows sticky Claude Code", byLabel("Agent: Claude Code"));
     });

@@ -1,0 +1,63 @@
+import { Theme } from "../../theme/tokens.slint";
+import { ConfigUi, DocUi, ResRow, FormField, SettingsUi, RecallUi, RecallRow, GraphUi } from "../globals.slint";
+import { GraphCanvas } from "../graph_canvas.slint";
+import { PageHeader, Group, SettingRow, Switch, TextField, TextArea, Select, SearchField, UnsupportedNotice, StatusLine } from "../parts.slint";
+import { Labels } from "../labels.slint";
+import { SkillBrowse } from "../skills.slint";
+import { ScrollView } from "std-widgets.slint";
+import { Icons, IconButton, Segmented, MenuShell, MenuItem } from "../../components/controls.slint";
+
+export global AgentDot {
+    pure public function color-of(id: string) -> color {
+        if id == "claude-code" { return Theme.agent-claude; }
+        if id == "codex" { return Theme.agent-codex; }
+        if id == "harness" { return Theme.agent-deepseek; }
+        if id == "agy" { return Theme.agent-agy; }
+        if id == "gemini" { return Theme.agent-gemini; }
+        return Theme.icon-subtlest;
+    }
+}
+
+// Page copy (design S7–S13, verbatim).
+export global ConfigCopy {
+    pure public function title(concept: string) -> string {
+        if concept == "mcp" { return "MCP servers"; }
+        if concept == "skill" { return "Skills"; }
+        if concept == "command" { return "Commands"; }
+        if concept == "hook" { return "Hooks"; }
+        if concept == "subagent" { return "Subagents"; }
+        return Labels.concept-title(concept);
+    }
+    pure public function subtitle(concept: string) -> string {
+        if concept == "mcp" { return "Model Context Protocol servers exposed to agents in this session."; }
+        if concept == "skill" { return "Skills are loaded on demand and count against context usage. Toggle to expose a skill to this agent."; }
+        if concept == "command" { return "Slash commands available in the composer. Type / to invoke."; }
+        if concept == "hook" { return "Shell commands that run on agent lifecycle events. Matchers are regex against the tool name."; }
+        if concept == "subagent" { return "Reusable subagent definitions. The orchestrator delegates to these when a task can run in parallel."; }
+        return Labels.concept-intro(concept);
+    }
+    pure public function new-label(concept: string) -> string {
+        if concept == "mcp" { return "+ Add server"; }
+        if concept == "skill" { return "+ New skill"; }
+        if concept == "command" { return "+ New command"; }
+        if concept == "hook" { return "+ Add hook"; }
+        if concept == "subagent" { return "+ New subagent"; }
+        return "+ New";
+    }
+    pure public function detail-kind(concept: string) -> string {
+        if concept == "mcp" { return "MCP server"; }
+        if concept == "skill" { return "Skill"; }
+        if concept == "command" { return "Command"; }
+        if concept == "hook" { return "Hook"; }
+        if concept == "subagent" { return "Subagent definition"; }
+        return "";
+    }
+    pure public function scope-name(scope: string) -> string {
+        if scope == "workspace" { return "project"; }
+        if scope == "local" { return "local"; }
+        return "global";
+    }
+    pure public function scope-tint(scope: string) -> color {
+        return scope == "user" ? Theme.info : Theme.accent-fg;
+    }
+}

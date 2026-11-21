@@ -1,0 +1,335 @@
+import { Theme } from "../theme/tokens.slint";
+import { Icons, MenuItem, MenuShell } from "../components/controls.slint";
+import { ChatUi } from "./globals.slint";
+
+export component NewSessionMenu inherits MenuShell {
+    callback close();
+    callback new-session();
+    callback new-worktree-session();
+    callback pick-folder();
+    accessible-role: AccessibleRole.groupbox;
+    accessible-label: @tr("New session menu");
+    MenuItem {
+        text: @tr("New session");
+        show-check: false;
+        has-icon: true;
+        icon: Icons.plus;
+        clicked => {
+            root.close();
+            root.new-session();
+        }
+    }
+    MenuItem {
+        text: @tr("New session in worktree");
+        show-check: false;
+        has-icon: true;
+        icon: Icons.git-fork;
+        clicked => {
+            root.close();
+            root.new-worktree-session();
+        }
+    }
+    MenuItem {
+        text: @tr("Open folder…");
+        show-check: false;
+        has-icon: true;
+        icon: Icons.folder-open;
+        clicked => {
+            root.pick-folder();
+        }
+    }
+}
+
+export component GroupMenu inherits MenuShell {
+    in property <string> target-id;
+    callback close();
+    accessible-role: AccessibleRole.groupbox;
+    accessible-label: @tr("Group menu");
+    MenuItem {
+        text: @tr("Rename group");
+        show-check: false;
+        has-icon: true;
+        icon: Icons.pencil;
+        clicked => {
+            root.close();
+            ChatUi.group-action("rename", root.target-id);
+        }
+    }
+    HorizontalLayout {
+        padding: 6px;
+        padding-left: 10px;
+        spacing: 6px;
+        for c in ["gray", "red", "orange", "yellow", "green", "blue", "purple"]: Rectangle {
+            width: 18px;
+            height: 18px;
+            border-radius: 9px;
+            background: ChatUi.group-color(c);
+            accessible-role: AccessibleRole.button;
+            accessible-label: "color " + c;
+            accessible-action-default => {
+                root.close();
+                ChatUi.group-action("color:" + c, root.target-id);
+            }
+            TouchArea {
+                mouse-cursor: pointer;
+                clicked => {
+                    root.close();
+                    ChatUi.group-action("color:" + c, root.target-id);
+                }
+            }
+        }
+    }
+    MenuItem {
+        text: @tr("Move group up");
+        show-check: false;
+        has-icon: true;
+        icon: Icons.chevron-up;
+        clicked => {
+            root.close();
+            ChatUi.group-action("up", root.target-id);
+        }
+    }
+    MenuItem {
+        text: @tr("Move group down");
+        show-check: false;
+        has-icon: true;
+        icon: Icons.chevron-down;
+        clicked => {
+            root.close();
+            ChatUi.group-action("down", root.target-id);
+        }
+    }
+    MenuItem {
+        text: @tr("Delete group");
+        show-check: false;
+        has-icon: true;
+        icon: Icons.trash-2;
+        clicked => {
+            root.close();
+            ChatUi.group-action("delete", root.target-id);
+        }
+    }
+}
+
+export component SessionMenu inherits MenuShell {
+    in property <string> target-id;
+    in property <bool> pinned;
+    callback close();
+    callback open-session(string);
+    callback archive-session(string);
+    accessible-role: AccessibleRole.groupbox;
+    accessible-label: @tr("Session menu");
+    MenuItem {
+        text: @tr("Open");
+        show-check: false;
+        clicked => {
+            root.close();
+            root.open-session(root.target-id);
+        }
+    }
+    MenuItem {
+        text: @tr("Copy session ID");
+        show-check: false;
+        has-icon: true;
+        icon: Icons.copy;
+        clicked => {
+            root.close();
+            ChatUi.copy-session-id(root.target-id);
+        }
+    }
+    MenuItem {
+        text: @tr("Rename");
+        show-check: false;
+        has-icon: true;
+        icon: Icons.pencil;
+        clicked => {
+            root.close();
+            ChatUi.session-action("rename", root.target-id);
+        }
+    }
+    MenuItem {
+        text: @tr("Export as Markdown");
+        show-check: false;
+        has-icon: true;
+        icon: Icons.download;
+        clicked => {
+            root.close();
+            ChatUi.session-action("export", root.target-id);
+        }
+    }
+    MenuItem {
+        text: root.pinned ? @tr("Unpin") : @tr("Pin");
+        show-check: false;
+        has-icon: true;
+        icon: Icons.pin;
+        clicked => {
+            root.close();
+            ChatUi.session-action(root.pinned ? "unpin" : "pin", root.target-id);
+        }
+    }
+    MenuItem {
+        text: @tr("Mark as unread");
+        show-check: false;
+        has-icon: true;
+        icon: Icons.mail;
+        clicked => {
+            root.close();
+            ChatUi.session-action("unread", root.target-id);
+        }
+    }
+    MenuItem {
+        text: @tr("Fork");
+        show-check: false;
+        has-icon: true;
+        icon: Icons.git-fork;
+        clicked => {
+            root.close();
+            ChatUi.session-action("fork", root.target-id);
+        }
+    }
+    for g in ChatUi.groups: MenuItem {
+        text: @tr("Move to {0}", g.name);
+        show-check: false;
+        has-icon: true;
+        icon: Icons.folder;
+        clicked => {
+            root.close();
+            ChatUi.session-action("group:" + g.id, root.target-id);
+        }
+    }
+    MenuItem {
+        text: @tr("Remove from group");
+        show-check: false;
+        has-icon: true;
+        icon: Icons.minus;
+        clicked => {
+            root.close();
+            ChatUi.session-action("ungroup", root.target-id);
+        }
+    }
+    MenuItem {
+        text: @tr("Archive");
+        show-check: false;
+        has-icon: true;
+        icon: Icons.archive;
+        clicked => {
+            root.close();
+            root.archive-session(root.target-id);
+        }
+    }
+    MenuItem {
+        text: @tr("Delete");
+        show-check: false;
+        has-icon: true;
+        icon: Icons.trash-2;
+        clicked => {
+            root.close();
+            ChatUi.session-action("delete", root.target-id);
+        }
+    }
+}
+
+export component HeaderMenu inherits MenuShell {
+    in property <bool> has-chat;
+    callback close();
+    accessible-role: AccessibleRole.groupbox;
+    accessible-label: @tr("Session actions");
+    MenuItem {
+        text: @tr("Find in Task");
+        show-check: false;
+        has-icon: true;
+        icon: Icons.search;
+        enabled: root.has-chat;
+        clicked => {
+            root.close();
+            ChatUi.find-open = true;
+        }
+    }
+    MenuItem {
+        text: @tr("Previous Task");
+        show-check: false;
+        has-icon: true;
+        icon: Icons.chevron-up;
+        enabled: ChatUi.can-prev;
+        clicked => {
+            root.close();
+            ChatUi.nav("prev");
+        }
+    }
+    MenuItem {
+        text: @tr("Next Task");
+        show-check: false;
+        has-icon: true;
+        icon: Icons.chevron-down;
+        enabled: ChatUi.can-next;
+        clicked => {
+            root.close();
+            ChatUi.nav("next");
+        }
+    }
+    MenuItem {
+        text: ChatUi.action-label("exportMarkdown");
+        show-check: false;
+        has-icon: true;
+        icon: Icons.file-text;
+        enabled: root.has-chat;
+        clicked => {
+            root.close();
+            ChatUi.export("markdown");
+        }
+    }
+    MenuItem {
+        text: ChatUi.action-label("exportHtml");
+        show-check: false;
+        has-icon: true;
+        icon: Icons.code;
+        enabled: root.has-chat;
+        clicked => {
+            root.close();
+            ChatUi.export("html");
+        }
+    }
+    MenuItem {
+        text: ChatUi.action-label("renameSession");
+        show-check: false;
+        has-icon: true;
+        icon: Icons.pencil;
+        enabled: ChatUi.has-session;
+        clicked => {
+            root.close();
+            ChatUi.session-action("rename", "");
+        }
+    }
+    MenuItem {
+        text: ChatUi.action-label("forkSession");
+        show-check: false;
+        has-icon: true;
+        icon: Icons.git-fork;
+        enabled: ChatUi.has-session;
+        clicked => {
+            root.close();
+            ChatUi.session-action("fork", "");
+        }
+    }
+    MenuItem {
+        text: ChatUi.action-label("copySessionId");
+        show-check: false;
+        has-icon: true;
+        icon: Icons.copy;
+        enabled: ChatUi.has-session;
+        clicked => {
+            root.close();
+            ChatUi.copy-session-id("");
+        }
+    }
+    MenuItem {
+        text: ChatUi.action-label("revealWorkspace");
+        show-check: false;
+        has-icon: true;
+        icon: Icons.folder-open;
+        clicked => {
+            root.close();
+            ChatUi.reveal();
+        }
+    }
+}

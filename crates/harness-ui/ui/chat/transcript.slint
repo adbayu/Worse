@@ -1,0 +1,155 @@
+import { ListView } from "std-widgets.slint";
+import { Theme } from "../theme/tokens.slint";
+import { Icon, Icons } from "../components/controls.slint";
+import { ChatItem } from "../models.slint";
+import { ChatUi } from "./globals.slint";
+import { FindBar } from "./find.slint";
+import { ChatRow } from "./row.slint";
+import { EmptyState } from "./empty_state.slint";
+
+export component ChatTranscript inherits Rectangle {
+    in property <[ChatItem]> chat;
+    in property <length> chat-pad;
+    in property <length> bubble-max;
+    in property <bool> running;
+    in property <string> workspace-name;
+    in-out property <bool> stick-bottom;
+    in-out property <string> draft;
+    callback open-link(string);
+    // Find: estimate the scroll position of the matching row first (unrealized rows have estimated heights), then
+    // the row itself corrects it from its real y once it is instantiated (see the chat list delegate).
+    property <int> find-seq: ChatUi.find-seq;
+    changed find-seq => {
+        if ChatUi.find-row >= 0 && root.chat.length > 0 {
+            root.stick-bottom = false;
+            chat-list.content-y = max(chat-list.visible-height - chat-list.content-height, min(0px, -(chat-list.content-height * ChatUi.find-row / root.chat.length) + 48px));
+        }
+    }
+    function reveal-row(y: length) {
+        root.stick-bottom = false;
+        chat-list.content-y = max(chat-list.visible-height - chat-list.content-height, min(0px, -y + 48px));
+    }
+    vertical-stretch: 1;
+    if root.chat.length == 0: EmptyState {
+        width: parent.width;
+        height: parent.height;
+        place: root.workspace-name;
+        pick(text) => {
+            root.draft = text;
+        }
+    }
+    chat-list := ListView {
+        width: parent.width;
+        height: parent.height;
+        property <length> bottom-y: min(0px, self.visible-height - self.content-height);
+        function follow() {
+            if root.stick-bottom {
+                if self.content-y != self.bottom-y {
+                    self.content-y = self.bottom-y;
+                }
+            } else if self.content-y < self.bottom-y {
+                self.content-y = self.bottom-y;
+            }
+        }
+        property <length> prev-h;
+        property <bool> anchoring;
+        changed content-height => {
+            if self.anchoring {
+                self.anchoring = false;
+                self.content-y = max(self.bottom-y, min(0px, self.content-y - (self.content-height - self.prev-h)));
+            }
+            self.prev-h = self.content-height;
+            self.follow();
+        }
+        changed visible-height => {
+            self.follow();
+        }
+        changed visible-width => {
+            self.follow();
+        }
+        property <length> last-y;
+        changed content-y => {
+            if !root.stick-bottom && self.content-y < self.last-y && self.content-y <= self.bottom-y + 2px {
+                root.stick-bottom = true;
+            }
+            self.last-y = self.content-y;
+            if ChatUi.has-earlier && !self.anchoring && !root.stick-bottom && self.content-y > -400px {
+                self.anchoring = true;
+                self.prev-h = self.content-height;
+                ChatUi.load-earlier();
+            }
+        }
+        scrolled => {
+            root.stick-bottom = false;
+        }
+        // 内容列最宽 chat-max-width 并居中：用左右内边距实现，alignment: center 会让子项退回首选宽度。
+        for item in root.chat: HorizontalLayout {
+            padding-left: root.chat-pad;
+            padding-right: root.chat-pad;
+            // 查找定位第二步：匹配行实例化（或匹配切换到已存在的行）时按真实 y 精确滚动。
+            property <bool> hit: ChatUi.find-open && item.id == ChatUi.find-id;
+            property <int> seq: ChatUi.find-seq;
+            init => {
+                if self.hit {
+                    root.reveal-row(self.y);
+                }
+            }
+            changed seq => {
+                if self.hit {
+                    root.reveal-row(self.y);
+                }
+            }
+            ChatRow {
+                horizontal-stretch: 1;
+                item: item;
+                continued: item.continued;
+                hit: parent.hit;
+                busy: root.running;
+                bubble-max: root.bubble-max;
+                link(url) => {
+                    root.open-link(url);
+                }
+            }
+        }
+    }
+    if ChatUi.find-open: FindBar {
+        x: parent.width - self.width - 12px;
+        y: 8px;
+        width: min(380px, parent.width - 24px);
+        close => {
+            ChatUi.find-close();
+        }
+    }
+    // Scroll to bottom (ZCode: round button above the composer when scrolled up).
+    if !root.stick-bottom && root.chat.length > 0: Rectangle {
+        x: (parent.width - self.width) / 2;
+        y: parent.height - self.height - 8px;
+        width: Theme.control;
+        height: Theme.control;
+        border-radius: self.width / 2;
+        background: Theme.popover;
+        border-width: 1px;
+        border-color: Theme.popover-border;
+        drop-shadow-blur: Theme.shadow-md-blur;
+        drop-shadow-offset-y: Theme.shadow-md-y;
+        drop-shadow-color: Theme.shadow-md-color;
+        accessible-role: button;
+        accessible-label: @tr("Scroll to bottom");
+        accessible-action-default => {
+            root.stick-bottom = true;
+            chat-list.content-y = min(0px, chat-list.visible-height - chat-list.content-height);
+        }
+        Icon {
+            source: Icons.arrow-down;
+            size: Theme.icon-sm;
+            tint: Theme.icon;
+        }
+        TouchArea {
+            mouse-cursor: pointer;
+            clicked => {
+                root.stick-bottom = true;
+                chat-list.content-y = min(0px, chat-list.visible-height - chat-list.content-height);
+            }
+        }
+    }
+}

@@ -1,0 +1,94 @@
+import { ScrollView } from "std-widgets.slint";
+import { Theme } from "../../theme/tokens.slint";
+import { ConfigUi, DocUi, ResRow, FormField, SettingsUi, RecallUi, RecallRow, GraphUi } from "../globals.slint";
+import { GraphCanvas } from "../graph_canvas.slint";
+import { PageHeader, Group, SettingRow, Switch, TextField, TextArea, Select, SearchField, UnsupportedNotice, StatusLine } from "../parts.slint";
+import { Labels } from "../labels.slint";
+import { SkillBrowse } from "../skills.slint";
+import { Icons, IconButton, Segmented, MenuShell, MenuItem } from "../../components/controls.slint";
+import { ConfigCopy, AgentDot } from "./types.slint";
+import { Pill, Btn, Dot, Hairline, DCard, CardHead, Th, Muted, AgentChip, ChipBar } from "./parts.slint";
+import { TargetBar } from "./card.slint";
+
+import { InstructionsBody } from "./doc_instructions.slint";
+import { MemoryBody } from "./doc_memory.slint";
+import { RecallBody } from "./doc_recall.slint";
+import { GraphBody } from "./doc_graph.slint";
+
+// Instructions (CLAUDE.md / AGENTS.md / GEMINI.md) and Memory (MEMORY.md): one document per target.
+export component DocPage inherits VerticalLayout {
+    in property <bool> stacked;
+    in property <bool> memory-enabled;
+    callback set-memory-enabled(bool);
+    // Memory page: a tab that is not a MEMORY.md document: "recall" (Harness's own local memory) or "graph"
+    // (the project's Graphify graph); "" = the document of the picked scope.
+    property <string> extra: "";
+    spacing: 20px;
+    PageHeader {
+        title: DocUi.kind == "memory" ? "Memory" : "Instructions";
+        description: DocUi.kind == "memory" ? "Durable facts Harness remembers across sessions. Scoped to a project or shared globally." : "Project instructions steers every session in this workspace. Global instructions apply to all projects.";
+    }
+    // Instructions: agent switcher. Memory is Harness-wide, so its switcher picks the scope instead.
+    if DocUi.kind == "instructions": TargetBar {
+        agent: DocUi.agent;
+        scope: DocUi.scope;
+        with-scope: false;
+        select-agent(id) => {
+            DocUi.select-agent(id);
+        }
+    }
+    if DocUi.kind == "memory": HorizontalLayout {
+        alignment: start;
+        ChipBar {
+            AgentChip {
+                agent-id: "harness";
+                dot: Theme.info;
+                text: "Global";
+                active: root.extra == "" && DocUi.scope == "user";
+                picked => {
+                    root.extra = "";
+                    DocUi.select-scope("user");
+                }
+            }
+            AgentChip {
+                agent-id: "harness";
+                dot: Theme.accent-fg;
+                text: "Project";
+                active: root.extra == "" && DocUi.scope == "workspace";
+                picked => {
+                    root.extra = "";
+                    DocUi.select-scope("workspace");
+                }
+            }
+            AgentChip {
+                agent-id: "harness";
+                dot: Theme.warning;
+                text: "Recall";
+                active: root.extra == "recall";
+                picked => {
+                    root.extra = "recall";
+                    RecallUi.refresh();
+                }
+            }
+            AgentChip {
+                agent-id: "harness";
+                dot: Theme.agent-agy;
+                text: "Graph";
+                active: root.extra == "graph";
+                picked => {
+                    root.extra = "graph";
+                    GraphUi.refresh();
+                }
+            }
+        }
+    }
+    if DocUi.kind == "instructions": InstructionsBody { }
+    if DocUi.kind == "memory" && root.extra == "recall": RecallBody { }
+    if DocUi.kind == "memory" && root.extra == "graph": GraphBody { }
+    if DocUi.kind == "memory" && root.extra == "": MemoryBody {
+        memory-enabled: root.memory-enabled;
+        set-memory-enabled(on) => {
+            root.set-memory-enabled(on);
+        }
+    }
+}

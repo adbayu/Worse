@@ -1,0 +1,71 @@
+import { Icon, Icons } from "../components/controls.slint";
+import { Theme } from "../theme/tokens.slint";
+
+export component StarterRow inherits Rectangle {
+    in property <string> text;
+    in property <string> hint;
+    in property <string> index: "01";
+    in property <color> tint: Theme.accent-fg;
+    in property <bool> last;
+    callback clicked;
+    height: 70px;
+    border-radius: Theme.radius-xl;
+    background: sra.has-hover ? Theme.surface-hover : Theme.card;
+    border-width: 1px;
+    border-color: sra.has-hover ? Theme.border-hover : Theme.border;
+    animate background, border-color { duration: Theme.dur-hover; easing: ease-out-quint; }
+    accessible-role: button;
+    accessible-label: root.text;
+    accessible-action-default => {
+        root.clicked();
+    }
+    HorizontalLayout {
+        padding-left: 14px;
+        padding-right: 14px;
+        spacing: 12px;
+        Text {
+            text: root.index;
+            font-family: Theme.art-font;
+            font-size: 11px;
+            color: sra.has-hover ? Theme.accent-fg : Theme.caps-label;
+            vertical-alignment: center;
+            accessible-role: none;
+            animate color { duration: Theme.dur-hover; easing: ease-out-quint; }
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 5px;
+            Text {
+                text: root.text;
+                font-size: Theme.ui-caption;
+                font-weight: Theme.weight-semibold;
+                color: Theme.foreground;
+                overflow: elide;
+                accessible-role: none;
+            }
+            if root.hint != "": Text {
+                text: root.hint;
+                font-size: Theme.ui-sm;
+                color: Theme.muted;
+                overflow: elide;
+                accessible-role: none;
+            }
+        }
+        Icon {
+            y: (parent.height - self.height) / 2;
+            source: Icons.arrow-right;
+            size: Theme.icon-xs;
+            tint: Theme.foreground;
+            opacity: sra.has-hover ? 1 : 0;
+            animate opacity { duration: Theme.dur-hover; easing: ease-out-quint; }
+        }
+    }
+    sra := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+

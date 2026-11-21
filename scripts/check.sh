@@ -26,6 +26,7 @@ if [ ! -d "$APP/node_modules" ]; then
     exit 1
 fi
 cd "$ROOT"
+step 'file size' node scripts/size-check.mjs
 step 'cargo fmt --check' cargo fmt --all -- --check
 step 'cargo clippy' cargo clippy --workspace --all-targets -- -D warnings
 step 'cargo test' cargo test --workspace

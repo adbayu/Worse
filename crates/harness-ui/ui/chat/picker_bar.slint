@@ -1,0 +1,154 @@
+import { Theme } from "../theme/tokens.slint";
+import { Icon, Icons, Button, IconButton, MenuShell, MenuItem, SectionLabel } from "../components/controls.slint";
+import { ProgressTrack } from "../panels/common.slint";
+import { DockUi } from "./dock_ui.slint";
+
+// One picker button in the composer footer (ghost button + chevron); the menu opens above the composer.
+// Wraps a Button (centred in the footer row) rather than inheriting it, so the footer spacing matches the icons.
+export component PickerButton inherits HorizontalLayout {
+    in property <string> which;
+    in property <string> value;
+    horizontal-stretch: 0;
+    alignment: center;
+    Button {
+        y: (parent.height - self.height) / 2;
+        variant: "ghost";
+        size: "sm";
+        text: root.value;
+        trailing-chevron: true;
+        label: DockUi.picker-label(root.which) + ": " + root.value;
+        text-color: root.which == "mode" && DockUi.machine ? Theme.destructive : root.which == "mode" && (DockUi.research || DockUi.code-mode) ? Theme.brand : Theme.foreground-subtle;
+        enabled: !DockUi.options-locked && !DockUi.options-pending;
+        clicked => {
+            DockUi.anchor-x = root.absolute-position.x;
+            if root.which == "model" && DockUi.model-query != "" {
+                DockUi.model-query = "";
+                DockUi.filter-models("");
+            }
+            DockUi.picker-open = DockUi.picker-open == root.which ? "" : root.which;
+        }
+    }
+}
+
+// "Options" icon button of the collapsed footer (sliders icon, hover tooltip "Mode & effort").
+export component OptionsButton inherits Rectangle {
+    // Same square as the other footer icon buttons (IconButton default size).
+    width: Theme.control;
+    height: Theme.control;
+    property <bool> enabled: !DockUi.options-locked && !DockUi.options-pending;
+    btn := IconButton {
+        icon: Icons.sliders-horizontal;
+        label: @tr("Mode & effort");
+        icon-size: Theme.icon-sm;
+        enabled: root.enabled;
+        // tip-ta (on top) takes the pointer, so its hover drives the button's highlight.
+        active: DockUi.picker-open == "options" || (tip-ta.has-hover && root.enabled);
+        clicked => {
+            DockUi.anchor-x = root.absolute-position.x;
+            DockUi.picker-open = DockUi.picker-open == "options" ? "" : "options";
+        }
+    }
+    // Tooltip above the button (no shared tooltip component exists; tokens Theme.tooltip*).
+    if tip-ta.has-hover && DockUi.picker-open != "options": Rectangle {
+        x: (root.width - self.width) / 2;
+        y: -self.height - 4px;
+        width: tip.preferred-width + 12px;
+        height: tip.preferred-height + 6px;
+        border-radius: Theme.radius-md;
+        background: Theme.tooltip;
+        accessible-role: none;
+        tip := Text {
+            text: @tr("Mode & effort");
+            font-size: Theme.ui-sm;
+            color: Theme.tooltip-foreground;
+            accessible-role: none;
+        }
+    }
+    tip-ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            if root.enabled {
+                DockUi.picker-open = DockUi.picker-open == "options" ? "" : "options";
+            }
+        }
+    }
+}
+
+// Picker row of the composer footer. Takes the width the footer leaves after its other items and picks a level
+// (spec phase-9-parity.md "Width"): three buttons, Model + options button, or options button only. Nothing is clipped.
+export component PickerBar inherits Rectangle {
+    horizontal-stretch: 1;
+    // The bar asks for no width of its own, so every other footer item keeps its preferred width and the bar
+    // gets the rest (footer width minus agent button, icons, tags, context meter, Steer and Stop / Send).
+    // At least the options button, so even the compact level never draws over its neighbours.
+    min-width: root.count > 0 ? Theme.control : 0px;
+    preferred-width: root.full-w;
+    // Gap between picker buttons (matches the round-3 footer).
+    property <length> gap: 2px;
+    // Width of a PickerButton beyond its text, from Button size "sm" with a trailing chevron (controls.slint):
+    // left pad 8px + text + row spacing 4px + chevron 12px + right pad (8px - 2px) = text + 30px.
+    property <length> chrome: 8px + 4px + 12px + 6px;
+    property <length> mode-w: DockUi.modes.length > 0 ? mode-t.preferred-width + root.chrome : 0px;
+    property <length> model-w: DockUi.models.length > 0 ? model-t.preferred-width + root.chrome : 0px;
+    property <length> effort-w: DockUi.efforts.length > 0 && DockUi.models.length == 0 ? effort-t.preferred-width + root.chrome : 0px;
+    property <int> count: (DockUi.modes.length > 0 ? 1 : 0) + (DockUi.models.length > 0 ? 1 : 0) + (DockUi.efforts.length > 0 ? 1 : 0);
+    property <length> full-w: root.mode-w + root.model-w + root.effort-w + max(0, root.count - 1) * root.gap;
+    property <bool> collapsible: DockUi.modes.length > 0 || DockUi.efforts.length > 0;
+    property <length> medium-w: root.model-w + (DockUi.models.length > 0 ? root.gap : 0px) + Theme.control;
+    property <string> level: root.full-w <= root.width || !root.collapsible ? "full" : root.medium-w <= root.width ? "medium" : "compact";
+    init => {
+        DockUi.picker-layout = root.level;
+    }
+    changed level => {
+        DockUi.picker-layout = root.level;
+        // A menu that moved into (or out of) the popup is closed rather than shown at the wrong anchor.
+        DockUi.picker-open = "";
+    }
+    // Text measurers (same font as Button text); not drawn, not in the accessibility tree.
+    mode-t := Text {
+        visible: false;
+        width: 0px;
+        height: 0px;
+        text: DockUi.mode-name;
+        font-size: Theme.ui-base;
+        accessible-role: none;
+    }
+    model-t := Text {
+        visible: false;
+        width: 0px;
+        height: 0px;
+        text: DockUi.efforts.length > 0 ? DockUi.model-name + "  " + DockUi.effort-name : DockUi.model-name;
+        font-size: Theme.ui-base;
+        accessible-role: none;
+    }
+    effort-t := Text {
+        visible: false;
+        width: 0px;
+        height: 0px;
+        text: DockUi.effort-name;
+        font-size: Theme.ui-base;
+        accessible-role: none;
+    }
+    HorizontalLayout {
+        x: 0px;
+        width: self.preferred-width;
+        height: root.height;
+        spacing: root.gap;
+        if root.level != "compact" && DockUi.models.length > 0: PickerButton {
+            which: "model";
+            value: DockUi.efforts.length > 0 && root.level == "full" ? DockUi.model-name + "  " + DockUi.effort-name : DockUi.model-name;
+        }
+        if root.level == "full" && DockUi.efforts.length > 0 && DockUi.models.length == 0: PickerButton {
+            which: "effort";
+            value: DockUi.effort-name;
+        }
+        if root.level == "full" && DockUi.modes.length > 0: PickerButton {
+            which: "mode";
+            value: DockUi.mode-name;
+        }
+        if root.level != "full": VerticalLayout {
+            alignment: center;
+            OptionsButton { }
+        }
+    }
+}

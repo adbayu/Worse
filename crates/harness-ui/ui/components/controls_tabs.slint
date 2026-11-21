@@ -1,0 +1,175 @@
+import { Theme } from "../theme/tokens.slint";
+import { Icons, IconsFill, Tiles } from "icons.slint";
+import { GlyphAnim, AsciiArt } from "ascii.slint";
+import { Look } from "../theme/look.slint";
+import { Frost } from "../theme/backdrop.slint";
+
+export struct TabItem {
+    id: string,
+    label: string,
+}
+
+export component TabChip inherits Rectangle {
+    in property <string> text;
+    in property <bool> selected;
+    callback activate;
+    width: tl.preferred-width + 20px;
+    border-radius: Theme.radius-md;
+    background: root.selected ? Theme.tab-active : (ta.has-hover ? Theme.hover : Theme.hover.with-alpha(0));
+    drop-shadow-blur: root.selected ? 8px : 0px;
+    drop-shadow-offset-y: root.selected ? 2px : 0px;
+    drop-shadow-color: root.selected ? Theme.shadow-md-color : transparent;
+    transform-scale: ta.pressed ? 0.96 : 1;
+    accessible-role: tab;
+    accessible-label: root.text;
+    accessible-item-selected: root.selected;
+    accessible-action-default => {
+        root.activate();
+    }
+    animate background, drop-shadow-blur { duration: Theme.dur-move; easing: ease-out-quint; }
+    animate transform-scale { duration: Theme.dur-press; easing: ease-out-quint; }
+    tl := Text {
+        text: root.text;
+        font-size: Theme.ui-base;
+        font-weight: root.selected ? Theme.weight-semibold : Theme.weight-medium;
+        color: root.selected ? Theme.foreground : Theme.foreground-subtle;
+        vertical-alignment: center;
+        horizontal-alignment: center;
+        accessible-role: none;
+        animate color { duration: Theme.dur-hover; }
+    }
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.activate();
+        }
+    }
+}
+
+export component TabBar inherits Rectangle {
+    in property <[TabItem]> leading;
+    in property <[TabItem]> tabs;
+    in property <string> current;
+    callback select(string);
+    height: 40px;
+    Rectangle {
+        x: 6px;
+        y: 4px;
+        width: min(root.width - 12px, strip.preferred-width);
+        height: root.height - 8px;
+        border-radius: Theme.radius-lg;
+        background: Theme.surface;
+        border-width: 1px;
+        border-color: Theme.border;
+        strip := HorizontalLayout {
+            padding: 3px;
+            spacing: 2px;
+            alignment: start;
+            for t in root.leading: TabChip {
+                text: t.label;
+                selected: t.id == root.current;
+                activate => {
+                    root.select(t.id);
+                }
+            }
+            for t in root.tabs: TabChip {
+                text: t.label;
+                selected: t.id == root.current;
+                activate => {
+                    root.select(t.id);
+                }
+            }
+        }
+    }
+}
+
+// Caps section label (design: 10 semibold, caps-label colour, letterSpacing 8%).
+export component SectionLabel inherits Text {
+    font-size: Theme.ui-xs;
+    font-weight: Theme.weight-semibold;
+    color: Theme.caps-label;
+    letter-spacing: 1.2px;
+    vertical-alignment: center;
+    overflow: elide;
+}
+
+export component StatusDot inherits Rectangle {
+    in property <color> tint: Theme.foreground-subtlest;
+    in property <length> size: 7px;
+    width: root.size;
+    height: root.size;
+    border-radius: root.size / 2;
+    background: root.tint;
+    accessible-role: none;
+}
+
+export struct SegmentOption {
+    id: string,
+    label: string,
+}
+
+export component SegmentChip inherits Rectangle {
+    in property <string> text;
+    in property <bool> selected;
+    in property <length> pad: 20px;
+    callback activate;
+    width: ot.preferred-width + root.pad;
+    border-radius: Theme.radius-sm;
+    background: root.selected ? Theme.raised : (ta.has-hover ? Theme.hover : transparent);
+    drop-shadow-blur: 0px;
+    drop-shadow-offset-y: 0px;
+    drop-shadow-color: transparent;
+    transform-scale: ta.pressed ? 0.97 : 1;
+    accessible-role: button;
+    accessible-label: root.text;
+    accessible-checked: root.selected;
+    accessible-action-default => {
+        root.activate();
+    }
+    animate background { duration: Theme.dur-move; easing: ease-out-quint; }
+    animate transform-scale { duration: Theme.dur-press; easing: ease-out-quint; }
+    ot := Text {
+        text: root.text;
+        font-size: Theme.ui-base;
+        font-weight: Theme.weight-medium;
+        color: root.selected ? Theme.foreground : Theme.foreground-subtlest;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        accessible-role: none;
+        animate color { duration: Theme.dur-hover; }
+    }
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.activate();
+        }
+    }
+}
+
+// Segmented control (design S1: surface track, 1px border, radius 8, 3px padding, active chip = raised).
+export component Segmented inherits Rectangle {
+    in property <[SegmentOption]> options;
+    in property <string> current;
+    // Horizontal padding inside each chip (narrow hosts such as the Side Pane use less).
+    in property <length> chip-pad: 20px;
+    callback select(string);
+    height: 31px;
+    preferred-width: seg.preferred-width;
+    horizontal-stretch: 0;
+    border-radius: Theme.radius-md;
+    background: Theme.surface;
+    border-width: 1px;
+    border-color: Theme.border;
+    seg := HorizontalLayout {
+        padding: 3px;
+        spacing: 2px;
+        for o in root.options: SegmentChip {
+            pad: root.chip-pad;
+            text: o.label;
+            selected: o.id == root.current;
+            activate => {
+                root.select(o.id);
+            }
+        }
+    }
+}

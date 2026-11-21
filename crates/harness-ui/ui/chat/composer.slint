@@ -1,0 +1,235 @@
+import { RoundButton } from "../components/round_button.slint";
+import { UsageRing } from "../components/usage_ring.slint";
+import { AgentRow, AgentTint } from "../models.slint";
+import { DockUi, PickerBar } from "./dock.slint";
+import { ChatUi } from "./globals.slint";
+import { AgentLogo, AgentMark } from "../components/agent_logo.slint";
+import { Button, Icon, IconButton, Icons, IconsFill, MenuItem, MenuShell, Tag } from "../components/controls.slint";
+import { SettingsUi } from "../settings/globals.slint";
+import { Theme } from "../theme/tokens.slint";
+import { ChipStrip, ComposerToolbar } from "./composer_parts.slint";
+
+export component Composer inherits VerticalLayout {
+    in property <[AgentRow]> agents;
+    in-out property <string> draft;
+    in property <bool> running;
+    in property <int> queued;
+    in property <string> sticky-name;
+    callback send();
+    callback stop();
+    callback toggle-picker();
+    callback stick-bottom-request();
+    spacing: 6px;
+    public function focus-input() {
+        input.focus();
+    }
+    // Composer: floating glass slab. Near-opaque so the transcript does not show through; light rim, inner
+    // glow, and a brighter rim while the input has focus.
+    pill := Rectangle {
+        border-radius: Theme.radius-2xl;
+        background: Theme.composer;
+        border-width: 1px;
+        border-color: Theme.glass-rim;
+        drop-shadow-blur: Theme.shadow-composer-blur;
+        drop-shadow-offset-y: 14px;
+        drop-shadow-color: Theme.shadow-composer-color;
+        Rectangle {
+            border-radius: parent.border-radius;
+            inner-shadow-blur: Theme.glass-inner-blur;
+            inner-shadow-offset-y: 1px;
+            inner-shadow-color: Theme.glass-inner.with-alpha(input.has-focus ? 0.16 : 0.08);
+            border-width: 1px;
+            border-color: input.has-focus ? Theme.input-border-focused : transparent;
+            animate border-color, inner-shadow-color { duration: Theme.dur-move; easing: ease-out-quint; }
+            accessible-role: none;
+        }
+        VerticalLayout {
+            padding: 10px;
+            padding-left: 10px;
+            padding-top: 10px;
+            spacing: 6px;
+                if ChatUi.chips.length > 0: ChipStrip { }
+            HorizontalLayout {
+                padding-left: 4px;
+                padding-right: 4px;
+                Rectangle {
+                    horizontal-stretch: 1;
+                    height: clamp(input.preferred-height, 22px, 180px) + 12px;
+                    clip: true;
+                    FocusScope {
+                        y: 6px;
+                        height: parent.height - 12px;
+                        capture-key-pressed(event) => {
+                            if event.modifiers.control && !event.modifiers.alt && (event.text == "u" || event.text == "U") {
+                                ChatUi.attach-files();
+                                return accept;
+                            }
+                            // @ / 弹出列表打开时，方向键、Enter/Tab 与 Esc 由弹出列表处理。
+                            if ChatUi.mention-open {
+                                if event.text == Key.DownArrow {
+                                    ChatUi.mention-index = Math.mod(ChatUi.mention-index + 1, max(1, ChatUi.mention-rows.length));
+                                    return accept;
+                                }
+                                if event.text == Key.UpArrow {
+                                    ChatUi.mention-index = Math.mod(ChatUi.mention-index - 1 + max(1, ChatUi.mention-rows.length), max(1, ChatUi.mention-rows.length));
+                                    return accept;
+                                }
+                                if (event.text == Key.Return || event.text == Key.Tab) && ChatUi.mention-rows.length > 0 {
+                                    ChatUi.mention-pick(ChatUi.mention-index);
+                                    return accept;
+                                }
+                                if event.text == Key.Escape {
+                                    ChatUi.mention-open = false;
+                                    return accept;
+                                }
+                            }
+                            // 粘贴：剪贴板里是图片时由 Rust 存成 PNG 并作为图片附件；否则交给 TextInput 粘贴文本。
+                            if (event.text == "v" || event.text == "V") && (event.modifiers.control || event.modifiers.meta) && !event.modifiers.alt {
+                                if ChatUi.paste-image() {
+                                    return accept;
+                                }
+                            }
+                            // 提示词历史：输入框为空（或正在浏览历史）时 ↑/↓ 切换已发送的提示词。
+                            if event.text == Key.UpArrow && !event.modifiers.shift {
+                                if ChatUi.history(-1) {
+                                    return accept;
+                                }
+                            }
+                            if event.text == Key.DownArrow && !event.modifiers.shift {
+                                if ChatUi.history(1) {
+                                    return accept;
+                                }
+                            }
+                            // Enter 发送，Shift+Enter 交给 TextInput 换行。
+                            // KEY-024：发送键由设置决定（Enter 或 Ctrl/Cmd+Enter）；后者时普通 Enter 交给 TextInput 换行。
+                            if event.text == Key.Return && !event.modifiers.shift {
+                                if SettingsUi.get-string("general.composerSend", SettingsUi.rev) == "modEnter" && !event.modifiers.control && !event.modifiers.meta {
+                                    return reject;
+                                }
+                                root.send();
+                                return accept;
+                            }
+                            reject
+                        }
+                        input-flick := Flickable {
+                            interactive: false;
+                            content-width: self.width;
+                            content-height: max(self.height, input.preferred-height);
+                            input := TextInput {
+                                width: input-flick.width;
+                                height: max(input-flick.height, self.preferred-height);
+                                text <=> root.draft;
+                                single-line: false;
+                                wrap: word-wrap;
+                                font-size: Theme.ui-caption;
+                                color: Theme.foreground;
+                                selection-background-color: Theme.selected;
+                                accessible-label: @tr("Message");
+                                cursor-position-changed(p) => {
+                                    if p.y + input-flick.content-y < 0 {
+                                        input-flick.content-y = -p.y;
+                                    } else if p.y + self.font-size * 1.5 + input-flick.content-y > input-flick.height {
+                                        input-flick.content-y = min(0px, input-flick.height - p.y - self.font-size * 1.5);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if root.draft == "": Text {
+                        x: 0;
+                        y: 6px;
+                        text: root.running ? @tr("Queue a follow-up, or Steer to run it next") : @tr("Ask anything. @ to mention, / for commands");
+                        color: Theme.icon-subtlest;
+                        font-size: Theme.ui-caption;
+                        accessible-role: none;
+                    }
+                }
+            }
+            ComposerToolbar {
+                agents: root.agents;
+                running: root.running;
+                queued: root.queued;
+                sticky-name: root.sticky-name;
+                draft <=> root.draft;
+                send => {
+                    root.send();
+                }
+                stop => {
+                    root.stop();
+                }
+                toggle-picker => {
+                    root.toggle-picker();
+                }
+                stick-bottom-request => {
+                    root.stick-bottom-request();
+                }
+                open-plus => {
+                    plus-menu.show();
+                }
+            }
+        }
+    }
+    plus-menu := PopupWindow {
+        x: 0;
+        y: -self.height - 6px;
+        width: 300px;
+        MenuShell {
+            MenuItem {
+                text: @tr("Add files or photos");
+                detail: "Ctrl+U";
+                show-check: false;
+                has-icon: true;
+                icon: Icons.paperclip;
+                clicked => {
+                    plus-menu.close();
+                    ChatUi.attach-files();
+                }
+            }
+            MenuItem {
+                text: @tr("Slash commands");
+                show-check: false;
+                has-icon: true;
+                icon: Icons.square-terminal;
+                clicked => {
+                    plus-menu.close();
+                    root.draft = root.draft == "" ? "/" : root.draft + " /";
+                    root.focus-input();
+                }
+            }
+            MenuItem {
+                text: @tr("Mention a file, session or agent");
+                show-check: false;
+                has-icon: true;
+                icon: Icons.at-sign;
+                clicked => {
+                    plus-menu.close();
+                    root.draft = root.draft == "" ? "@" : root.draft + " @";
+                    root.focus-input();
+                }
+            }
+            MenuItem {
+                text: @tr("Whiteboard");
+                show-check: false;
+                has-icon: true;
+                icon: Icons.brush;
+                clicked => {
+                    plus-menu.close();
+                    ChatUi.annotate-chip(-1);
+                }
+            }
+            MenuItem {
+                text: "Deep research";
+                description: "Search the web and write a sourced report";
+                has-icon: true;
+                icon: Icons.globe;
+                checked: DockUi.research;
+                clicked => {
+                    plus-menu.close();
+                    DockUi.pick-option("mode", "harness:research");
+                }
+            }
+        }
+    }
+}
+// Queued messages above the composer (ZCode ConversationQueuePanel): grip (drag to reorder), text, Steer, Edit,
+// Remove. The drag only previews locally; the order shown is always the hub's next Event::Queue.

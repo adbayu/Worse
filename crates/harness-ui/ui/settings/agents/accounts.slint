@@ -1,0 +1,211 @@
+import { Theme } from "../../theme/tokens.slint";
+import { Divider } from "../../components/controls.slint";
+import { AgentsUi } from "../globals.slint";
+import { SetupUi } from "../../setup.slint";
+import { DButton, Glyph, Hint, SectionCard, ManageRow } from "./parts.slint";
+
+export component ClaudeAccounts inherits SectionCard {
+    title: @tr("Claude accounts");
+    note: "Extra subscriptions take over when one reaches its limit";
+    for acc[i] in AgentsUi.accounts: VerticalLayout {
+        if i > 0: Divider { }
+        ManageRow {
+            name: acc.label;
+            sub: acc.id;
+            dot: acc.auth == 0 ? Theme.success : acc.auth == 1 ? Theme.warning : Theme.icon-subtlest;
+            state: (acc.auth == 0 ? @tr("Signed in") : acc.auth == 1 ? @tr("Not signed in") : @tr("Sign-in unknown")) + (acc.loaded ? "" : " · restart to activate");
+            VerticalLayout {
+                alignment: center;
+                DButton {
+                    text: @tr("Sign in");
+                    h: 26px;
+                    pad: 10px;
+                    size: 11.5px;
+                    clicked => {
+                        AgentsUi.login-account(acc.id);
+                    }
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                Glyph {
+                    text: "✕";
+                    size: 10px;
+                    label: @tr("Remove {0}", acc.label);
+                    clicked => {
+                        AgentsUi.remove-account(acc.id);
+                    }
+                }
+            }
+        }
+    }
+    Divider { }
+    HorizontalLayout {
+        padding: 12px;
+        padding-left: 16px;
+        spacing: 8px;
+        Hint {
+            text: AgentsUi.account-error != "" ? AgentsUi.account-error : @tr("After adding: click Sign in, run /login in the console, then restart Harness.");
+            color: AgentsUi.account-error != "" ? Theme.destructive-surface-foreground : Theme.icon-subtlest;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+        }
+        Glyph {
+            text: "↻";
+            label: @tr("Refresh accounts");
+            clicked => {
+                AgentsUi.refresh-accounts();
+            }
+        }
+    }
+}
+
+export component AgyAccounts inherits SectionCard {
+    title: @tr("Antigravity accounts");
+    note: "Logins live in Windows Credential Manager";
+    for acc[i] in AgentsUi.agy-accounts: VerticalLayout {
+        if i > 0: Divider { }
+        ManageRow {
+            name: acc.name;
+            sub: acc.id;
+            dot: acc.exhausted ? Theme.warning : acc.signed-in ? Theme.success : Theme.icon-subtlest;
+            state: (AgentsUi.agy-pending == acc.id ? "Waiting for sign-in" : acc.exhausted ? "Limit reached" : acc.signed-in ? "Signed in" : "Not signed in") + (acc.active ? " · active" : "");
+            if i > 0: VerticalLayout {
+                alignment: center;
+                Glyph {
+                    text: "▲";
+                    size: 9px;
+                    label: "Move " + acc.name + " up";
+                    clicked => {
+                        AgentsUi.agy-move-up(acc.id);
+                    }
+                }
+            }
+            if acc.signed-in && !acc.active: VerticalLayout {
+                alignment: center;
+                DButton {
+                    text: "Use";
+                    h: 26px;
+                    pad: 10px;
+                    size: 11.5px;
+                    clicked => {
+                        AgentsUi.agy-use(acc.id);
+                    }
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                DButton {
+                    text: AgentsUi.agy-pending == acc.id ? "Done" : "Sign in";
+                    h: 26px;
+                    pad: 10px;
+                    size: 11.5px;
+                    clicked => {
+                        if AgentsUi.agy-pending == acc.id {
+                            AgentsUi.agy-done();
+                        } else {
+                            AgentsUi.agy-sign-in(acc.id);
+                        }
+                    }
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                Glyph {
+                    text: "✕";
+                    size: 10px;
+                    label: "Remove " + acc.name;
+                    clicked => {
+                        AgentsUi.agy-remove(acc.id);
+                    }
+                }
+            }
+        }
+    }
+    if AgentsUi.agy-accounts.length > 0: Divider { }
+    HorizontalLayout {
+        padding: 12px;
+        padding-left: 16px;
+        spacing: 8px;
+        Hint {
+            text: AgentsUi.agy-error != "" ? AgentsUi.agy-error : "Sign in signs agy out and opens a console running agy: log in there, then click Done. Running agy sessions restart on every switch.";
+            color: AgentsUi.agy-error != "" ? Theme.destructive-surface-foreground : Theme.icon-subtlest;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+        }
+        if AgentsUi.agy-accounts.length == 0 && AgentsUi.agy-live-signed-in: VerticalLayout {
+            alignment: center;
+            DButton {
+                text: "Import current login";
+                h: 26px;
+                pad: 10px;
+                size: 11.5px;
+                clicked => {
+                    AgentsUi.agy-import();
+                }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Glyph {
+                text: "↻";
+                label: "Refresh Antigravity accounts";
+                clicked => {
+                    AgentsUi.agy-refresh();
+                }
+            }
+        }
+    }
+}
+
+export component AgentsFooter inherits VerticalLayout {
+    spacing: 10px;
+    Rectangle {
+        height: 1px;
+        background: Theme.border;
+    }
+    HorizontalLayout {
+        height: 46px;
+        spacing: 8px;
+        HorizontalLayout {
+            spacing: 7px;
+            horizontal-stretch: 1;
+            Text {
+                text: "◷";
+                font-family: "Segoe UI Symbol";
+                font-size: 11px;
+                color: Theme.icon-subtlest;
+                vertical-alignment: center;
+                accessible-role: none;
+            }
+            Text {
+                text: "Detected when Settings opened · mode and model apply to new sessions";
+                font-size: 11px;
+                color: Theme.icon-subtlest;
+                vertical-alignment: center;
+                overflow: elide;
+                horizontal-stretch: 1;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            DButton {
+                text: @tr("Set up agents…");
+                outline: true;
+                clicked => {
+                    SetupUi.open-setup();
+                }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            DButton {
+                text: "Re-detect agents";
+                glyph: "↻";
+                clicked => {
+                    AgentsUi.refresh();
+                }
+            }
+        }
+    }
+}

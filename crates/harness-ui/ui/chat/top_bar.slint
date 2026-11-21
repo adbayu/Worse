@@ -1,0 +1,290 @@
+import { Theme } from "../theme/tokens.slint";
+import { Icon, IconButton, Icons, MenuItem, MenuShell } from "../components/controls.slint";
+import { AsciiArt, GlyphAnim } from "../components/ascii.slint";
+import { BoardUi } from "../board/board.slint";
+import { OrchLiveUi } from "../orchestra/live.slint";
+import { GraphUi } from "../settings/globals.slint";
+import { ChatUi } from "./globals.slint";
+import { TitleDrag } from "./title_drag.slint";
+import { OrchButton, WindowControls, PanelsMenu } from "./top_bar_parts.slint";
+
+export component TopBar inherits Rectangle {
+    in property <bool> narrow;
+    in property <length> win-w;
+    in property <length> window-width;
+    in property <bool> native-frame;
+    in property <bool> win-maximized;
+    in property <string> active-title;
+    in property <string> workspace-name;
+    in-out property <bool> drawer-open;
+    in-out property <bool> sidebar-hidden;
+    in-out property <bool> title-editing;
+    in-out property <bool> ctx-open;
+    in-out property <bool> header-menu-open;
+    in-out property <bool> files-open;
+    in-out property <string> side-tab;
+    callback window-action(string);
+    callback open-memory-graph();
+    height: Theme.topbar-height;
+    background: transparent;
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 4px;
+        spacing: 4px;
+        if root.narrow || root.sidebar-hidden: IconButton {
+            y: (parent.height - self.height) / 2;
+            icon: Icons.panel-left;
+            label: @tr("Show sidebar");
+            clicked => {
+                if root.narrow {
+                    root.drawer-open = !root.drawer-open;
+                } else {
+                    root.sidebar-hidden = false;
+                }
+            }
+        }
+        if root.title-editing && ChatUi.dialog-open && ChatUi.dialog-kind == "rename": Rectangle {
+            y: (parent.height - self.height) / 2;
+            height: 28px;
+            width: min(max(200px, title-input.preferred-width + 20px), 420px);
+            border-radius: Theme.radius-md;
+            background: Theme.input;
+            border-width: 1px;
+            border-color: Theme.switch-on;
+            title-input := TextInput {
+                x: 8px;
+                width: parent.width - 16px;
+                text <=> ChatUi.dialog-text;
+                single-line: true;
+                vertical-alignment: center;
+                font-size: Theme.ui-base;
+                color: Theme.foreground;
+                selection-background-color: Theme.switch-on;
+                accessible-label: @tr("Session title");
+                init => {
+                    self.focus();
+                    self.select-all();
+                }
+                accepted => {
+                    root.title-editing = false;
+                    ChatUi.dialog-submit();
+                }
+                key-pressed(event) => {
+                    if event.text == Key.Escape {
+                        root.title-editing = false;
+                        ChatUi.dialog-open = false;
+                        return accept;
+                    }
+                    reject
+                }
+            }
+        }
+        if !(root.title-editing && ChatUi.dialog-open && ChatUi.dialog-kind == "rename"): title-btn := Rectangle {
+            y: (parent.height - self.height) / 2;
+            height: 28px;
+            // `win-w` (not `root.window-width`): a plain property written from `changed width`, so no layout binding loop.
+            width: min(title-text.preferred-width + 16px, root.narrow ? max(80px, root.win-w - 190px) : 420px);
+            border-radius: Theme.radius-md;
+            background: tta.has-hover ? Theme.hover : transparent;
+            accessible-role: button;
+            accessible-label: @tr("Rename session");
+            accessible-action-default => {
+                if root.active-title != "" {
+                    root.title-editing = true;
+                    ChatUi.session-action("rename", "");
+                }
+            }
+            title-text := Text {
+                x: 8px;
+                width: parent.width - 16px;
+                text: root.active-title != "" ? root.active-title : @tr("New session");
+                font-size: Theme.ui-base;
+                font-weight: Theme.weight-semibold;
+                color: Theme.foreground;
+                vertical-alignment: center;
+                overflow: elide;
+                accessible-role: none;
+            }
+            tta := TouchArea {
+                mouse-cursor: root.active-title != "" ? text : default;
+                clicked => {
+                    if root.active-title != "" {
+                        root.ctx-open = false;
+                        root.header-menu-open = false;
+                        root.title-editing = true;
+                        ChatUi.session-action("rename", "");
+                    }
+                }
+            }
+        }
+        Rectangle {
+            y: (parent.height - self.height) / 2;
+            width: 22px;
+            height: 24px;
+            border-radius: Theme.radius-md;
+            background: cta.has-hover || root.header-menu-open ? Theme.hover : transparent;
+            accessible-role: button;
+            accessible-label: @tr("Session actions");
+            accessible-action-default => {
+                root.ctx-open = false;
+                root.header-menu-open = !root.header-menu-open;
+            }
+            Icon {
+                source: Icons.chevron-down;
+                size: Theme.icon-sm;
+                tint: Theme.icon-subtle;
+            }
+            cta := TouchArea {
+                mouse-cursor: pointer;
+                clicked => {
+                    root.ctx-open = false;
+                    root.header-menu-open = !root.header-menu-open;
+                }
+            }
+        }
+        // Workspace chip (design 01: "ZCode/Worse").
+        if root.workspace-name != "" && !root.narrow: Rectangle {
+            y: (parent.height - self.height) / 2;
+            height: 22px;
+            width: min(ws-chip.preferred-width + 16px, 220px);
+            border-radius: Theme.radius-sm;
+            border-width: 1px;
+            border-color: Theme.border-hover;
+            ws-chip := Text {
+                x: 8px;
+                width: parent.width - 16px;
+                text: root.workspace-name;
+                font-family: Theme.art-font;
+                font-size: Theme.ui-sm - 1px;
+                color: Theme.muted;
+                vertical-alignment: center;
+                overflow: elide;
+                accessible-role: none;
+            }
+        }
+        Rectangle {
+            horizontal-stretch: 1;
+            TitleDrag {
+                enabled: !root.native-frame;
+                bar-width: root.window-width;
+                maximized: root.win-maximized;
+                action(a) => {
+                    root.window-action(a);
+                }
+            }
+        }
+        // Board: ghost text button (dropped on phone-size windows, where the title needs the room).
+        if !root.narrow: Rectangle {
+            y: (parent.height - self.height) / 2;
+            height: 28px;
+            width: board-t.preferred-width + 20px;
+            border-radius: Theme.radius-md;
+            background: bdta.has-hover ? Theme.hover : transparent;
+            accessible-role: button;
+            accessible-label: @tr("Board");
+            accessible-action-default => {
+                BoardUi.action("open", "");
+            }
+            board-t := Text {
+                text: @tr("Board");
+                font-size: Theme.ui-caption;
+                color: bdta.has-hover ? Theme.foreground : Theme.muted;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                accessible-role: none;
+            }
+            bdta := TouchArea {
+                mouse-cursor: pointer;
+                clicked => {
+                    BoardUi.action("open", "");
+                }
+            }
+        }
+        if !root.narrow: Rectangle {
+            y: (parent.height - self.height) / 2;
+            height: 28px;
+            width: memory-t.preferred-width + 20px;
+            border-radius: Theme.radius-md;
+            background: GraphUi.view-wide ? Theme.raised : (mmta.has-hover ? Theme.hover : transparent);
+            accessible-role: button;
+            accessible-label: @tr("Memory");
+            accessible-action-default => {
+                root.open-memory-graph();
+            }
+            memory-t := Text {
+                text: @tr("Memory");
+                font-size: Theme.ui-caption;
+                color: mmta.has-hover || GraphUi.view-wide ? Theme.foreground : Theme.muted;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                accessible-role: none;
+            }
+            mmta := TouchArea {
+                mouse-cursor: pointer;
+                clicked => {
+                    root.open-memory-graph();
+                }
+            }
+        }
+        // Orchestra · N (design 01: accent pill with a dot; N = running subagents + tasks). Opens Settings > Orchestra.
+        OrchButton {
+            y: (parent.height - self.height) / 2;
+            narrow: root.narrow;
+        }
+        // Side panel toggle (design 01: bordered square).
+        Rectangle {
+            y: (parent.height - self.height) / 2;
+            width: 28px;
+            height: 28px;
+            border-radius: Theme.radius-md;
+            background: root.files-open ? Theme.raised : (ptta.has-hover ? Theme.hover : transparent);
+            border-width: 1px;
+            border-color: Theme.border-hover;
+            accessible-role: button;
+            accessible-label: root.files-open ? @tr("Close panel") : @tr("Open panel");
+            accessible-action-default => {
+                root.files-open = !root.files-open;
+            }
+            Icon {
+                source: Icons.panel-right;
+                size: Theme.icon-xs;
+                tint: root.files-open ? Theme.foreground : Theme.icon-subtle;
+            }
+            ptta := TouchArea {
+                mouse-cursor: pointer;
+                clicked => {
+                    root.files-open = !root.files-open;
+                }
+            }
+        }
+        more-panels := IconButton {
+            y: (parent.height - self.height) / 2;
+            icon: Icons.ellipsis;
+            label: @tr("More panels");
+            active: root.files-open && (root.side-tab == "diff" || root.side-tab == "search");
+            clicked => {
+                panels-menu.show();
+            }
+        }
+        Rectangle {
+            width: 8px;
+        }
+        if !root.native-frame: WindowControls {
+            window-action(a) => {
+                root.window-action(a);
+            }
+        }
+    }
+    panels-menu := PopupWindow {
+        x: more-panels.x - 180px;
+        y: parent.height;
+        width: 220px;
+        PanelsMenu {
+            files-open <=> root.files-open;
+            side-tab <=> root.side-tab;
+            close => {
+                panels-menu.close();
+            }
+        }
+    }
+}

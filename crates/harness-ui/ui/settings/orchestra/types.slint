@@ -1,0 +1,35 @@
+export struct OrchNode {
+    id: string,
+    name: string,
+    initial: string,
+    role: int,
+    x: float,
+    y: float,
+    muted: bool,
+}
+
+export struct OrchEdge {
+    commands: string,
+    role: int,
+}
+
+export struct OrchLink {
+    edge: int,
+    name: string,
+}
+
+export struct OrchAgent {
+    id: string,
+    name: string,
+}
+
+export struct OrchConn {
+    edge: int,
+    from-id: string,
+    from-agent: string,
+    from-name: string,
+    to-id: string,
+    to-agent: string,
+    to-name: string,
+    role: int,
+}

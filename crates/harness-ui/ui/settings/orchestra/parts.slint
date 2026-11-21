@@ -1,0 +1,368 @@
+import { Theme } from "../../theme/tokens.slint";
+import { Icon, Icons, Button, IconButton, Divider, Card, SectionLabel, MenuShell, MenuItem } from "../../components/controls.slint";
+import { TextArea, Switch, SelectOption, Select, TextField } from "../parts.slint";
+import { SettingsUi, DecisionUi } from "../globals.slint";
+import { OrchAgent } from "./types.slint";
+import { OrchestraUi } from "./ui.slint";
+
+export component ODiv inherits Rectangle {
+    height: 1px;
+    background: Theme.card-border;
+}
+
+export component OCard inherits Rectangle {
+    in property <string> title;
+    in property <string> note;
+    background: Theme.card;
+    border-radius: 12px;
+    border-width: 1px;
+    border-color: Theme.card-border;
+    clip: true;
+    VerticalLayout {
+        padding: 1px;
+        HorizontalLayout {
+            height: 46px;
+            padding-left: 16px;
+            padding-right: 16px;
+            Text {
+                text: root.title;
+                font-size: 13px;
+                font-weight: Theme.weight-semibold;
+                color: Theme.foreground;
+                vertical-alignment: center;
+            }
+            Rectangle {
+                horizontal-stretch: 1;
+            }
+            Text {
+                text: root.note;
+                font-size: 11px;
+                color: Theme.icon-subtlest;
+                vertical-alignment: center;
+            }
+        }
+        ODiv { }
+        @children
+    }
+}
+
+export component ORow inherits HorizontalLayout {
+    in property <string> label;
+    in property <string> description;
+    padding-left: 16px;
+    padding-right: 16px;
+    padding-top: 12px;
+    padding-bottom: 12px;
+    spacing: 16px;
+    VerticalLayout {
+        horizontal-stretch: 1;
+        alignment: center;
+        spacing: 3px;
+        Text {
+            text: root.label;
+            font-size: 13px;
+            color: Theme.foreground;
+        }
+        if root.description != "": Text {
+            text: root.description;
+            font-size: 12px;
+            color: Theme.muted;
+            wrap: word-wrap;
+        }
+    }
+    HorizontalLayout {
+        alignment: end;
+        spacing: 8px;
+        @children
+    }
+}
+
+export component OStepper inherits Rectangle {
+    in property <string> text;
+    in property <string> label;
+    in property <bool> can-dec: true;
+    in property <bool> can-inc: true;
+    callback dec();
+    callback inc();
+    width: 98px;
+    height: 30px;
+    border-radius: 8px;
+    border-width: 1px;
+    border-color: Theme.card-border;
+    background: Theme.input;
+    accessible-role: spinbox;
+    accessible-label: root.label;
+    accessible-value: root.text;
+    accessible-action-increment => { root.inc(); }
+    accessible-action-decrement => { root.dec(); }
+    HorizontalLayout {
+        padding: 1px;
+        Rectangle {
+            width: 28px;
+            border-radius: 7px;
+            background: dta.has-hover && root.can-dec ? Theme.surface-hover : transparent;
+            Text {
+                text: "–"; font-family: "Segoe UI Symbol";
+                font-size: 13px;
+                color: root.can-dec ? Theme.muted : Theme.icon-subtlest;
+            }
+            dta := TouchArea {
+                enabled: root.can-dec;
+                mouse-cursor: pointer;
+                clicked => { root.dec(); }
+            }
+        }
+        Text {
+            width: 40px;
+            text: root.text;
+            font-size: 13px;
+            color: Theme.foreground;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            accessible-role: none;
+        }
+        Rectangle {
+            width: 28px;
+            border-radius: 7px;
+            background: ita.has-hover && root.can-inc ? Theme.surface-hover : transparent;
+            Text {
+                text: "+";
+                font-size: 13px;
+                color: root.can-inc ? Theme.muted : Theme.icon-subtlest;
+            }
+            ita := TouchArea {
+                enabled: root.can-inc;
+                mouse-cursor: pointer;
+                clicked => { root.inc(); }
+            }
+        }
+    }
+}
+
+export component OButton inherits Rectangle {
+    in property <string> text;
+    in property <bool> enabled: true;
+    callback clicked();
+    height: 29px;
+    width: bl.preferred-width + 24px;
+    border-radius: 8px;
+    border-width: 1px;
+    border-color: Theme.popover-border;
+    background: bta.has-hover && root.enabled ? Theme.border : Theme.surface-hover;
+    opacity: root.enabled ? 1 : 0.5;
+    accessible-role: button;
+    accessible-label: root.text;
+    accessible-action-default => { if root.enabled { root.clicked(); } }
+    bl := Text {
+        text: root.text;
+        font-size: 12px;
+        font-weight: Theme.weight-semibold;
+        color: Theme.foreground;
+        accessible-role: none;
+    }
+    bta := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+export component OPill inherits Rectangle {
+    in property <string> text;
+    in property <color> tint: Theme.accent-fg;
+    height: 17px;
+    width: pl.preferred-width + 16px;
+    border-radius: 999px;
+    background: root.tint.with-alpha(0.12);
+    pl := Text {
+        text: root.text;
+        font-size: 11px;
+        font-weight: Theme.weight-semibold;
+        color: root.tint;
+    }
+}
+
+export component ODot inherits Rectangle {
+    in property <color> tint;
+    width: 8px;
+    height: 8px;
+    border-radius: 4px;
+    background: root.tint;
+}
+
+export component OSegmented inherits Rectangle {
+    in property <[SelectOption]> options;
+    in property <string> current;
+    in property <string> label;
+    callback select(string);
+    height: 31px;
+    width: row.preferred-width + 6px;
+    border-radius: 8px;
+    border-width: 1px;
+    border-color: Theme.card-border;
+    background: Theme.input;
+    accessible-role: tab-list;
+    accessible-label: root.label;
+    row := HorizontalLayout {
+        x: 3px;
+        y: 3px;
+        height: 25px;
+        spacing: 2px;
+        for o in root.options: Rectangle {
+            width: st.preferred-width + 20px;
+            border-radius: 6px;
+            background: o.id == root.current ? Theme.surface-hover : (sta.has-hover ? Theme.surface-hover.with-alpha(0.5) : transparent);
+            accessible-role: tab;
+            accessible-label: o.label;
+            accessible-item-selected: o.id == root.current;
+            accessible-action-default => { root.select(o.id); }
+            st := Text {
+                text: o.label;
+                font-size: 12px;
+                color: o.id == root.current ? Theme.foreground : Theme.muted;
+                accessible-role: none;
+            }
+            sta := TouchArea {
+                mouse-cursor: pointer;
+                clicked => { root.select(o.id); }
+            }
+        }
+    }
+}
+
+export component OAgentSelect inherits Rectangle {
+    in property <string> current;
+    callback select(string);
+    height: 29px;
+    width: sr.preferred-width;
+    border-radius: 8px;
+    border-width: 1px;
+    border-color: sta.has-hover ? Theme.popover-border : Theme.card-border;
+    background: Theme.input;
+    accessible-role: combobox;
+    accessible-label: @tr("Default subagent");
+    accessible-value: OrchestraUi.agent-name(root.current);
+    accessible-action-default => { popup.show(); }
+    sr := HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 10px;
+        spacing: 8px;
+        VerticalLayout {
+            alignment: center;
+            ODot { tint: root.current == "" ? Theme.icon-subtlest : OrchestraUi.agent-color(root.current); }
+        }
+        Text {
+            text: root.current == "" ? @tr("Auto (first connected)") : OrchestraUi.agent-name(root.current);
+            font-size: 12px;
+            color: Theme.foreground;
+            vertical-alignment: center;
+        }
+        Text {
+            text: "▾"; font-family: "Segoe UI Symbol";
+            font-size: 11px;
+            color: Theme.muted;
+            vertical-alignment: center;
+        }
+    }
+    sta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { popup.show(); }
+    }
+    popup := PopupWindow {
+        x: root.width - 240px;
+        y: root.height + 4px;
+        width: 240px;
+        MenuShell {
+            MenuItem {
+                text: @tr("Auto (first connected)");
+                checked: root.current == "";
+                clicked => {
+                    root.select("");
+                    popup.close();
+                }
+            }
+            Divider { }
+            for a in OrchestraUi.agents: MenuItem {
+                text: a.name;
+                checked: a.id == root.current;
+                clicked => {
+                    root.select(a.id);
+                    popup.close();
+                }
+            }
+        }
+    }
+}
+
+export component AddConnectionButton inherits Rectangle {
+    width: ob.width;
+    height: ob.height;
+    ob := OButton {
+        text: @tr("+ Add connection");
+        enabled: OrchestraUi.candidates.length > 0;
+        clicked => { menu.show(); }
+    }
+    menu := PopupWindow {
+        x: 0;
+        y: root.height + 4px;
+        width: 280px;
+        MenuShell {
+            for c in OrchestraUi.candidates: MenuItem {
+                text: c.from-name + "  →  " + c.to-name;
+                show-check: false;
+                clicked => {
+                    OrchestraUi.connect(c.from-id, c.to-id);
+                    menu.close();
+                }
+            }
+        }
+    }
+}
+
+export component InstructionsBox inherits Rectangle {
+    in property <string> text;
+    property <string> pending;
+    height: max(79px, ed.preferred-height + 24px);
+    border-radius: 8px;
+    border-width: 1px;
+    border-color: ed.has-focus ? Theme.accent-line : Theme.card-border;
+    background: Theme.input;
+    TouchArea {
+        mouse-cursor: MouseCursor.text;
+        clicked => { ed.focus(); }
+    }
+    if ed.text == "": Text {
+        x: 12px;
+        y: 12px;
+        width: parent.width - 24px;
+        text: "Claim paths before editing.\nReport frame ids or files changed when you finish.\nNever run cargo clean. Ask before pushing to main.";
+        font-size: 12px;
+        color: Theme.icon-subtlest;
+        wrap: word-wrap;
+        accessible-role: none;
+    }
+    ed := TextInput {
+        x: 12px;
+        y: 12px;
+        width: parent.width - 24px;
+        text: root.text;
+        single-line: false;
+        wrap: word-wrap;
+        font-size: 12px;
+        color: Theme.foreground-subtle;
+        accessible-label: @tr("Subagent instructions");
+        edited => {
+            root.pending = self.text;
+            save.running = false;
+            save.running = true;
+        }
+    }
+    save := Timer {
+        interval: 600ms;
+        running: false;
+        triggered => {
+            self.running = false;
+            SettingsUi.set-string("orchestra.instructions", root.pending);
+        }
+    }
+}

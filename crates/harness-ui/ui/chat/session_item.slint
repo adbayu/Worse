@@ -1,0 +1,288 @@
+import { BoardUi } from "../board/board.slint";
+import { SessionRow, AgentTint } from "../models.slint";
+import { ChatUi } from "./globals.slint";
+import { AsciiArt, GlyphAnim } from "../components/ascii.slint";
+import { Button, Icon, IconButton, Icons, MenuItem, MenuShell, SectionLabel, StatusDot } from "../components/controls.slint";
+import { ListView } from "std-widgets.slint";
+import { Theme } from "../theme/tokens.slint";
+import { AccountCard, SessionSearch } from "./account_card.slint";
+
+export component SessionItem inherits Rectangle {
+    in property <SessionRow> s;
+    in property <length> origin-y;
+    in property <length> drop-row;
+    in property <length> drop-top;
+    in-out property <string> drag-id;
+    in-out property <bool> dragged;
+    in-out property <length> drag-y;
+    callback open-session(string);
+    callback archive-session(string);
+    callback menu(string, length, length);
+    callback group-menu(string, length, length);
+    // Section header above the first row: Pinned, a user group (color dot, collapse, menu) or a timeline
+    // group (ZCode task list: Today / Yesterday / Previous 7 days …). id == "": collapsed group header only.
+    height: (root.s.header != "" ? (root.s.header == "group" || root.s.header == "project" ? 36px : 30px) : 0px) + (root.s.id != "" ? 49px : 0px);
+    VerticalLayout {
+        padding-bottom: root.s.id != "" ? 2px : 0px;
+        if root.s.header == "project": Rectangle {
+            height: 36px;
+            border-radius: Theme.radius-md;
+            background: pha.has-hover ? Theme.hover : transparent;
+            accessible-role: AccessibleRole.button;
+            accessible-label: "project " + root.s.header-label;
+            accessible-description: (root.s.collapsed ? "collapsed " : "expanded ") + root.s.header-color;
+            accessible-action-default => {
+                ChatUi.group-action("toggle", root.s.header-id);
+            }
+            pha := TouchArea {
+                mouse-cursor: pointer;
+                clicked => {
+                    ChatUi.group-action("toggle", root.s.header-id);
+                }
+            }
+            HorizontalLayout {
+                padding-top: 12px;
+                padding-left: 8px;
+                padding-right: 8px;
+                spacing: 6px;
+                // Caps folder header (design 01: "ZCODE / WORSE   5").
+                Text {
+                    text: root.s.header-label.to-uppercase();
+                    font-size: 10px;
+                    font-weight: Theme.weight-semibold;
+                    letter-spacing: 0.8px;
+                    color: Theme.caps-label;
+                    vertical-alignment: center;
+                    overflow: elide;
+                    accessible-role: none;
+                }
+                Icon {
+                    y: (parent.height - self.height) / 2;
+                    source: root.s.collapsed ? Icons.chevron-right : Icons.chevron-down;
+                    size: Theme.icon-xs;
+                    tint: Theme.icon-subtle;
+                }
+                Rectangle {
+                    horizontal-stretch: 1;
+                }
+                Text {
+                    text: root.s.header-count;
+                    font-size: 10px;
+                    color: Theme.caps-label;
+                    vertical-alignment: center;
+                    accessible-role: none;
+                }
+                IconButton {
+                    y: (parent.height - self.height) / 2;
+                    icon: Icons.plus;
+                    label: "New session in " + root.s.header-label;
+                    size: Theme.control-sm;
+                    icon-size: Theme.icon-xs;
+                    opacity: pha.has-hover ? 1 : 0.55;
+                    clicked => {
+                        ChatUi.group-action("new-session", root.s.header-color);
+                    }
+                }
+            }
+        }
+        if root.s.header != "" && root.s.header != "group" && root.s.header != "project": HorizontalLayout {
+            height: 30px;
+            padding-top: 8px;
+            padding-left: 0px;
+            SectionLabel {
+                text: ChatUi.group-label(root.s.header);
+            }
+        }
+        if root.s.header == "group": Rectangle {
+            height: 36px;
+            border-radius: Theme.radius-md;
+            background: gha.has-hover ? Theme.hover : transparent;
+            accessible-role: AccessibleRole.button;
+            accessible-label: "group " + root.s.header-label;
+            accessible-description: root.s.collapsed ? "collapsed" : "expanded";
+            accessible-action-default => {
+                ChatUi.group-action("toggle", root.s.header-id);
+            }
+            gha := TouchArea {
+                mouse-cursor: pointer;
+                clicked => {
+                    ChatUi.group-action("toggle", root.s.header-id);
+                }
+                pointer-event(event) => {
+                    if event.button == PointerEventButton.right && event.kind == PointerEventKind.up {
+                        root.group-menu(root.s.header-id, self.absolute-position.x + self.mouse-x, self.absolute-position.y + self.mouse-y);
+                    }
+                }
+            }
+            HorizontalLayout {
+                padding-top: 12px;
+                padding-left: 10px;
+                padding-right: 2px;
+                spacing: 6px;
+                Rectangle {
+                    y: (parent.height - self.height) / 2;
+                    width: 8px;
+                    height: 8px;
+                    border-radius: 4px;
+                    background: ChatUi.group-color(root.s.header-color);
+                }
+                Text {
+                    text: root.s.header-label.to-uppercase();
+                    font-size: 10px;
+                    font-weight: Theme.weight-semibold;
+                    letter-spacing: 0.8px;
+                    color: Theme.caps-label;
+                    vertical-alignment: center;
+                    overflow: elide;
+                    accessible-role: none;
+                }
+                Icon {
+                    y: (parent.height - self.height) / 2;
+                    source: root.s.collapsed ? Icons.chevron-right : Icons.chevron-down;
+                    size: Theme.icon-xs;
+                    tint: Theme.icon-subtle;
+                }
+                Rectangle {
+                    horizontal-stretch: 1;
+                }
+                IconButton {
+                    y: (parent.height - self.height) / 2;
+                    icon: Icons.ellipsis;
+                    label: @tr("Group actions for {0}", root.s.header-label);
+                    size: Theme.control-sm;
+                    icon-size: Theme.icon-xs;
+                    opacity: gha.has-hover ? 1 : 0;
+                    clicked => {
+                        root.group-menu(root.s.header-id, self.absolute-position.x, self.absolute-position.y + self.height);
+                    }
+                }
+            }
+        }
+        if root.s.id != "": Rectangle {
+            // Design 01: 47px row, agent-colour dot, title 13 + meta 11, active = raised bg.
+            border-radius: Theme.radius-md;
+            background: root.s.active ? Theme.raised : (sta.has-hover ? Theme.hover : Theme.hover.with-alpha(0));
+            border-width: 0px;
+            transform-scale: sta.pressed ? 0.985 : 1;
+            animate background { duration: Theme.dur-hover; easing: ease-out-quint; }
+            animate transform-scale { duration: Theme.dur-press; easing: ease-out-quint; }
+            accessible-role: list-item;
+            accessible-label: root.s.title != "" ? root.s.title : @tr("Untitled session");
+            accessible-item-selected: root.s.active;
+            accessible-action-default => {
+                root.open-session(root.s.id);
+            }
+            Rectangle {
+                x: 10px;
+                y: 14px;
+                width: 7px;
+                height: 7px;
+                border-radius: 3.5px;
+                background: AgentTint.of(root.s.agents);
+            }
+            VerticalLayout {
+                padding-left: 28px;
+                padding-right: sta.has-hover || more-btn.hovered || archive-btn.hovered || root.s.active ? 64px : 10px;
+                alignment: center;
+                spacing: 1px;
+                HorizontalLayout {
+                    spacing: 4px;
+                    if root.s.pinned: Icon {
+                        source: Icons.pin;
+                        size: 12px;
+                        tint: Theme.icon-subtlest;
+                    }
+                    if root.s.worktree: Icon {
+                        source: Icons.git-fork;
+                        size: 12px;
+                        tint: Theme.icon-subtlest;
+                    }
+                    Text {
+                        text: root.s.title != "" ? root.s.title : @tr("Untitled session");
+                        font-size: Theme.ui-caption;
+                        font-weight: root.s.unread ? Theme.weight-semibold : 400;
+                        color: root.s.active || sta.has-hover || root.s.unread ? Theme.foreground : Theme.foreground-subtle;
+                        overflow: elide;
+                        horizontal-stretch: 1;
+                        accessible-role: none;
+                    }
+                    if root.s.unread: StatusDot {
+                        y: (parent.height - self.height) / 2;
+                        tint: Theme.accent-fg;
+                        accessible-role: AccessibleRole.text;
+                        accessible-label: "unread";
+                    }
+                }
+                Text {
+                    text: root.s.agents != "" ? root.s.agents + " · " + ChatUi.ago(root.s.ago-unit, root.s.ago-n) : ChatUi.ago(root.s.ago-unit, root.s.ago-n);
+                    font-size: Theme.ui-sm - 1px;
+                    color: Theme.muted;
+                    overflow: elide;
+                    accessible-role: none;
+                }
+            }
+            sta := TouchArea {
+                mouse-cursor: root.drag-id != "" ? grabbing : pointer;
+                clicked => {
+                    if !root.dragged {
+                        root.open-session(root.s.id);
+                    }
+                }
+                moved => {
+                    // Drag to a group (ZCode task list): starts after 8px; the drop list shows the targets.
+                    if self.pressed && ChatUi.groups.length > 0 && (root.drag-id != "" || abs(self.mouse-y - self.pressed-y) > 8px) {
+                        root.drag-id = root.s.id;
+                        root.dragged = true;
+                        root.drag-y = self.absolute-position.y + self.mouse-y - root.origin-y;
+                    }
+                }
+                pointer-event(event) => {
+                    if event.button == PointerEventButton.left && event.kind == PointerEventKind.down {
+                        root.dragged = false;
+                    }
+                    if event.button == PointerEventButton.left && event.kind == PointerEventKind.up && root.drag-id != "" {
+                        if root.drag-y >= root.drop-top {
+                            if floor((root.drag-y - root.drop-top) / root.drop-row) < ChatUi.groups.length {
+                                ChatUi.drop-session(root.drag-id, ChatUi.groups[floor((root.drag-y - root.drop-top) / root.drop-row)].id);
+                            } else {
+                                ChatUi.drop-session(root.drag-id, "");
+                            }
+                        }
+                        root.drag-id = "";
+                    }
+                    if event.button == PointerEventButton.right && event.kind == PointerEventKind.up {
+                        root.menu(root.s.id, self.absolute-position.x + self.mouse-x, self.absolute-position.y + self.mouse-y);
+                    }
+                }
+            }
+            more-btn := IconButton {
+                x: parent.width - self.width * 2 - 6px;
+                y: (parent.height - self.height) / 2;
+                icon: Icons.ellipsis;
+                label: @tr("More actions for {0}", root.s.title != "" ? root.s.title : @tr("Untitled session"));
+                size: Theme.control-sm;
+                icon-size: Theme.icon-sm;
+                opacity: sta.has-hover || self.hovered || archive-btn.hovered || root.s.active ? 1 : 0;
+                animate opacity { duration: Theme.dur-hover; }
+                clicked => {
+                    root.menu(root.s.id, self.absolute-position.x, self.absolute-position.y + self.height);
+                }
+            }
+            // Archive (ZCode: hover action on the session row). Always in the tree so keyboard and
+            // accessibility users reach it; only drawn on hover or for the open session.
+            archive-btn := IconButton {
+                x: parent.width - self.width - 4px;
+                y: (parent.height - self.height) / 2;
+                icon: Icons.archive;
+                label: @tr("Archive {0}", root.s.title != "" ? root.s.title : @tr("Untitled session"));
+                size: Theme.control-sm;
+                icon-size: Theme.icon-sm;
+                opacity: sta.has-hover || self.hovered || more-btn.hovered || root.s.active ? 1 : 0;
+                animate opacity { duration: Theme.dur-hover; }
+                clicked => {
+                    root.archive-session(root.s.id);
+                }
+            }
+        }
+    }
+}

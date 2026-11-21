@@ -17,6 +17,13 @@ use tokio::net::{TcpListener, TcpStream};
 
 use crate::{rpc, ws, Inner};
 
+mod upload;
+mod util;
+
+use upload::upload;
+pub(crate) use util::client_ip;
+use util::{authenticate, empty, header_str, json_response, origin_ok, read_body};
+
 type Body = Full<Bytes>;
 
 /// Largest accepted JSON body (1 MB) for every route but `/api/v1/rpc`.
@@ -323,109 +330,6 @@ async fn revoke(inner: &Arc<Inner>, peer: SocketAddr, req: Request<Incoming>) ->
     json_response(StatusCode::OK, &json!({ "ok": true }))
 }
 
-/// `POST /api/v1/upload`: raw body saved under `state_dir/remote-uploads/<yyyymmdd>/`, returning the
-/// absolute path so the phone can attach it as `ContextItem::File`.
-async fn upload(inner: &Arc<Inner>, peer: SocketAddr, req: Request<Incoming>) -> Response<Body> {
-    if let Err(status) = authenticate(inner, peer, req.headers()) {
-        return empty(status);
-    }
-    if !origin_ok(inner, req.headers()) {
-        return empty(StatusCode::FORBIDDEN);
-    }
-    let requested = header_str(req.headers(), "x-file-name").unwrap_or("file");
-    let name = sanitize_file_name(requested);
-    let Some(body) = read_body(req, MAX_UPLOAD_BODY).await else {
-        return empty(StatusCode::PAYLOAD_TOO_LARGE);
-    };
-    if body.is_empty() {
-        return json_response(
-            StatusCode::OK,
-            &json!({ "ok": false, "error": "empty file" }),
-        );
-    }
-    let dir = inner.state_dir.join("remote-uploads").join(utc_day());
-    if let Err(error) = tokio::fs::create_dir_all(&dir).await {
-        return json_response(
-            StatusCode::OK,
-            &json!({ "ok": false, "error": format!("cannot create upload dir: {error}") }),
-        );
-    }
-    let path = dir.join(format!("{}-{name}", random_hex(8)));
-    if let Err(error) = tokio::fs::write(&path, &body).await {
-        return json_response(
-            StatusCode::OK,
-            &json!({ "ok": false, "error": format!("cannot write upload: {error}") }),
-        );
-    }
-    let absolute = std::path::absolute(&path).unwrap_or(path);
-    json_response(
-        StatusCode::OK,
-        &json!({ "ok": true, "path": absolute.to_string_lossy() }),
-    )
-}
-
-/// Basename only, no `..`, no separators, no control chars, at most 100 chars.
-fn sanitize_file_name(raw: &str) -> String {
-    let base = raw.rsplit(['/', '\\']).next().unwrap_or_default();
-    let mut name: String = base
-        .chars()
-        .filter(|ch| !ch.is_control() && *ch != '{' && *ch != '}')
-        .collect();
-    while name.contains("..") {
-        name = name.replace("..", ".");
-    }
-    let trimmed = name.trim_matches(|ch: char| ch == '.' || ch.is_whitespace());
-    let clipped: String = trimmed.chars().take(100).collect();
-    if clipped.is_empty() {
-        "file".to_owned()
-    } else {
-        clipped
-    }
-}
-
-/// UTC `yyyymmdd` without pulling in a date crate.
-fn utc_day() -> String {
-    let secs = crate::auth::now_ms() / 1000;
-    let (year, month, day) = civil_from_days(i64::try_from(secs / 86_400).unwrap_or(0));
-    format!("{year:04}{month:02}{day:02}")
-}
-
-/// Howard Hinnant's `civil_from_days`: days since 1970-01-01 → (year, month, day).
-fn civil_from_days(days: i64) -> (i64, i64, i64) {
-    let z = days + 719_468;
-    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
-    let doe = z - era * 146_097;
-    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
-    let y = yoe + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = doy - (153 * mp + 2) / 5 + 1;
-    let m = if mp < 10 { mp + 3 } else { mp - 9 };
-    (if m <= 2 { y + 1 } else { y }, m, d)
-}
-
-/// `n` random bytes as hex (`getrandom`, process/time fallback like [`crate::auth`]).
-fn random_hex(n: usize) -> String {
-    let mut bytes = vec![0_u8; n];
-    if getrandom::fill(&mut bytes).is_err() {
-        let mut state = crate::auth::now_ms()
-            .rotate_left(17)
-            .wrapping_add(u64::from(std::process::id()))
-            | 1;
-        for byte in &mut bytes {
-            state ^= state << 13;
-            state ^= state >> 7;
-            state ^= state << 17;
-            *byte = (state & 0xff) as u8;
-        }
-    }
-    let mut out = String::with_capacity(n * 2);
-    for byte in bytes {
-        let _ = write!(out, "{byte:02x}");
-    }
-    out
-}
-
 fn events(inner: &Arc<Inner>, peer: SocketAddr, req: Request<Incoming>) -> Response<Body> {
     let device = match authenticate(inner, peer, req.headers()) {
         Ok(device) => device,
@@ -448,100 +352,5 @@ fn events(inner: &Arc<Inner>, peer: SocketAddr, req: Request<Incoming>) -> Respo
             ws::serve(upgraded, state, device, stream, closing).await;
         }
     });
-    res
-}
-
-/// `Origin` (when present on a `POST`) must belong to this server.
-fn origin_ok(inner: &Inner, headers: &HeaderMap) -> bool {
-    match header_str(headers, header::ORIGIN) {
-        None => true,
-        Some(origin) => inner.origin_allowed(origin),
-    }
-}
-
-/// Device auth of a request; the `Err` status is 429 when the IP is rate limited, else 401.
-fn authenticate(
-    inner: &Arc<Inner>,
-    peer: SocketAddr,
-    headers: &HeaderMap,
-) -> Result<String, StatusCode> {
-    if let Some(device) = token_of(headers).and_then(|token| inner.auth.device_for_token(&token)) {
-        return Ok(device);
-    }
-    let ip = client_ip(peer, headers);
-    if !inner.auth.allow(ip) {
-        return Err(StatusCode::TOO_MANY_REQUESTS);
-    }
-    inner.auth.fail(ip);
-    Err(StatusCode::UNAUTHORIZED)
-}
-
-/// Rate-limit key: behind a local `cloudflared` every peer is loopback, so the tunnel's
-/// `CF-Connecting-IP` names the real client. Only trusted when the peer itself is loopback.
-pub(crate) fn client_ip(peer: SocketAddr, headers: &HeaderMap) -> std::net::IpAddr {
-    let ip = peer.ip();
-    if ip.is_loopback() {
-        if let Some(forwarded) = header_str(headers, "cf-connecting-ip")
-            .and_then(|value| value.trim().parse::<std::net::IpAddr>().ok())
-        {
-            return forwarded;
-        }
-    }
-    ip
-}
-
-/// Cookie first (browsers cannot set headers on `new WebSocket`), then `Authorization: Bearer`.
-fn token_of(headers: &HeaderMap) -> Option<String> {
-    if let Some(cookies) = header_str(headers, header::COOKIE) {
-        for part in cookies.split(';') {
-            let part = part.trim();
-            if let Some(value) = part.strip_prefix(&format!("{COOKIE}=")) {
-                let value = value.trim_matches('"');
-                if !value.is_empty() {
-                    return Some(value.to_owned());
-                }
-            }
-        }
-    }
-    let auth = header_str(headers, header::AUTHORIZATION)?;
-    let (scheme, value) = auth.split_once(' ')?;
-    if !scheme.eq_ignore_ascii_case("bearer") || value.trim().is_empty() {
-        return None;
-    }
-    Some(value.trim().to_owned())
-}
-
-fn header_str(headers: &HeaderMap, name: impl http::header::AsHeaderName) -> Option<&str> {
-    headers.get(name).and_then(|value| value.to_str().ok())
-}
-
-/// Reads the body, refusing anything over `limit` (`None` → 413).
-async fn read_body(req: Request<Incoming>, limit: usize) -> Option<Bytes> {
-    let length = header_str(req.headers(), header::CONTENT_LENGTH)
-        .and_then(|value| value.parse::<usize>().ok());
-    if length.is_some_and(|length| length > limit) {
-        return None;
-    }
-    let limited = Limited::new(req.into_body(), limit);
-    limited
-        .collect()
-        .await
-        .ok()
-        .map(http_body_util::Collected::to_bytes)
-}
-
-fn empty(code: StatusCode) -> Response<Body> {
-    let mut res = Response::new(Body::default());
-    *res.status_mut() = code;
-    res
-}
-
-fn json_response(code: StatusCode, value: &Value) -> Response<Body> {
-    let mut res = Response::new(Body::from(Bytes::from(
-        serde_json::to_vec(value).unwrap_or_else(|_| b"{}".to_vec()),
-    )));
-    *res.status_mut() = code;
-    res.headers_mut()
-        .insert(header::CONTENT_TYPE, HeaderValue::from_static(JSON));
     res
 }

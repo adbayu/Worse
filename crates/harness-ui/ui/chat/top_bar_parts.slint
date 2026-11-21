@@ -1,0 +1,158 @@
+import { Theme } from "../theme/tokens.slint";
+import { Icon, IconButton, Icons, MenuItem, MenuShell } from "../components/controls.slint";
+import { AsciiArt, GlyphAnim } from "../components/ascii.slint";
+import { BoardUi } from "../board/board.slint";
+import { OrchLiveUi } from "../orchestra/live.slint";
+import { GraphUi } from "../settings/globals.slint";
+import { ChatUi } from "./globals.slint";
+import { TitleDrag } from "./title_drag.slint";
+
+export component OrchButton inherits Rectangle {
+    in property <bool> narrow;
+    property <int> live: ChatUi.subagents-running + ChatUi.background-tasks-running;
+    height: 28px;
+    width: orch-row.preferred-width;
+    border-radius: Theme.radius-md;
+    background: orta.has-hover ? Theme.surface-hover : Theme.surface;
+    border-width: 1px;
+    border-color: Theme.border;
+    animate background { duration: Theme.dur-hover; easing: ease-out-quint; }
+    accessible-role: button;
+    accessible-label: @tr("Orchestra");
+    accessible-description: self.live + " running";
+    accessible-action-default => {
+        BoardUi.open = false;
+        OrchLiveUi.open = true;
+    }
+    orch-row := HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 10px;
+        spacing: 7px;
+        // Idle: a quiet dot. While subagents / tasks run: unicode level bars, in the accent.
+        if root.live == 0: Rectangle {
+            y: (parent.height - self.height) / 2;
+            width: 6px;
+            height: 6px;
+            border-radius: 3px;
+            background: Theme.icon-subtlest;
+        }
+        if root.live > 0: GlyphAnim {
+            y: (parent.height - self.height) / 2;
+            frames: AsciiArt.bars;
+            divider: 1;
+            busy: true;
+            font-size: 9px;
+            color: Theme.accent-fg;
+            vertical-alignment: center;
+        }
+        if !root.narrow: Text {
+            text: root.live > 0 ? @tr("Orchestra · {0}", root.live) : @tr("Orchestra");
+            font-size: Theme.ui-caption;
+            font-weight: Theme.weight-medium;
+            color: orta.has-hover || root.live > 0 ? Theme.foreground : Theme.foreground-subtle;
+            vertical-alignment: center;
+            accessible-role: none;
+        }
+    }
+    orta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            BoardUi.open = false;
+            OrchLiveUi.open = true;
+        }
+    }
+}
+
+export component WindowControls inherits HorizontalLayout {
+    callback window-action(string);
+    spacing: 2px;
+    for w in [
+        { id: "minimize", icon: Icons.minus, label: "Minimize" },
+        { id: "maximize", icon: Icons.square, label: "Maximize" },
+        { id: "close", icon: Icons.x, label: "Close" },
+    ]: Rectangle {
+        y: (parent.height - self.height) / 2;
+        width: 40px;
+        height: 30px;
+        border-radius: Theme.radius-lg;
+        background: wta.has-hover ? (w.id == "close" ? #e5484d : Theme.surface-hover) : transparent;
+        animate background { duration: Theme.dur-hover; easing: ease-out-quint; }
+        accessible-role: button;
+        accessible-label: w.label;
+        accessible-action-default => {
+            root.window-action(w.id);
+        }
+        Icon {
+            source: w.icon;
+            size: w.id == "maximize" ? Theme.icon-xs : Theme.icon-sm;
+            tint: wta.has-hover && w.id == "close" ? #ffffff : Theme.icon;
+        }
+        wta := TouchArea {
+            clicked => {
+                root.window-action(w.id);
+            }
+        }
+    }
+}
+
+export component PanelsMenu inherits MenuShell {
+    in-out property <bool> files-open;
+    in-out property <string> side-tab;
+    callback close();
+    MenuItem {
+        text: "Background tasks";
+        has-icon: true;
+        icon: Icons.list-todo;
+        show-check: false;
+        detail: ChatUi.subagents-running + ChatUi.background-tasks-running > 0 ? ChatUi.subagents-running + ChatUi.background-tasks-running + "" : ChatUi.subagents.length + ChatUi.background-tasks.length > 0 ? ChatUi.subagents.length + ChatUi.background-tasks.length + "" : "";
+        clicked => {
+            root.side-tab = "overview";
+            root.files-open = true;
+            root.close();
+        }
+    }
+    MenuItem {
+        text: "Diff";
+        has-icon: true;
+        icon: Icons.file-diff;
+        checked: root.side-tab == "diff";
+        clicked => {
+            root.side-tab = "diff";
+            root.files-open = true;
+            root.close();
+        }
+    }
+    MenuItem {
+        text: "Terminal";
+        has-icon: true;
+        icon: Icons.terminal;
+        checked: root.side-tab == "terminal";
+        clicked => {
+            root.side-tab = "terminal";
+            root.files-open = true;
+            root.close();
+        }
+    }
+    MenuItem {
+        text: "Git";
+        has-icon: true;
+        icon: Icons.git-branch;
+        checked: root.side-tab == "git";
+        clicked => {
+            root.side-tab = "git";
+            root.files-open = true;
+            root.close();
+        }
+    }
+    MenuItem {
+        text: "Search";
+        has-icon: true;
+        icon: Icons.search;
+        checked: root.side-tab == "search";
+        clicked => {
+            root.side-tab = "search";
+            root.files-open = true;
+            root.close();
+        }
+    }
+}

@@ -1,0 +1,103 @@
+import { ListView } from "std-widgets.slint";
+import { Theme } from "../theme/tokens.slint";
+import { Icon, Icons, Button, IconButton, Tag, Dialog, MenuItem } from "../components/controls.slint";
+import { TextField, TextArea, Switch } from "../settings/parts.slint";
+
+export struct BranchRow {
+    name: string,
+    current: bool,
+    upstream: string,
+}
+
+// One commit of the graph. `path`: SVG commands of the lane lines in a (lanes * 14) x 28 viewbox; the dot is
+// drawn at `lane`.
+export struct GraphRow {
+    hash: string,
+    short: string,
+    subject: string,
+    author: string,
+    date: string,
+    refs: string,
+    parents: string,
+    lane: int,
+    lanes: int,
+    path: string,
+}
+
+export global GitUi {
+    // "" | "branches" | "commit" | "push" | "graph"; written by Rust through `open` ("" closes and drops the graph).
+    in-out property <string> dialog;
+    callback open(string);
+    // ---- branches (GIT-009 / GIT-010) ----
+    in property <[BranchRow]> branches;
+    in property <string> current;
+    in-out property <string> filter;
+    in property <bool> busy;
+    // Files that block the switch (one per line, "" = not blocked) and the branch that was asked for.
+    in property <string> blocked;
+    in property <string> blocked-branch;
+    // branch, create
+    callback switch-branch(string, bool);
+    // ---- commit (GIT-007) ----
+    in-out property <bool> include-unstaged: true;
+    // push after a successful commit
+    callback commit(bool);
+    // ---- push (GIT-008) ----
+    in property <string> upstream;
+    in property <int> ahead;
+    in property <int> behind;
+    in property <bool> pushing;
+    // Last switch / commit / push outcome: "" | "switched" (a = branch) | "committed" (a = hash, b = summary) |
+    // "pushing" / "pushed" / "pushed-upstream" (a = branch, b = remote) | "error" (a = git's message).
+    in property <string> result-kind;
+    in property <string> result-a;
+    in property <string> result-b;
+    callback push();
+    callback copy-result();
+    // ---- graph (GIT-011) ----
+    in property <[GraphRow]> graph;
+    in property <bool> graph-more;
+    in-out property <int> graph-selected: -1;
+    callback load-more();
+    callback copy-hash(string);
+    // The filter field changed; Rust narrows `branches` (case-insensitive substring; Slint strings have no search).
+    callback filter-edited(string);
+
+    pure public function result-text() -> string {
+        if result-kind == "switched" { return @tr("Switched to {0}", result-a); }
+        if result-kind == "committed" { return @tr("Committed {0}: {1}", result-a, result-b); }
+        if result-kind == "pushing" { return @tr("Pushing {0} to {1}…", result-a, result-b); }
+        if result-kind == "pushed" { return @tr("Pushed {0} to {1}", result-a, result-b); }
+        if result-kind == "pushed-upstream" { return @tr("Pushed {0} to {1} and set the upstream", result-a, result-b); }
+        result-a
+    }
+}
+
+// Outcome of the last git operation (panel and dialogs); an error can be copied.
+export component ResultLine inherits HorizontalLayout {
+    // 修复：空布局默认 vertical-stretch 为 1，会和下方变更列表平分高度，把列表挤到面板底部（phase8-panels git 失败）。
+    vertical-stretch: 0;
+    spacing: Theme.space-1;
+    if GitUi.result-kind != "": Text {
+        text: GitUi.result-text();
+        wrap: word-wrap;
+        font-size: Theme.ui-sm;
+        color: GitUi.result-kind == "error" ? Theme.destructive : GitUi.result-kind == "pushing" ? Theme.foreground-subtle : Theme.success;
+        horizontal-stretch: 1;
+        accessible-role: AccessibleRole.text;
+        accessible-label: "git " + GitUi.result-kind + " " + self.text;
+    }
+    if GitUi.result-kind == "error": VerticalLayout {
+        alignment: start;
+        horizontal-stretch: 0;
+        IconButton {
+            icon: Icons.copy;
+            label: @tr("Copy error");
+            size: Theme.control-sm;
+            icon-size: Theme.icon-sm;
+            clicked => {
+                GitUi.copy-result();
+            }
+        }
+    }
+}

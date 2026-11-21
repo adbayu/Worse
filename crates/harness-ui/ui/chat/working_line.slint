@@ -1,0 +1,58 @@
+import { ChatUi } from "./globals.slint";
+import { ArtClock, ThinkGlyph } from "../components/ascii.slint";
+import { Look } from "../theme/look.slint";
+import { Theme } from "../theme/tokens.slint";
+
+export component WorkingLine inherits Rectangle {
+    property <int> secs;
+    // "playful" words change every few seconds and start somewhere else each turn.
+    property <[string]> playful: [@tr("Thinking…"), @tr("Sniffing around…"), @tr("Digging in…"), @tr("Hopping through the code…"), @tr("Nibbling on it…"), @tr("Following the trail…"), @tr("Ears up…"), @tr("Burrowing deeper…")];
+    property <string> label: Look.words == "playful" ? root.playful[mod(floor(root.secs / 4) + Look.turn, root.playful.length)] : @tr("Thinking…");
+    // Same 2.4 s breathing as before (20 steps of 120 ms), now stepped by the shared busy clock (90 ms), so
+    // the glow, the scan and the tool spinner change in the same redraw.
+    property <float> glow: 0.55 + 0.45 * sin(ArtClock.busy-tick * 13.5deg);
+    height: 26px;
+    accessible-role: text;
+    accessible-label: root.label + " " + root.secs + " seconds";
+    Timer {
+        interval: 1s;
+        running: true;
+        triggered => {
+            root.secs += 1;
+            ChatUi.speed-tick();
+        }
+    }
+    HorizontalLayout {
+        padding-left: 6px;
+        spacing: 10px;
+        // The unicode animation picked in Settings › Appearance (default: a shade ramp sweeping eight cells).
+        ThinkGlyph {
+            y: (parent.height - self.height) / 2;
+            index: Look.think-now;
+        }
+        Text {
+            text: root.label;
+            font-size: Theme.ui-caption;
+            color: Theme.foreground-subtle;
+            opacity: root.glow;
+            vertical-alignment: center;
+        }
+        Text {
+            text: root.secs < 60 ? root.secs + "s" : floor(root.secs / 60) + "m " + mod(root.secs, 60) + "s";
+            font-size: Theme.ui-sm;
+            color: Theme.muted;
+            vertical-alignment: center;
+        }
+        // Generation speed while text arrives (an estimate; the exact figure lands under the answer).
+        if ChatUi.show-speed && ChatUi.speed != "": Text {
+            text: ChatUi.speed;
+            font-family: Theme.art-font;
+            font-size: 10px;
+            color: Theme.foreground-subtlest;
+            vertical-alignment: center;
+        }
+        Rectangle {
+            horizontal-stretch: 1;
+        }
+    }
+}

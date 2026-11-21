@@ -11,8 +11,12 @@ use serde_json::{json, Value};
 
 use crate::plan_usage::{parse_rfc3339, resets_in, Fetched};
 
-const BASE: &str = "https://cloudcode-pa.googleapis.com/v1internal";
-const CLIENT_VERSION: &str = "1.11.3";
+const PROD: &str = "https://cloudcode-pa.googleapis.com/v1internal";
+/// agy itself talks to the daily host; its quota summary is the one that moves with real use.
+const DAILY: &str = "https://daily-cloudcode-pa.googleapis.com/v1internal";
+/// The agy CLI identity. Cloud Code only lists the Gemini 4 Argon tiers for the CLI flavour.
+const CLI_VERSION: &str = "1.5.9";
+const CLI_BUILD: &str = "1021519450";
 
 pub(crate) const AGY_ID: &str = "agy";
 
@@ -32,7 +36,7 @@ type Snapshot = (String, Vec<RawBar>, i64);
 
 static LAST: Mutex<Option<HashMap<String, Snapshot>>> = Mutex::new(None);
 
-fn user_agent() -> String {
+fn os_arch() -> (&'static str, &'static str) {
     let os = match std::env::consts::OS {
         "macos" => "darwin",
         other => other,
@@ -42,7 +46,27 @@ fn user_agent() -> String {
         "aarch64" => "arm64",
         other => other,
     };
-    format!("antigravity/{CLIENT_VERSION} {os}/{arch}")
+    (os, arch)
+}
+
+// 修复：旧的 IDE 风格 UA（antigravity/1.11.3 windows/amd64）拿不到 Gemini 4 Argon 分组，改用 agy CLI 的真实标识。
+fn user_agent() -> String {
+    let (os, arch) = os_arch();
+    format!(
+        "antigravity/cli/{CLI_VERSION} (aidev_client; os_type={os}; arch={arch}; cl={CLI_BUILD}; auth_method=consumer)"
+    )
+}
+
+/// Cloud Code client platform enum for `loadCodeAssist` metadata.
+fn platform_enum() -> u8 {
+    match os_arch() {
+        ("darwin", "amd64") => 1,
+        ("darwin", "arm64") => 2,
+        ("linux", "amd64") => 3,
+        ("linux", "arm64") => 4,
+        ("windows", "amd64") => 5,
+        _ => 0,
+    }
 }
 
 fn row(id: &str, label: &str, error: &str) -> Fetched {
@@ -93,15 +117,18 @@ fn now_secs() -> i64 {
 
 async fn post(
     client: &reqwest::Client,
+    base: &str,
     token: &str,
     method: &str,
-    body: Value,
+    body: &Value,
 ) -> Result<Value, String> {
     let response = client
-        .post(format!("{BASE}:{method}"))
+        .post(format!("{base}:{method}"))
         .bearer_auth(token)
         .header("user-agent", user_agent())
-        .json(&body)
+        .header("x-client-name", "antigravity")
+        .header("x-client-version", CLI_VERSION)
+        .json(body)
         .timeout(Duration::from_secs(30))
         .send()
         .await
@@ -210,11 +237,13 @@ fn shown(id: &str, label: &str, plan: String, bars: &[RawBar], as_of: Option<i64
 /// Plan name and bars of the login in `target`.
 async fn quota(client: &reqwest::Client, target: &str) -> Result<(String, Vec<RawBar>), String> {
     let token = read_token(target)?.ok_or_else(|| "Not signed in".to_owned())?;
+    // 修复：metadata 改为 agy 实际发送的枚举数值（ideType 9 = ANTIGRAVITY，pluginType 2 = GEMINI）。
     let load = post(
         client,
+        PROD,
         &token,
         "loadCodeAssist",
-        json!({"metadata": {"ideType": "ANTIGRAVITY", "platform": "PLATFORM_UNSPECIFIED", "pluginType": "GEMINI"}}),
+        &json!({"metadata": {"ideType": 9, "platform": platform_enum(), "pluginType": 2}}),
     )
     .await?;
     let plan = ["paidTier", "currentTier"]
@@ -226,30 +255,43 @@ async fn quota(client: &reqwest::Client, target: &str) -> Result<(String, Vec<Ra
         Value::String(s) => s.clone(),
         v => v["id"].as_str().unwrap_or_default().to_owned(),
     };
-    let summary = post(
-        client,
-        &token,
-        "retrieveUserQuotaSummary",
-        json!({"project": project}),
-    )
-    .await
-    .ok();
+    let body = json!({"project": project});
+    // 修复：额度先读 daily 主机（agy 的对话走这里，PROD 的数字一直停在 0%），失败再退回 PROD。
+    let summary = post_either(client, &token, "retrieveUserQuotaSummary", &body).await;
     let mut bars = summary.as_ref().map(summary_bars).unwrap_or_default();
-    if !bars.iter().any(|(label, _, _)| label.starts_with("Gemini")) {
-        if let Ok(models) = post(
-            client,
-            &token,
-            "fetchAvailableModels",
-            json!({"project": project}),
-        )
-        .await
-        {
-            if let Some((used, reset)) = group(&models["models"])[0] {
-                bars.push(("Gemini · 5-hour".into(), used, reset));
+    let has = |bars: &[RawBar], word: &str| bars.iter().any(|(l, _, _)| l.contains(word));
+    let no_gemini = !bars
+        .iter()
+        .any(|(l, _, _)| l.starts_with("Gemini") && !l.contains("Argon"));
+    if no_gemini || !has(&bars, "Argon") {
+        if let Some(models) = post_either(client, &token, "fetchAvailableModels", &body).await {
+            let groups = group(&models["models"]);
+            if no_gemini {
+                if let Some((used, reset)) = groups[0] {
+                    bars.push(("Gemini · 5-hour".into(), used, reset));
+                }
+            }
+            if !has(&bars, "Argon") {
+                if let Some((used, reset)) = groups[3] {
+                    bars.push(("Gemini 4 Argon".into(), used, reset));
+                }
             }
         }
     }
     Ok((plan, bars))
+}
+
+/// `method` on the daily host, then on PROD when daily fails.
+async fn post_either(
+    client: &reqwest::Client,
+    token: &str,
+    method: &str,
+    body: &Value,
+) -> Option<Value> {
+    match post(client, DAILY, token, method, body).await {
+        Ok(v) => Some(v),
+        Err(_) => post(client, PROD, token, method, body).await.ok(),
+    }
 }
 fn short_group(name: &str) -> String {
     let name = name
@@ -286,17 +328,20 @@ fn summary_bars(summary: &Value) -> Vec<RawBar> {
     out
 }
 
-/// Worst (lowest remaining) quota per family: [Gemini, Claude, GPT-OSS], as (used %, reset time).
-fn group(models: &Value) -> [Option<(f32, Option<i64>)>; 3] {
-    let mut worst: [Option<(f64, Option<i64>)>; 3] = [None, None, None];
+/// Worst (lowest remaining) quota per family: [Gemini, Claude, GPT-OSS, Gemini 4 Argon],
+/// as (used %, reset time). Argon has its own bucket, so it is kept out of Gemini.
+fn group(models: &Value) -> [Option<(f32, Option<i64>)>; 4] {
+    let mut worst: [Option<(f64, Option<i64>)>; 4] = [None; 4];
     let Some(map) = models.as_object() else {
-        return [None, None, None];
+        return [None; 4];
     };
     for (id, model) in map {
         if model["displayName"].as_str().is_none() || id.contains("image") {
             continue;
         }
-        let slot = if id.starts_with("gemini") {
+        let slot = if id.starts_with("gemini-4-argon") {
+            3
+        } else if id.starts_with("gemini") {
             0
         } else if id.starts_with("claude") {
             1
@@ -337,9 +382,20 @@ mod tests {
             "chat_1": {"quotaInfo": {"remainingFraction": 0.0}}
         });
         let g = group(&models);
-        assert_eq!(g[0].as_ref().map(|x| x.0.round()), Some(75.0));
+        assert_eq!(g[0].as_ref().map(|x| x.0.round()), Some(20.0));
         assert_eq!(g[1].as_ref().map(|x| x.0), Some(0.0));
         assert!(g[2].is_none());
+        assert_eq!(g[3].as_ref().map(|x| x.0.round()), Some(75.0));
+    }
+
+    #[test]
+    fn requests_carry_the_agy_cli_identity() {
+        let ua = user_agent();
+        assert!(ua.starts_with("antigravity/cli/1.5.9 (aidev_client;"));
+        assert!(ua.contains("auth_method=consumer"));
+        if cfg!(all(windows, target_arch = "x86_64")) {
+            assert_eq!(platform_enum(), 5);
+        }
     }
 
     #[test]

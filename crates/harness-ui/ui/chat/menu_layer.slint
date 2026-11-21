@@ -1,0 +1,128 @@
+import { Theme } from "../theme/tokens.slint";
+import { ConfirmDialog } from "../settings/parts.slint";
+import { NewSessionMenu, GroupMenu, SessionMenu, HeaderMenu } from "./menus.slint";
+
+export component MenuLayer inherits Rectangle {
+    in property <bool> running;
+    in property <bool> has-chat;
+    in property <bool> show-sidebar;
+    in property <length> sidebar-w;
+    pure callback session-pinned(string) -> bool;
+    callback new-session();
+    callback new-worktree-session();
+    callback open-folder();
+    callback open-session(string);
+    callback archive-session(string);
+    // Session context menu (sidebar right click / "More") and header menu.
+    in-out property <bool> ctx-open;
+    property <string> ctx-id;
+    property <length> ctx-x;
+    property <length> ctx-y;
+    in-out property <bool> header-menu-open;
+    in-out property <bool> nmenu-open;
+    property <length> nmenu-x;
+    property <length> nmenu-y;
+    property <bool> folder-confirm;
+    // Group menu (sidebar group header).
+    in-out property <bool> gctx-open;
+    property <string> gctx-id;
+    property <length> gctx-x;
+    property <length> gctx-y;
+    // Pinned state of the session the menu is for (Pin / Unpin label); asked from Rust when the menu opens.
+    property <bool> ctx-pinned;
+    out property <bool> any-open: root.ctx-open || root.header-menu-open || root.gctx-open || root.nmenu-open;
+
+    public function close-all() {
+        root.ctx-open = false;
+        root.header-menu-open = false;
+        root.gctx-open = false;
+        root.nmenu-open = false;
+    }
+    public function open-new-menu(x: length, y: length) {
+        root.ctx-open = false;
+        root.gctx-open = false;
+        root.nmenu-x = x;
+        root.nmenu-y = y;
+        root.nmenu-open = true;
+    }
+    function pick-folder() {
+        root.nmenu-open = false;
+        if root.running {
+            root.folder-confirm = true;
+        } else {
+            root.open-folder();
+        }
+    }
+    public function open-group-menu(id: string, x: length, y: length) {
+        root.ctx-open = false;
+        root.gctx-id = id;
+        root.gctx-x = x;
+        root.gctx-y = y;
+        root.gctx-open = true;
+    }
+    public function open-menu(id: string, x: length, y: length) {
+        root.gctx-open = false;
+        root.ctx-pinned = root.session-pinned(id);
+        root.ctx-id = id;
+        root.ctx-x = x;
+        root.ctx-y = y;
+        root.ctx-open = true;
+    }
+
+    // Click outside closes them.
+    if root.any-open: TouchArea {
+        clicked => {
+            root.close-all();
+        }
+    }
+    if root.nmenu-open: NewSessionMenu {
+        x: min(root.nmenu-x, root.width - self.width - 8px);
+        y: min(root.nmenu-y, root.height - self.preferred-height - 8px);
+        width: 220px;
+        height: self.preferred-height;
+        close => { root.nmenu-open = false; }
+        new-session => { root.new-session(); }
+        new-worktree-session => { root.new-worktree-session(); }
+        pick-folder => { root.pick-folder(); }
+    }
+    if root.folder-confirm: ConfirmDialog {
+        title: @tr("A turn is running. Restart Harness in another folder?");
+        message: @tr("Harness restarts in the folder you pick. Running and queued turns are interrupted.");
+        confirm-text: @tr("Open folder");
+        destructive: false;
+        close => {
+            root.folder-confirm = false;
+        }
+        confirm => {
+            root.folder-confirm = false;
+            root.open-folder();
+        }
+    }
+    if root.gctx-open: GroupMenu {
+        x: min(root.gctx-x, root.width - self.width - 8px);
+        y: min(root.gctx-y, root.height - self.preferred-height - 8px);
+        width: 220px;
+        height: self.preferred-height;
+        target-id: root.gctx-id;
+        close => { root.gctx-open = false; }
+    }
+    if root.ctx-open: SessionMenu {
+        x: min(root.ctx-x, root.width - self.width - 8px);
+        y: min(root.ctx-y, root.height - self.preferred-height - 8px);
+        width: 220px;
+        height: self.preferred-height;
+        target-id: root.ctx-id;
+        pinned: root.ctx-pinned;
+        close => { root.ctx-open = false; }
+        open-session(id) => { root.open-session(id); }
+        archive-session(id) => { root.archive-session(id); }
+    }
+    if root.header-menu-open: HeaderMenu {
+        x: (root.show-sidebar ? root.sidebar-w + Theme.frame-gap * 2 : 40px) + 8px;
+        y: Theme.topbar-height + Theme.frame-gap;
+        width: 280px;
+        height: self.preferred-height;
+        has-chat: root.has-chat;
+        close => { root.header-menu-open = false; }
+    }
+}

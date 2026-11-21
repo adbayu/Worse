@@ -1,0 +1,172 @@
+import { FileTree } from "./file_tree.slint";
+import { FileRow } from "../models.slint";
+import { ChatUi } from "../chat/globals.slint";
+import { Icon, IconButton, Icons, SectionLabel, Segmented } from "../components/controls.slint";
+import { LiveUi } from "./live.slint";
+import { OverviewPanel } from "./overview.slint";
+import { PanelHost } from "./panels.slint";
+import { Frost } from "../theme/backdrop.slint";
+import { Look } from "../theme/look.slint";
+import { Theme } from "../theme/tokens.slint";
+
+export component SidePane inherits Rectangle {
+    in property <[FileRow]> files;
+    in property <string> workspace;
+    in-out property <string> tab: "files";
+    in-out property <bool> wide;
+    callback toggle(int);
+    callback close();
+    // Rust renders the Live view only while it is on screen.
+    init => {
+        LiveUi.active = root.tab == "live";
+    }
+    changed tab => {
+        LiveUi.active = root.tab == "live";
+    }
+    // Floating glass pane beside the transcript.
+    background: Theme.panel;
+    border-radius: Theme.radius-2xl;
+    border-width: 1px;
+    border-color: Theme.glass-rim;
+    drop-shadow-blur: Theme.glass-shadow-blur;
+    drop-shadow-offset-y: Theme.glass-shadow-y;
+    drop-shadow-color: Theme.glass-shadow;
+    clip: true;
+    if Look.has-wallpaper: Frost {
+        radius: parent.border-radius;
+    }
+    Rectangle {
+        border-radius: parent.border-radius;
+        inner-shadow-blur: Theme.glass-inner-blur;
+        inner-shadow-offset-y: 1px;
+        inner-shadow-color: Theme.glass-inner;
+        accessible-role: none;
+    }
+    property <bool> shown: false;
+    opacity: self.shown ? 1 : 0;
+    animate opacity { duration: Theme.dur-panel; easing: ease-out-quint; }
+    Timer {
+        interval: 16ms;
+        running: !root.shown;
+        triggered => {
+            root.shown = true;
+        }
+    }
+    VerticalLayout {
+        padding-left: 1px;
+        // Tabs as segmented pills (design 01: Overview / Git / Terminal / Files); Diff and Search keep a title.
+        HorizontalLayout {
+            height: 48px;
+            padding-left: 12px;
+            padding-right: 8px;
+            spacing: 4px;
+            Segmented {
+                y: (parent.height - self.height) / 2;
+                options: [
+                    { id: "overview", label: "Overview" },
+                    { id: "git", label: "Git" },
+                    { id: "terminal", label: "Terminal" },
+                    { id: "files", label: "Files" },
+                    { id: "live", label: "Live" },
+                ];
+                chip-pad: 12px;
+                current: root.tab;
+                select(id) => {
+                    root.tab = id;
+                }
+            }
+            if root.tab == "diff" || root.tab == "search": Text {
+                text: root.tab == "diff" ? "Diff" : "Search";
+                font-size: Theme.ui-caption;
+                font-weight: Theme.weight-semibold;
+                color: Theme.foreground;
+                vertical-alignment: center;
+            }
+            Rectangle {
+                horizontal-stretch: 1;
+            }
+            IconButton {
+                y: (parent.height - self.height) / 2;
+                icon: root.wide ? Icons.minimize-2 : Icons.maximize-2;
+                label: root.wide ? @tr("Collapse panel") : @tr("Expand panel");
+                clicked => {
+                    root.wide = !root.wide;
+                }
+            }
+        }
+        if root.tab == "files": VerticalLayout {
+            vertical-stretch: 1;
+            padding-top: 2px;
+            HorizontalLayout {
+                padding-left: 10px;
+                padding-right: 10px;
+                padding-bottom: 8px;
+                Rectangle {
+                    height: 34px;
+                    border-radius: Theme.radius-md;
+                    background: fsta.has-hover ? Theme.surface-hover : Theme.surface;
+                    border-width: 1px;
+                    border-color: fsta.has-hover ? Theme.border-hover : Theme.border;
+                    animate background, border-color { duration: Theme.dur-hover; easing: ease-out-quint; }
+                    accessible-role: button;
+                    accessible-label: @tr("Search files");
+                    accessible-action-default => {
+                        ChatUi.palette-scope = "files";
+                        ChatUi.palette-open = true;
+                    }
+                    HorizontalLayout {
+                        padding-left: 12px;
+                        spacing: 8px;
+                        Icon {
+                            y: (parent.height - self.height) / 2;
+                            source: Icons.search;
+                            size: Theme.icon-sm;
+                            tint: fsta.has-hover ? Theme.accent-fg : Theme.icon-subtle;
+                        }
+                        Text {
+                            text: @tr("Search files…");
+                            font-size: Theme.ui-sm;
+                            color: Theme.foreground-subtle;
+                            vertical-alignment: center;
+                        }
+                    }
+                    fsta := TouchArea {
+                        mouse-cursor: text;
+                        clicked => {
+                            ChatUi.palette-scope = "files";
+                            ChatUi.palette-open = true;
+                        }
+                    }
+                }
+            }
+            HorizontalLayout {
+                height: 24px;
+                padding-left: 12px;
+                padding-right: 12px;
+                SectionLabel {
+                    text: root.workspace;
+                }
+            }
+            FileTree {
+                vertical-stretch: 1;
+                files: root.files;
+                toggle(i) => {
+                    root.toggle(i);
+                }
+            }
+        }
+        if root.tab == "overview": OverviewPanel {
+            vertical-stretch: 1;
+            workspace: root.workspace;
+        }
+        if root.tab != "files" && root.tab != "overview": PanelHost {
+            vertical-stretch: 1;
+            tab: root.tab;
+        }
+    }
+}
+
+// ---- settings: ui/settings/shell.slint (spec phase-9-parity.md §6) ----------------------------------------
+
+// ---- window ----------------------------------------------------------------------------------------------
+

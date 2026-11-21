@@ -1,0 +1,261 @@
+import { Theme } from "../theme/tokens.slint";
+import { Icon, Icons, Button, IconButton, Divider, Card, Tag, Dialog } from "../components/controls.slint";
+import { PageHeader, Group, SettingRow, Switch, TextField, Select, SelectOption, StatusLine } from "parts.slint";
+import { Caption, CardHead, AgentChip, SourceRow, TicketRow, Empty, FilterSeg, NoticeRow } from "./inbox_rows.slint";
+export { Caption, CardHead, AgentChip, SourceRow, TicketRow, Empty, FilterSeg, NoticeRow }
+import { FormRow, SourceDialog } from "./inbox_dialog.slint";
+export { FormRow, SourceDialog }
+import { InboxSourceRow, InboxTicketRow, InboxTriggerRow, InboxNotice, InboxUi } from "./inbox_ui.slint";
+export { InboxSourceRow, InboxTicketRow, InboxTriggerRow, InboxNotice, InboxUi }
+
+export component InboxPage inherits VerticalLayout {
+    in property <bool> stacked;
+    max-width: 880px;
+    alignment: start;
+    spacing: 20px;
+    // Title block (22 #EDEEF0, gap 6, 13 #8A909A).
+    VerticalLayout {
+        spacing: 6px;
+        Text {
+            text: @tr("Inbox");
+            font-family: Theme.display-font;
+            font-size: 22px;
+            font-weight: 700;
+            color: Theme.foreground;
+        }
+        Text {
+            text: @tr("Notifications from subagents, builds and pull requests.");
+            font-size: 13px;
+            color: Theme.muted;
+            wrap: word-wrap;
+        }
+    }
+    // Toolbar: segmented filter left, "Mark all read" right.
+    HorizontalLayout {
+        height: 34px;
+        Rectangle {
+            width: segs.preferred-width + 6px;
+            border-radius: 8px;
+            border-width: 1px;
+            border-color: Theme.card-border;
+            background: Theme.input;
+            accessible-role: tab-list;
+            accessible-label: @tr("Filter");
+            segs := HorizontalLayout {
+                x: 3px;
+                y: 4px;
+                height: 26px;
+                spacing: 2px;
+                FilterSeg { id: "all"; text: @tr("All {0}", InboxUi.count-all); }
+                FilterSeg { id: "unread"; text: @tr("Unread {0}", InboxUi.count-unread); }
+                FilterSeg { id: "subagents"; text: @tr("Subagents {0}", InboxUi.count-subagents); }
+                FilterSeg { id: "builds"; text: @tr("Builds {0}", InboxUi.count-builds); }
+            }
+        }
+        Rectangle {
+            horizontal-stretch: 1;
+        }
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                height: 31px;
+                width: mt.preferred-width + 24px;
+                border-radius: 8px;
+                border-width: 1px;
+                border-color: Theme.popover-border;
+                background: mta.has-hover && InboxUi.count-unread > 0 ? Theme.border : Theme.surface-hover;
+                opacity: InboxUi.count-unread > 0 ? 1 : 0.6;
+                accessible-role: button;
+                accessible-label: mt.text;
+                accessible-action-default => { InboxUi.action("mark-read", ""); }
+                mt := Text {
+                    text: @tr("Mark all read");
+                    font-size: 12px;
+                    font-weight: Theme.weight-semibold;
+                    color: Theme.foreground;
+                    accessible-role: none;
+                }
+                mta := TouchArea {
+                    enabled: InboxUi.count-unread > 0;
+                    mouse-cursor: pointer;
+                    clicked => { InboxUi.action("mark-read", ""); }
+                }
+            }
+        }
+    }
+    // Card · Inbox list (#111215, #24272D, r12; rows 56, 1px separators, unread rows #16181C).
+    Rectangle {
+        background: Theme.card;
+        border-radius: 12px;
+        border-width: 1px;
+        border-color: Theme.card-border;
+        clip: true;
+        VerticalLayout {
+            padding: 1px;
+            if InboxUi.notices.length == 0: Empty {
+                icon: Icons.inbox;
+                text: InboxUi.filter == "all" ? @tr("Nothing here yet. Subagent work, builds and pull requests show up here.") : @tr("No notifications match this filter.");
+            }
+            for n[i] in InboxUi.notices: VerticalLayout {
+                if i > 0: Rectangle {
+                    height: 1px;
+                    background: Theme.card-border;
+                }
+                NoticeRow {
+                    item: n;
+                }
+            }
+        }
+    }
+    // GitHub watcher (existing feature, kept below the designed list).
+    Group {
+        SettingRow {
+            first: true;
+            stacked: root.stacked;
+            title: @tr("Watch GitHub");
+            description: InboxUi.gh-text;
+            Switch {
+                label: @tr("Watch GitHub");
+                checked: InboxUi.enabled;
+                toggled(on) => {
+                    InboxUi.set-enabled(on);
+                }
+            }
+        }
+        if InboxUi.gh-state == 1: SettingRow {
+            stacked: root.stacked;
+            title: @tr("GitHub CLI");
+            description: @tr("Downloads the official gh release from GitHub into the Harness folder and checks its checksum. A gh you install yourself is always used first.");
+            Button {
+                text: InboxUi.gh-installing ? @tr("Installing…") : @tr("Install GitHub CLI");
+                variant: "primary";
+                size: "lg";
+                enabled: !InboxUi.gh-installing;
+                clicked => {
+                    InboxUi.action("install-gh", "");
+                }
+            }
+        }
+        if InboxUi.gh-state == 2: SettingRow {
+            stacked: root.stacked;
+            title: @tr("Sign in to GitHub");
+            description: @tr("Harness never signs in for you. Run the command in a terminal, finish in the browser, then come back here.");
+            Button {
+                text: @tr("Copy command");
+                size: "lg";
+                clicked => {
+                    InboxUi.action("copy-gh", "");
+                }
+            }
+        }
+    }
+    if InboxUi.error != "": StatusLine {
+        text: InboxUi.error;
+        error: true;
+    }
+    // Toolbar (design S4: segmented filter at the left, secondary action at the right).
+    HorizontalLayout {
+        spacing: 10px;
+        Text {
+            text: @tr("{0} repositories · {1} tickets", InboxUi.sources.length, InboxUi.tickets.length);
+            font-size: Theme.ui-xs;
+            color: Theme.icon-subtlest;
+            vertical-alignment: center;
+        }
+        Rectangle {
+            horizontal-stretch: 1;
+        }
+        Button {
+            text: @tr("Add repository");
+            has-icon: true;
+            icon: Icons.plus;
+            size: "lg";
+            clicked => {
+                InboxUi.action("add", "");
+            }
+        }
+    }
+    Card {
+        clip: true;
+        VerticalLayout {
+            CardHead {
+                title: @tr("Repositories");
+                hint: @tr("{0} watched", InboxUi.sources.length);
+            }
+            Divider { }
+            if InboxUi.sources.length == 0: Empty {
+                icon: Icons.folders;
+                text: @tr("No repository yet. Add one with the local clone Harness should work in.");
+            }
+            for s[i] in InboxUi.sources: VerticalLayout {
+                if i > 0: Divider { }
+                SourceRow {
+                    item: s;
+                }
+            }
+        }
+    }
+    Card {
+        clip: true;
+        VerticalLayout {
+            CardHead {
+                title: @tr("Tickets");
+                hint: @tr("{0} open", InboxUi.tickets.length);
+            }
+            Divider { }
+            if InboxUi.tickets.length == 0: Empty {
+                icon: Icons.inbox;
+                text: @tr("No ticket yet. Mention the handle in an issue or comment to start one.");
+            }
+            for t[i] in InboxUi.tickets: VerticalLayout {
+                if i > 0: Divider { }
+                TicketRow {
+                    item: t;
+                }
+            }
+        }
+    }
+    Card {
+        clip: true;
+        VerticalLayout {
+            CardHead {
+                title: @tr("Recent triggers");
+                hint: @tr("Last {0}", InboxUi.triggers.length);
+            }
+            Divider { }
+            if InboxUi.triggers.length == 0: Empty {
+                icon: Icons.history;
+                text: @tr("Nothing received yet.");
+            }
+            for g[i] in InboxUi.triggers: VerticalLayout {
+                if i > 0: Divider { }
+                HorizontalLayout {
+                    min-height: 42px;
+                    padding-left: 16px;
+                    padding-right: 16px;
+                    padding-top: 8px;
+                    padding-bottom: 8px;
+                    spacing: 10px;
+                    Text {
+                        text: g.title;
+                        font-size: Theme.ui-sm;
+                        color: Theme.foreground-subtle;
+                        overflow: elide;
+                        horizontal-stretch: 1;
+                        vertical-alignment: center;
+                    }
+                    Tag {
+                        text: g.verdict;
+                        tone: g.accepted ? "success" : "neutral";
+                    }
+                    Caption {
+                        text: g.time;
+                        vertical-alignment: center;
+                        horizontal-stretch: 0;
+                    }
+                }
+            }
+        }
+    }
+}
+

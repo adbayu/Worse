@@ -1,0 +1,15 @@
+// Data pages (spec §6.2): Projects (PRJ-006..010) and Archive management (ARC-001..004).
+// Design frames "S14 · Projects" / "S15 · Archive" (FigCraft), 1:1: title block, toolbar, one card with a
+// two-line head ("Workspace folders" + "Ordered by last opened"), a caps table header (10 #5D636D) and table
+// rows (60px projects / 48px archive, zebra #16181C on even rows, 16px side padding).
+import { Theme } from "../theme/tokens.slint";
+import { Icon, Icons } from "../components/controls.slint";
+import { ProjectsUi, ArchiveUi } from "globals.slint";
+import { PageHeader, SearchField, UnsupportedNotice, SetButton, Pill, Dot, CapsLabel } from "parts.slint";
+import { ArchivePage } from "./archive_page.slint";
+export { ArchivePage }
+import { ProjectsPage } from "./projects_page.slint";
+export { ProjectsPage }
+import { TableHead, Rule, ActionBar, LinkText, EmptyBody } from "./data_parts.slint";
+export { TableHead, Rule, ActionBar, LinkText, EmptyBody }
+

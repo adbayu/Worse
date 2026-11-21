@@ -1,0 +1,143 @@
+import { SelectOption } from "parts.slint";
+import { GraphHit, RecallRow, GraphLabel } from "./settings_types.slint";
+
+// The local memory shared by every agent and session (`harness_agent_hub::recall`).
+export global RecallUi {
+    in property <[RecallRow]> rows;
+    // live entries in the store, before the search and the filter
+    in property <int> total;
+    in property <string> note;
+    in-out property <string> query;
+    // "all" | "memories" | "sessions"
+    in-out property <string> filter: "all";
+    in property <bool> auto-recall: true;
+    in property <bool> auto-capture: true;
+    in property <bool> concise: true;
+    in-out property <string> draft;
+    in-out property <string> draft-kind: "fact";
+    in-out property <bool> draft-global;
+    callback refresh();
+    callback add();
+    callback forget(string);
+    callback pin(string, bool);
+    callback set-auto-recall(bool);
+    callback set-auto-capture(bool);
+    callback set-concise(bool);
+}
+
+// Settings › Memory › Graph: the project's Graphify knowledge graph (`harness_agent_hub::graphify`).
+export global GraphUi {
+    // ---- the picture: drawn in Rust (`harness-graph-view`), frame by frame, while it is on screen ----
+    in property <image> view-frame;
+    // a graph is loaded and its first frame has arrived
+    in property <bool> view-ready;
+    // "orbit": a flat solar system in the theme's colours; "space": a galaxy around a black hole, in 3D
+    in-out property <string> view-style: "orbit";
+    in-out property <bool> view-paused;
+    // the picture fills the window
+    in-out property <bool> view-wide;
+    // still moving by itself (a frame clock keeps running while it is)
+    in property <bool> view-busy: true;
+    in property <[GraphLabel]> view-labels;
+    // where the project's name goes: under the hole, under the sun
+    in property <length> core-x;
+    in property <length> core-y;
+    in property <float> core-alpha;
+    // the project's folder name
+    in property <string> view-title;
+    // "300 of 4,210 nodes · 520 links"
+    in property <string> view-note;
+    in property <string> view-fps;
+    // the community being looked at (-1: all of them)
+    in property <int> view-focus: -1;
+    in property <string> view-focus-name;
+    // the node under the pointer
+    in property <bool> tip-shown;
+    in property <length> tip-x;
+    in property <length> tip-y;
+    in property <string> tip-title;
+    in property <string> tip-note;
+    // the chosen node
+    in property <int> view-selected: -1;
+    in property <length> sel-x;
+    in property <length> sel-y;
+    in property <string> sel-title;
+    in property <string> sel-note;
+    in property <string> sel-group;
+    // its file can be opened
+    in property <bool> sel-has-source;
+    in property <[GraphHit]> sel-links;
+    // the list of nodes (search)
+    in-out property <bool> list-open;
+    in-out property <string> list-query;
+    in property <[GraphHit]> list-hits;
+    // the canvas's size changed
+    callback view-resized(length, length);
+    // 0 moved, 1 pressed, 2 dragged, 3 released, 4 left
+    callback view-pointer(int, length, length);
+    // above 1 comes closer
+    callback view-zoom(float);
+    // the frame clock
+    callback view-tick();
+    callback view-reset();
+    callback view-set-style(string);
+    callback view-set-paused(bool);
+    // hold still (paused, window in the background, reduced motion); second: also skip the arrival
+    callback view-rest(bool, bool);
+    // the theme's colours changed
+    callback view-themed();
+    // room the panel takes on the right
+    callback view-inset(length);
+    // look at one community (-1: all again)
+    callback view-focus-cluster(int);
+    // choose a node from a list (-1: none)
+    callback view-pick(int);
+    callback view-search(string);
+    callback view-open-source();
+
+    // the `graphify` command was found
+    in property <bool> installed;
+    // the `graphify-mcp` command was found (agents then get the graph's tools)
+    in property <bool> mcp;
+    in property <string> cli-path;
+    in property <string> install-command;
+    // What "Set up Graphify" will run, in words ("winget install astral-sh.uv, then uv tool install …"); "" when
+    // nothing on this computer can install it.
+    in property <string> install-plan;
+    in property <string> project;
+    in property <bool> has-graph;
+    in property <bool> checked;
+    // "1,204 nodes · 3,310 links · 18 communities · updated 2h ago"
+    in property <string> summary;
+    in property <bool> has-html;
+    in property <bool> has-report;
+    // a build or an install is running
+    in property <bool> busy;
+    // last lines of the running or finished command
+    in property <string> log;
+    in property <string> note;
+    in property <bool> give-agents: true;
+    callback refresh();
+    callback build();
+    callback install();
+    callback open-html();
+    callback open-report();
+    callback set-give-agents(bool);
+}
+
+// Settings › Orchestra › Decision model (`harness_agent_hub::decision`): the API provider that picks the agent
+// and model of a delegation that names none.
+export global DecisionUi {
+    // API providers that can answer: id + "Label · model"
+    in property <[SelectOption]> providers;
+    // "" = off
+    in property <string> provider;
+    in property <string> provider-label;
+    in-out property <string> model;
+    in property <bool> delegation: true;
+    in property <string> note;
+    callback refresh();
+    callback set-provider(string);
+    callback set-model(string);
+    callback set-delegation(bool);
+}

@@ -1,0 +1,79 @@
+import { Theme } from "../theme/tokens.slint";
+import { SessionRow } from "../models.slint";
+import { SettingsUi } from "../settings/globals.slint";
+import { Sidebar } from "./sidebar.slint";
+
+export component NarrowDrawer inherits Rectangle {
+    in property <[SessionRow]> sessions;
+    in property <string> workspace-initial;
+    in property <string> workspace-name;
+    callback close();
+    callback show-settings();
+    callback new-session();
+    callback new-worktree-session();
+    callback open-session(string);
+    callback archive-session(string);
+    callback open-new-menu(length, length);
+    callback open-menu(string, length, length);
+    callback open-group-menu(string, length, length);
+    background: Theme.scrim;
+    TouchArea {
+        clicked => {
+            root.close();
+        }
+    }
+    Rectangle {
+        x: Theme.frame-gap;
+        y: Theme.frame-gap;
+        width: min(300px, parent.width - 48px);
+        height: parent.height - Theme.frame-gap * 2;
+        background: Theme.glass-strong;
+        border-radius: Theme.radius-2xl;
+        border-width: 1px;
+        border-color: Theme.glass-rim;
+        drop-shadow-blur: Theme.shadow-lg-blur;
+        drop-shadow-offset-y: Theme.shadow-lg-y;
+        drop-shadow-color: Theme.shadow-lg-color;
+        clip: true;
+        Sidebar {
+            show-new: true;
+            sessions: root.sessions;
+            initial: root.workspace-initial;
+            workspace: root.workspace-name;
+            new-session => {
+                root.close();
+                root.new-session();
+            }
+            new-worktree-session => {
+                root.close();
+                root.new-worktree-session();
+            }
+            open-session(id) => {
+                root.close();
+                root.open-session(id);
+            }
+            archive-session(id) => {
+                root.archive-session(id);
+            }
+            menu(id, x, y) => {
+                root.open-menu(id, x, y);
+            }
+            new-menu(x, y) => {
+                root.close();
+                root.open-new-menu(x, y);
+            }
+            group-menu(id, x, y) => {
+                root.open-group-menu(id, x, y);
+            }
+            open-page(id) => {
+                root.close();
+                root.show-settings();
+                SettingsUi.open-page(id);
+            }
+            open-settings => {
+                root.close();
+                root.show-settings();
+            }
+        }
+    }
+}

@@ -1,0 +1,300 @@
+import { Theme } from "../theme/tokens.slint";
+import { Icon, Icons, IconButton } from "../components/controls.slint";
+import { ChatUi, SubagentRow, FleetGroup } from "../chat/globals.slint";
+import { AgentTint } from "../panels/common.slint";
+import { AgentLogo, AgentMark } from "../components/agent_logo.slint";
+import { SettingsUi } from "../settings/globals.slint";
+import { ArtClock } from "../components/ascii.slint";
+import { Avatar, LiveStatus, Caps, Progress, StatusPill } from "./live_parts.slint";
+
+// Subagent node (design: 286 wide, #121317, 1px #24272D, r10; selected = accent ring).
+export component SubNode inherits Rectangle {
+    in property <SubagentRow> item;
+    in property <bool> selected;
+    callback picked();
+    width: 340px;
+    height: 116px;
+    border-radius: 10px;
+    background: root.selected ? Theme.card-selected : Theme.card;
+    border-width: root.selected ? 1.5px : 1px;
+    border-color: root.selected ? Theme.accent-fg.with-alpha(0.7) : (nta.has-hover ? Theme.border-hover : Theme.border);
+    drop-shadow-blur: root.selected ? 18px : 0px;
+    drop-shadow-color: Theme.accent-fg.with-alpha(0.18);
+    accessible-role: button;
+    accessible-label: root.item.agent-name + ": " + root.item.title;
+    accessible-action-default => {
+        root.picked();
+    }
+    nta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.picked();
+        }
+    }
+    VerticalLayout {
+        padding: 12px;
+        spacing: 8px;
+        HorizontalLayout {
+            spacing: 8px;
+            Avatar {
+                agent: root.item.agent;
+                size: 22px;
+            }
+            VerticalLayout {
+                horizontal-stretch: 1;
+                spacing: 1px;
+                Text {
+                    text: root.item.agent-name;
+                    font-size: 12px;
+                    font-weight: Theme.weight-semibold;
+                    color: Theme.foreground;
+                    overflow: elide;
+                }
+                Text {
+                    text: root.item.agent + " · " + ChatUi.elapsed(root.item.started-s, root.item.finished-s);
+                    font-size: 10px;
+                    color: Theme.foreground-subtlest;
+                    overflow: elide;
+                }
+            }
+            VerticalLayout {
+                alignment: start;
+                StatusPill {
+                    status: root.item.status;
+                }
+            }
+        }
+        Text {
+            text: root.item.title;
+            font-size: 12px;
+            color: Theme.foreground-subtle;
+            overflow: elide;
+        }
+        Progress {
+            status: root.item.status;
+            tint: AgentTint.of(root.item.agent);
+            estimate: ChatUi.estimate(root.item.started-s, root.item.steps);
+        }
+        // Latest activity (design: path chips row; the hub reports one activity line instead).
+        HorizontalLayout {
+            alignment: start;
+            Rectangle {
+                height: 18px;
+                width: min(316px, at.preferred-width + 12px);
+                border-radius: 4px;
+                background: Theme.raised;
+                border-width: 1px;
+                border-color: Theme.border-hover;
+                at := Text {
+                    x: 6px;
+                    width: parent.width - 12px;
+                    text: root.item.activity != "" ? root.item.activity : (root.item.status == 0 ? @tr("thinking…") : (root.item.preview != "" ? root.item.preview : LiveStatus.label(root.item.status)));
+                    font-size: 10px;
+                    color: Theme.muted;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
+            }
+        }
+    }
+}
+
+export component SessionGroup inherits Rectangle {
+    in property <FleetGroup> g;
+    in property <string> model-name;
+    in property <int> sel: -1;
+    callback picked(int);
+    callback open-session();
+    property <int> n: root.g.subagents.length;
+    property <length> node-h: 116px;
+    property <length> gap: 28px;
+    property <length> col-h: root.n * root.node-h + max(0, root.n - 1) * root.gap;
+    property <length> top: (root.height - root.col-h) / 2;
+    property <length> orch-y: (root.height - 196px) / 2;
+    property <length> sub-x: 460px;
+    height: root.g.height * 1px;
+    for r[i] in root.g.subagents: Path {
+        property <float> sx: 320;
+        property <float> sy: (root.orch-y + (root.n > 1 ? 40px + i * 116px / (root.n - 1) : 98px)) / 1px;
+        property <float> ex: root.sub-x / 1px;
+        property <float> ey: (root.top + i * (root.node-h + root.gap) + 58px) / 1px;
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+        viewbox-width: root.width / 1px;
+        viewbox-height: root.height / 1px;
+        commands: "M " + self.sx + " " + self.sy + " C " + (self.sx + 80) + " " + self.sy + " " + (self.ex - 90) + " " + self.ey + " " + (self.ex - 6) + " " + self.ey;
+        stroke: i == root.sel ? Theme.accent-fg.with-alpha(0.9) : Theme.accent-fg.with-alpha(0.45);
+        stroke-width: i == root.sel ? 1.6px : 1.2px;
+        accessible-role: none;
+    }
+    for r[i] in root.g.subagents: Path {
+        x: root.sub-x - 8px;
+        y: root.top + i * (root.node-h + root.gap) + 58px - 4px;
+        width: 8px;
+        height: 8px;
+        viewbox-width: 8;
+        viewbox-height: 8;
+        commands: "M 0 0 L 8 4 L 0 8 Z";
+        fill: i == root.sel ? Theme.accent-fg : Theme.accent-fg.with-alpha(0.7);
+        accessible-role: none;
+    }
+    for r[i] in root.g.subagents: Rectangle {
+        x: 320px - 3px;
+        y: root.orch-y + (root.n > 1 ? 40px + i * 116px / (root.n - 1) : 98px) - 3px;
+        width: 6px;
+        height: 6px;
+        border-radius: 3px;
+        background: Theme.accent-fg.with-alpha(0.85);
+    }
+    Rectangle {
+        x: 0;
+        y: root.orch-y;
+        width: 320px;
+        height: 196px;
+        border-radius: 10px;
+        background: oa.has-hover ? Theme.card-selected : Theme.card;
+        border-width: root.g.open ? 1.5px : 1px;
+        border-color: root.g.open ? Theme.accent-fg.with-alpha(0.6) : Theme.border-hover;
+        accessible-role: button;
+        accessible-label: root.g.title;
+        accessible-description: root.g.prompt;
+        accessible-action-default => {
+            root.open-session();
+        }
+        oa := TouchArea {
+            mouse-cursor: pointer;
+            clicked => {
+                root.open-session();
+            }
+        }
+        VerticalLayout {
+            padding: 12px;
+            spacing: 8px;
+            HorizontalLayout {
+                spacing: 8px;
+                Avatar {
+                    agent: root.g.agent;
+                    size: 26px;
+                }
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    spacing: 1px;
+                    Text {
+                        text: root.g.title != "" ? root.g.title : @tr("Untitled session");
+                        font-size: 12px;
+                        font-weight: Theme.weight-semibold;
+                        color: Theme.foreground;
+                        overflow: elide;
+                    }
+                    Text {
+                        text: (root.g.open ? @tr("Open") + " · " : "") + @tr("Orchestrator") + " · " + root.g.agent-name + (root.model-name != "" ? " · " + root.model-name : "");
+                        font-size: 10px;
+                        color: root.g.open ? Theme.accent-fg : Theme.foreground-subtlest;
+                        overflow: elide;
+                    }
+                }
+                VerticalLayout {
+                    alignment: start;
+                    StatusPill {
+                        status: root.g.running || root.g.active > 0 ? 0 : 2;
+                    }
+                }
+            }
+            Rectangle {
+                vertical-stretch: 1;
+                border-radius: 6px;
+                background: Theme.well;
+                border-width: 1px;
+                border-color: Theme.border;
+                VerticalLayout {
+                    padding: 8px;
+                    spacing: 4px;
+                    Caps {
+                        text: root.g.running ? @tr("PROCESSING") : @tr("LAST PROMPT");
+                        color: root.g.running ? Theme.success : Theme.caps-label;
+                    }
+                    prompt-flick := Flickable {
+                        vertical-stretch: 1;
+                        min-height: 0;
+                        interactive: false;
+                        content-width: self.width;
+                        content-height: max(self.height, prompt-text.preferred-height);
+                        prompt-text := Text {
+                            width: prompt-flick.width;
+                            text: root.g.prompt != "" ? root.g.prompt : @tr("No prompt yet");
+                            font-size: 11px;
+                            color: root.g.prompt != "" ? Theme.foreground-subtle : Theme.foreground-subtlest;
+                            wrap: word-wrap;
+                        }
+                    }
+                }
+            }
+            HorizontalLayout {
+                Text {
+                    text: @tr("{0} of {1} subagents finished", root.g.total - root.g.active, root.g.total);
+                    font-size: 10px;
+                    color: Theme.foreground-subtlest;
+                    horizontal-stretch: 1;
+                    overflow: elide;
+                }
+                Text {
+                    text: @tr("{0} active", root.g.active);
+                    font-size: 10px;
+                    color: Theme.foreground-subtlest;
+                }
+            }
+            Rectangle {
+                height: 4px;
+                border-radius: 2px;
+                background: Theme.border;
+                Rectangle {
+                    x: 0;
+                    width: root.g.total == 0 ? 0px : parent.width * (root.g.total - root.g.active) / root.g.total;
+                    height: parent.height;
+                    border-radius: 2px;
+                    background: Theme.accent-fg;
+                }
+            }
+        }
+    }
+    for r[i] in root.g.subagents: SubNode {
+        x: root.sub-x;
+        y: root.top + i * (root.node-h + root.gap);
+        item: r;
+        selected: i == root.sel;
+        picked => {
+            root.picked(i);
+        }
+    }
+    if root.n == 0 && root.g.open: Rectangle {
+        x: root.sub-x;
+        y: root.orch-y + 48px;
+        width: 340px;
+        height: 100px;
+        border-radius: 10px;
+        border-width: 1px;
+        border-color: Theme.border;
+        background: Theme.well;
+        VerticalLayout {
+            padding: 16px;
+            spacing: 4px;
+            alignment: center;
+            Text {
+                text: root.g.total == 0 ? @tr("No subagents yet") : @tr("No active subagents");
+                font-size: 12px;
+                font-weight: Theme.weight-medium;
+                color: Theme.foreground-subtle;
+            }
+            Text {
+                text: root.g.total == 0
+                    ? @tr("When the orchestrator delegates part of a task, each subagent appears here live.")
+                    : @tr("All {0} subagents finished. Their results are in the chat; new delegations appear here live.", root.g.total);
+                font-size: 11px;
+                color: Theme.foreground-subtlest;
+                wrap: word-wrap;
+            }
+        }
+    }
+}

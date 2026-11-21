@@ -1,0 +1,254 @@
+import { Theme } from "../theme/tokens.slint";
+import { Icon, IconButton, Icons, MenuShell } from "../components/controls.slint";
+import { AgentRow, PermOption, QueueRow } from "../models.slint";
+import { OrchLiveUi } from "../orchestra/live.slint";
+import { ChatUi } from "./globals.slint";
+import { DockUi, FailureBanner, PickerMenu, ResumeBanner } from "./dock.slint";
+import { StatusPanel, SubagentBar, TeamStrip } from "./turns.slint";
+import { ResultList } from "./palette.slint";
+import { PermissionCard } from "./permission_card.slint";
+import { QueueList } from "./queue_list.slint";
+import { AgentPicker } from "./agent_picker.slint";
+import { WorkingLine } from "./working_line.slint";
+import { Composer } from "./composer.slint";
+
+export component ChatDock inherits HorizontalLayout {
+    in property <length> chat-pad;
+    in property <bool> paused;
+    in property <string> error-text;
+    in property <bool> perm-visible;
+    in property <string> perm-title;
+    in property <string> perm-detail;
+    in property <[PermOption]> perm-options;
+    in property <int> perm-request;
+    in property <[QueueRow]> queue;
+    in property <[AgentRow]> agents;
+    in property <string> sticky-agent;
+    in property <string> sticky-name;
+    in property <bool> running;
+    in property <int> queued;
+    in property <bool> update-ready;
+    in-out property <bool> picker-open;
+    in-out property <string> draft;
+    in-out property <bool> stick-bottom;
+    callback permission(int, bool);
+    callback choose-permission(int, string);
+    callback cancel-queued(string);
+    callback choose-agent(string);
+    callback restart-for-update();
+    callback do-send();
+    callback stop();
+    vertical-stretch: 0;
+    padding-left: root.chat-pad;
+    padding-right: root.chat-pad;
+    padding-bottom: 12px;
+    padding-top: 4px;
+    VerticalLayout {
+        horizontal-stretch: 1;
+        vertical-stretch: 0;
+        spacing: 8px;
+        if root.paused: Rectangle {
+            vertical-stretch: 0;
+            background: Theme.warning-surface;
+            border-radius: Theme.radius-lg;
+            accessible-role: AccessibleRole.text;
+            accessible-label: pt.text;
+            HorizontalLayout {
+                padding: 8px;
+                padding-left: 12px;
+                spacing: 8px;
+                Icon {
+                    source: Icons.triangle-alert;
+                    size: Theme.icon-sm;
+                    tint: Theme.warning-surface-foreground;
+                }
+                pt := Text {
+                    text: @tr("All agents reached their limits. New messages are queued until one is available.");
+                    wrap: word-wrap;
+                    font-size: Theme.ui-sm;
+                    color: Theme.warning-surface-foreground;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    accessible-role: none;
+                }
+            }
+        }
+        // Error banner (replaces the header error text): destructive surface, dismissible.
+        if root.error-text != "": Rectangle {
+            vertical-stretch: 0;
+            background: Theme.destructive-surface;
+            border-radius: Theme.radius-lg;
+            accessible-role: AccessibleRole.text;
+            accessible-label: "error " + root.error-text;
+            HorizontalLayout {
+                padding: 6px;
+                padding-left: 12px;
+                spacing: 8px;
+                Icon {
+                    source: Icons.circle-alert;
+                    size: Theme.icon-sm;
+                    tint: Theme.destructive-surface-foreground;
+                }
+                Text {
+                    text: root.error-text;
+                    wrap: word-wrap;
+                    font-size: Theme.ui-sm;
+                    color: Theme.destructive-surface-foreground;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    accessible-role: none;
+                }
+                IconButton {
+                    icon: Icons.x;
+                    label: @tr("Dismiss error");
+                    size: Theme.control-sm;
+                    icon-size: Theme.icon-sm;
+                    clicked => {
+                        ChatUi.dismiss-error();
+                    }
+                }
+            }
+        }
+        if DockUi.failure-shown: FailureBanner { }
+        if DockUi.resume-shown: ResumeBanner { }
+        if root.perm-visible: PermissionCard {
+            title: root.perm-title;
+            detail: root.perm-detail;
+            options: root.perm-options;
+            answer(allow) => {
+                root.permission(root.perm-request, allow);
+            }
+            choose(id) => {
+                root.choose-permission(root.perm-request, id);
+            }
+            feedback => {
+                ChatUi.deny-feedback(root.perm-request);
+            }
+        }
+        if ChatUi.parent-id != "": SubagentBar { }
+        if ChatUi.plan.length > 0: StatusPanel { }
+        if root.queue.length > 0: QueueList {
+            items: root.queue;
+            cancel(id) => {
+                root.cancel-queued(id);
+            }
+        }
+        if DockUi.picker-open != "" && !root.perm-visible: Rectangle {
+            height: 0px;
+            pm := PickerMenu {
+                x: 0;
+                y: -self.preferred-height - 4px;
+                width: parent.width;
+                height: self.preferred-height;
+            }
+        }
+        if root.picker-open: AgentPicker {
+            agents: root.agents;
+            sticky: root.sticky-agent;
+            paused: root.paused;
+            choose(id) => {
+                root.choose-agent(id);
+                root.picker-open = false;
+            }
+        }
+        // @ / slash popup above the composer (rows from src/chat).
+        if ChatUi.mention-open && !root.perm-visible: MenuShell {
+            vertical-stretch: 0;
+            if ChatUi.mention-rows.length == 0: Text {
+                height: 36px;
+                text: ChatUi.mention-trigger == "/" ? @tr("No commands") : @tr("No matches");
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                color: Theme.foreground-subtle;
+            }
+            if ChatUi.mention-rows.length > 0: ResultList {
+                height: min(ChatUi.mention-rows.length * 36px, 288px);
+                rows: ChatUi.mention-rows;
+                current: ChatUi.mention-index;
+                list-label: ChatUi.mention-trigger == "/" ? @tr("Commands") : @tr("Mentions");
+                run(i) => {
+                    ChatUi.mention-pick(i);
+                }
+            }
+        }
+        // The team at work: the subagents this session delegated to and what each is doing.
+        if ChatUi.subagents-active.length > 0 && ChatUi.parent-id == "": TeamStrip {
+            orchestra => {
+                OrchLiveUi.open = true;
+            }
+        }
+        if root.running && !root.perm-visible: WorkingLine { }
+        // Live update (phase 1): pill above the composer when a new build replaced the source exe.
+        if root.update-ready: HorizontalLayout {
+            alignment: center;
+            Rectangle {
+                height: 26px;
+                width: upd-row.preferred-width;
+                border-radius: Theme.radius-full;
+                background: upd-hit.has-hover ? Theme.accent-line : Theme.accent-soft;
+                border-width: 1px;
+                border-color: Theme.accent-line;
+                animate background { duration: Theme.dur-hover; easing: ease-out-quint; }
+                accessible-role: button;
+                accessible-label: @tr("New build ready · Restart");
+                accessible-action-default => {
+                    root.restart-for-update();
+                }
+                upd-row := HorizontalLayout {
+                    padding-left: 12px;
+                    padding-right: 12px;
+                    spacing: 7px;
+                    Rectangle {
+                        y: (parent.height - self.height) / 2;
+                        width: 7px;
+                        height: 7px;
+                        border-radius: 3.5px;
+                        background: Theme.accent-fg;
+                    }
+                    Text {
+                        text: @tr("New build ready");
+                        font-size: Theme.ui-sm;
+                        color: Theme.accent-fg;
+                        vertical-alignment: center;
+                        accessible-role: none;
+                    }
+                    Text {
+                        text: @tr("Restart");
+                        font-size: Theme.ui-sm;
+                        font-weight: Theme.weight-semibold;
+                        color: Theme.foreground;
+                        vertical-alignment: center;
+                        accessible-role: none;
+                    }
+                }
+                upd-hit := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => {
+                        root.restart-for-update();
+                    }
+                }
+            }
+        }
+        if !root.perm-visible: Composer {
+            agents: root.agents;
+            draft <=> root.draft;
+            running: root.running;
+            queued: root.queued;
+            sticky-name: root.sticky-name;
+            send => {
+                root.stick-bottom = true;
+                root.do-send();
+            }
+            stop => {
+                root.stop();
+            }
+            toggle-picker => {
+                root.picker-open = !root.picker-open;
+                DockUi.picker-open = "";
+            }
+            stick-bottom-request => {
+                root.stick-bottom = true;
+            }
+        }
+    }
+}

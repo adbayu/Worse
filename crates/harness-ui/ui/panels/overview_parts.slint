@@ -1,0 +1,168 @@
+import { ScrollView } from "std-widgets.slint";
+import { Theme } from "../theme/tokens.slint";
+import { Icon, Icons, Divider } from "../components/controls.slint";
+import { ChatUi, OutputRow } from "../chat/globals.slint";
+import { SubagentList, BackgroundTaskList } from "../chat/turns.slint";
+import { PanelGit, PanelNav } from "globals.slint";
+
+export component SectionHeader inherits Rectangle {
+    in property <string> text;
+    in property <string> detail;
+    in property <bool> collapsible: true;
+    in-out property <bool> open: true;
+    in property <float> bar: -1;
+    height: 30px;
+    accessible-role: button;
+    accessible-label: root.text;
+    accessible-description: root.collapsible ? (root.open ? "expanded" : "collapsed") : "";
+    accessible-action-default => {
+        if root.collapsible {
+            root.open = !root.open;
+        }
+    }
+    hta := TouchArea {
+        enabled: root.collapsible;
+        mouse-cursor: root.collapsible ? pointer : default;
+        clicked => {
+            root.open = !root.open;
+        }
+    }
+    HorizontalLayout {
+        spacing: 6px;
+        Text {
+            text: root.text.to-uppercase();
+            font-size: 10px;
+            font-weight: Theme.weight-semibold;
+            letter-spacing: 0.8px;
+            color: hta.has-hover ? Theme.muted : Theme.caps-label;
+            vertical-alignment: center;
+        }
+        Rectangle {
+            horizontal-stretch: 1;
+        }
+        if root.detail != "": Text {
+            text: root.detail;
+            font-size: 11px;
+            color: Theme.muted;
+            vertical-alignment: center;
+        }
+        if root.bar >= 0: Rectangle {
+            y: (parent.height - self.height) / 2;
+            width: 28px;
+            height: 4px;
+            border-radius: 2px;
+            background: Theme.border-hover;
+            Rectangle {
+                x: 0;
+                width: parent.width * clamp(root.bar, 0, 1);
+                height: parent.height;
+                border-radius: 2px;
+                background: root.bar > 0.8 ? Theme.warning-surface-foreground : Theme.accent-fg;
+            }
+        }
+        if root.collapsible: Icon {
+            y: (parent.height - self.height) / 2;
+            source: root.open ? Icons.chevron-down : Icons.chevron-right;
+            size: 12px;
+            tint: hta.has-hover ? Theme.foreground : Theme.icon-subtlest;
+        }
+    }
+}
+
+export component InfoRow inherits HorizontalLayout {
+    in property <image> icon;
+    in property <string> text;
+    spacing: 10px;
+    height: 26px;
+    Icon {
+        y: (parent.height - self.height) / 2;
+        source: root.icon;
+        size: 14px;
+        tint: Theme.icon-subtle;
+    }
+    Text {
+        text: root.text;
+        font-size: 12px;
+        color: Theme.foreground-subtle;
+        vertical-alignment: center;
+        overflow: elide;
+        horizontal-stretch: 1;
+    }
+}
+
+export component LegendRow inherits HorizontalLayout {
+    in property <color> swatch;
+    in property <string> label;
+    in property <string> amount;
+    in property <float> share;
+    spacing: 8px;
+    height: 21px;
+    Rectangle {
+        y: (parent.height - self.height) / 2;
+        width: 8px;
+        height: 8px;
+        border-radius: 2px;
+        background: root.swatch;
+    }
+    Text {
+        text: root.label;
+        font-size: 12px;
+        color: Theme.foreground-subtle;
+        vertical-alignment: center;
+        overflow: elide;
+        horizontal-stretch: 1;
+    }
+    Text {
+        text: root.amount;
+        font-size: 11px;
+        color: Theme.muted;
+        vertical-alignment: center;
+        horizontal-alignment: right;
+        min-width: 52px;
+    }
+    Text {
+        text: round(root.share * 1000) / 10 + "%";
+        font-size: 11px;
+        color: Theme.foreground-subtlest;
+        vertical-alignment: center;
+        horizontal-alignment: right;
+        min-width: 48px;
+    }
+}
+
+export component OutputItem inherits Rectangle {
+    in property <OutputRow> item;
+    height: 28px;
+    border-radius: Theme.radius-md;
+    background: ta.has-hover ? Theme.hover : transparent;
+    accessible-role: list-item;
+    accessible-label: item.path;
+    accessible-action-default => {
+        PanelGit.open-diff(item.path, false);
+        PanelNav.open-tab("diff");
+    }
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            PanelGit.open-diff(item.path, false);
+            PanelNav.open-tab("diff");
+        }
+    }
+    HorizontalLayout {
+        spacing: 10px;
+        Icon {
+            y: (parent.height - self.height) / 2;
+            source: Icons.file-code;
+            size: Theme.icon-sm;
+            tint: Theme.icon-subtle;
+        }
+        Text {
+            text: item.name;
+            font-size: 12px;
+            color: Theme.foreground-subtle;
+            vertical-alignment: center;
+            overflow: elide;
+            horizontal-stretch: 1;
+        }
+    }
+}

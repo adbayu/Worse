@@ -1,0 +1,233 @@
+import { Theme } from "../theme/tokens.slint";
+import { Icon, Icons, IconsFill, Spinner, Button, IconButton, Tag, Divider, Dialog } from "../components/controls.slint";
+import { TextField, TextArea, Switch } from "../settings/parts.slint";
+import { AgentTint, Pill, ProgressTrack, CapsHeader } from "../panels/common.slint";
+import { ChatUi, ChatImage, ToolPart, ChangeRow, PlanRow, ScheduleRow, SubagentRow } from "globals.slint";
+import { LiveUi } from "../panels/live.slint";
+import { ArtClock } from "../components/ascii.slint";
+
+// Subagent cards (frame 01 right panel, 05/14): agent dot + title + status pill, 4px progress track while running,
+// meta line "agent · activity · elapsed" in muted. Expanded card shows the detail and "Open session".
+export component SubagentList inherits VerticalLayout {
+    property <length> content-width: 260px;
+    changed width => {
+        root.content-width = root.width;
+    }
+    init => {
+        root.content-width = root.width;
+    }
+    spacing: 8px;
+    Timer {
+        interval: 1s;
+        running: ChatUi.subagents-running > 0;
+        triggered => {
+            ChatUi.subagent-action("tick", "");
+        }
+    }
+    for s in ChatUi.subagents-show-all ? ChatUi.subagents : ChatUi.subagents-active: Rectangle {
+        property <bool> open: ChatUi.subagent-expanded == s.id;
+        property <string> detail: s.status == 1 ? @tr("Needs approval — open to answer") : s.status == 0 ? (s.activity != "" ? s.activity : @tr("Thinking…")) : s.preview != "" ? s.preview : s.status == 2 ? @tr("Done") : s.status == 3 ? @tr("Failed") : s.status == 4 ? @tr("Cancelled") : @tr("Interrupted");
+        property <string> pill: s.status == 0 ? @tr("Running") : s.status == 1 ? @tr("Needs approval") : s.status == 2 ? @tr("Done") : s.status == 3 ? @tr("Failed") : s.status == 4 ? @tr("Cancelled") : @tr("Interrupted");
+        property <color> pill-tint: s.status == 0 ? Theme.info : s.status == 1 ? Theme.warning-surface-foreground : s.status == 2 ? Theme.success-surface-foreground : s.status == 3 ? Theme.destructive-surface-foreground : Theme.muted;
+        border-radius: Theme.radius-lg;
+        background: sa.has-hover || self.open ? Theme.raised : Theme.surface;
+        border-width: 1px;
+        border-color: self.open ? Theme.border-hover : Theme.border;
+        animate background, border-color { duration: Theme.dur-hover; easing: ease-out-quint; }
+        accessible-role: AccessibleRole.button;
+        accessible-label: s.title;
+        accessible-description: (s.status == 0 ? "running" : s.status == 1 ? "needs approval" : s.status == 2 ? "done" : s.status == 3 ? "failed" : s.status == 4 ? "cancelled" : "interrupted") + " · " + s.agent;
+        accessible-action-default => {
+            ChatUi.subagent-expanded = self.open ? "" : s.id;
+        }
+        VerticalLayout {
+            Rectangle {
+                height: head.preferred-height;
+                sa := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => {
+                        ChatUi.subagent-expanded = ChatUi.subagent-expanded == s.id ? "" : s.id;
+                    }
+                }
+                head := VerticalLayout {
+                    padding-left: 12px;
+                    padding-right: 10px;
+                    padding-top: 10px;
+                    padding-bottom: 10px;
+                    spacing: 8px;
+                    HorizontalLayout {
+                        spacing: 8px;
+                        Rectangle {
+                            y: (parent.height - self.height) / 2;
+                            width: 7px;
+                            height: 7px;
+                            border-radius: 3.5px;
+                            background: AgentTint.of(s.agent);
+                        }
+                        Text {
+                            text: s.title != "" ? s.title : @tr("Subagent");
+                            font-size: 13px;
+                            font-weight: Theme.weight-medium;
+                            color: Theme.foreground;
+                            overflow: elide;
+                            horizontal-stretch: 1;
+                            vertical-alignment: center;
+                            accessible-role: none;
+                        }
+                        Pill {
+                            y: (parent.height - self.height) / 2;
+                            text: pill;
+                            tint: pill-tint;
+                        }
+                    }
+                    if s.status == 0: ProgressTrack {
+                        ratio: Theme.reduce-motion ? ChatUi.estimate(s.started-s, s.steps) : -1;
+                        on-busy-clock: true;
+                        tint: Theme.accent-fg;
+                    }
+                    if s.status == 3: ProgressTrack {
+                        ratio: 1;
+                        tint: Theme.destructive-surface-foreground.with-alpha(0.5);
+                    }
+                    if s.scope != "": Text {
+                        text: @tr("Scope: ") + s.scope;
+                        font-size: 10px;
+                        color: Theme.muted;
+                        overflow: elide;
+                        accessible-role: none;
+                    }
+                    HorizontalLayout {
+                        spacing: 6px;
+                        Text {
+                            text: s.agent + (open ? "" : " · " + detail);
+                            font-size: 11px;
+                            color: s.status == 1 ? Theme.warning-surface-foreground : Theme.muted;
+                            overflow: elide;
+                            horizontal-stretch: 1;
+                            accessible-role: none;
+                        }
+                        Text {
+                            text: ChatUi.elapsed(s.started-s, s.finished-s);
+                            font-size: 11px;
+                            color: Theme.foreground-subtlest;
+                            vertical-alignment: center;
+                            accessible-role: none;
+                        }
+                    }
+                }
+            }
+            if open: Rectangle {
+                height: 1px;
+                background: Theme.border;
+            }
+            if open: Rectangle {
+                height: body.preferred-height + 10px + bar.preferred-height + 10px + 10px;
+                body := Text {
+                    x: 12px;
+                    y: 10px;
+                    width: max(40px, root.content-width - 24px);
+                    text: detail;
+                    font-size: 12px;
+                    color: s.status == 1 ? Theme.warning-surface-foreground : Theme.foreground-subtle;
+                    wrap: word-wrap;
+                }
+                bar := HorizontalLayout {
+                    x: 12px;
+                    y: 10px + body.preferred-height + 10px;
+                    width: max(40px, root.content-width - 24px);
+                    alignment: end;
+                    Button {
+                        text: @tr("Open session");
+                        size: "sm";
+                        clicked => {
+                            ChatUi.subagent-action("open", s.id);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// Background tasks of the open session (§9.17): one compact row per task (frame 01/05), Stop while running.
+export component BackgroundTaskList inherits VerticalLayout {
+    spacing: 2px;
+    Timer {
+        interval: 1s;
+        running: ChatUi.background-tasks-running > 0;
+        triggered => {
+            ChatUi.subagent-action("tick", "");
+        }
+    }
+    for t in ChatUi.background-tasks: Rectangle {
+        property <bool> failed: !t.running && t.state != "completed";
+        height: row.preferred-height + 12px;
+        border-radius: Theme.radius-md;
+        background: ta.has-hover ? Theme.hover : self.failed ? Theme.destructive-surface.with-alpha(0.06) : transparent;
+        accessible-role: AccessibleRole.text;
+        accessible-label: t.name + " · " + (t.running ? "running" : t.state) + (t.description != "" ? " · " + t.description : "");
+        ta := TouchArea { }
+        row := HorizontalLayout {
+            x: 6px;
+            y: 6px;
+            width: max(40px, root.width - 12px);
+            spacing: 10px;
+            if t.running: Spinner {
+                y: 2px;
+                size: 12px;
+                tint: Theme.accent-fg;
+                clocked: true;
+            }
+            if !t.running: Icon {
+                y: 2px;
+                source: t.state == "completed" ? Icons.check : Icons.circle-x;
+                size: 12px;
+                tint: t.state == "completed" ? Theme.success-surface-foreground : Theme.destructive-surface-foreground;
+            }
+            VerticalLayout {
+                horizontal-stretch: 1;
+                spacing: 2px;
+                HorizontalLayout {
+                    spacing: 6px;
+                    Text {
+                        text: t.name;
+                        font-family: Theme.mono-font;
+                        font-size: 12px;
+                        color: Theme.foreground-subtle;
+                        overflow: elide;
+                        horizontal-stretch: 1;
+                        vertical-alignment: center;
+                        accessible-role: none;
+                    }
+                    if failed: Pill {
+                        y: (parent.height - self.height) / 2;
+                        text: @tr("Failed");
+                        tint: Theme.destructive-surface-foreground;
+                    }
+                    Text {
+                        text: ChatUi.elapsed(t.started-s, t.finished-s);
+                        font-size: 11px;
+                        color: Theme.foreground-subtlest;
+                        vertical-alignment: center;
+                        accessible-role: none;
+                    }
+                }
+                if (t.description != "" ? t.description : t.summary) != "": Text {
+                    text: t.description != "" ? t.description : t.summary;
+                    font-size: 11px;
+                    color: failed ? Theme.destructive-surface-foreground : Theme.muted;
+                    overflow: elide;
+                    accessible-role: none;
+                }
+            }
+            if t.running && t.can-stop: Button {
+                y: (parent.height - self.height) / 2;
+                text: @tr("Stop");
+                size: "sm";
+                clicked => {
+                    ChatUi.stop-background-task(t.id);
+                }
+            }
+        }
+    }
+}

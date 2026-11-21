@@ -1,0 +1,206 @@
+import { ScrollView } from "std-widgets.slint";
+import { Theme } from "../theme/tokens.slint";
+import { Icon, Icons, Button, IconButton, Divider, Card, MenuShell, MenuItem, Dialog, SegmentOption } from "../components/controls.slint";
+
+// Switch (design: 32x18 radius 9; on = accent + white 14px knob right, off = #2A2D33 + muted knob left).
+// Role checkbox for screen readers + gates.
+export component Switch inherits Rectangle {
+    in property <bool> checked;
+    in property <string> label;
+    in property <bool> enabled: true;
+    callback toggled(bool);
+    width: 32px;
+    height: 18px;
+    border-radius: 9px;
+    background: root.checked ? Theme.accent-fill : Theme.border-hover;
+    opacity: root.enabled ? 1 : 0.5;
+    accessible-role: checkbox;
+    accessible-label: root.label;
+    accessible-checkable: true;
+    accessible-checked: root.checked;
+    accessible-enabled: root.enabled;
+    accessible-action-default => {
+        if root.enabled {
+            root.toggled(!root.checked);
+        }
+    }
+    animate background { duration: Theme.dur-hover; }
+    Rectangle {
+        width: 14px;
+        height: 14px;
+        y: 2px;
+        x: root.checked ? root.width - self.width - 2px : 2px;
+        border-radius: 7px;
+        background: root.checked ? Theme.on-accent : Theme.foreground-subtlest;
+        animate x, background { duration: Theme.dur-hover; }
+    }
+    TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        clicked => {
+            root.toggled(!root.checked);
+        }
+    }
+}
+
+// Toggle = design name for Switch (32x18 r9, on #7C8CFF + white 14px knob right, off #2A2D33 + #8A909A knob left).
+export component Toggle inherits Switch { }
+
+// Single-line input (design: height 36, fill #16181C, 1px #24272D border, radius 8, focus = accent line,
+// placeholder #6B717C). `edited` fires on every change, `accepted` on Enter.
+export component TextField inherits Rectangle {
+    in-out property <string> text;
+    in property <string> placeholder;
+    in property <string> label;
+    in property <bool> enabled: true;
+    in property <bool> mono: false;
+    in property <bool> password: false;
+    callback edited(string);
+    callback accepted(string);
+    height: 36px;
+    min-width: 80px;
+    forward-focus: input;
+    horizontal-stretch: 1;
+    border-radius: Theme.radius-md;
+    background: Theme.input;
+    border-width: 1px;
+    border-color: input.has-focus ? Theme.accent-line : (ta.has-hover ? Theme.border-hover : Theme.border);
+    opacity: root.enabled ? 1 : 0.6;
+    animate border-color { duration: Theme.dur-hover; }
+    ta := TouchArea {
+        mouse-cursor: MouseCursor.text;
+        clicked => {
+            input.focus();
+        }
+    }
+    if root.text == "" && root.placeholder != "": Text {
+        x: 12px;
+        width: parent.width - 24px;
+        height: parent.height;
+        text: root.placeholder;
+        color: Theme.icon-subtlest;
+        font-size: Theme.ui-base;
+        vertical-alignment: center;
+        overflow: elide;
+        accessible-role: none;
+    }
+    input := TextInput {
+        x: 12px;
+        width: parent.width - 24px;
+        height: parent.height;
+        text <=> root.text;
+        enabled: root.enabled;
+        color: Theme.foreground;
+        font-size: Theme.ui-base;
+        font-family: root.mono ? Theme.mono-font : "";
+        vertical-alignment: center;
+        single-line: true;
+        input-type: root.password ? InputType.password : InputType.text;
+        accessible-label: root.label;
+        accessible-placeholder-text: root.placeholder;
+        edited => {
+            root.edited(self.text);
+        }
+        accepted => {
+            root.accepted(self.text);
+        }
+    }
+}
+
+// Search input with a leading magnifier (design S6 toolbar: 36px, surface, radius 8, placeholder faint).
+export component SearchField inherits Rectangle {
+    in-out property <string> text;
+    in property <string> placeholder;
+    callback edited(string);
+    height: 36px;
+    horizontal-stretch: 1;
+    border-radius: Theme.radius-md;
+    background: Theme.input;
+    border-width: 1px;
+    border-color: si.has-focus ? Theme.accent-line : Theme.border;
+    animate border-color { duration: Theme.dur-hover; }
+    Icon {
+        x: 11px;
+        height: parent.height;
+        source: Icons.search;
+        size: 15px;
+        tint: si.has-focus ? Theme.icon-subtle : Theme.icon-subtlest;
+    }
+    TouchArea {
+        mouse-cursor: MouseCursor.text;
+        clicked => {
+            si.focus();
+        }
+    }
+    if root.text == "": Text {
+        x: 34px;
+        width: parent.width - 44px;
+        height: parent.height;
+        text: root.placeholder;
+        color: Theme.icon-subtlest;
+        font-size: Theme.ui-base;
+        vertical-alignment: center;
+        overflow: elide;
+        accessible-role: none;
+    }
+    si := TextInput {
+        x: 34px;
+        width: parent.width - 44px;
+        height: parent.height;
+        text <=> root.text;
+        color: Theme.foreground;
+        font-size: Theme.ui-base;
+        vertical-alignment: center;
+        single-line: true;
+        accessible-label: root.placeholder;
+        edited => {
+            root.edited(self.text);
+        }
+    }
+}
+
+// Multi-line editor (instructions, memory, raw JSON/TOML/markdown). Scrolls; mono when `mono`.
+export component TextArea inherits Rectangle {
+    in-out property <string> text;
+    in property <string> label;
+    in property <bool> mono: true;
+    in property <bool> read-only: false;
+    callback edited(string);
+    min-height: 160px;
+    border-radius: Theme.radius-md;
+    background: Theme.input;
+    border-width: 1px;
+    border-color: ed.has-focus ? Theme.accent-line : Theme.border;
+    clip: true;
+    animate border-color { duration: Theme.dur-hover; }
+    sv := ScrollView {
+        x: 1px;
+        y: 1px;
+        width: parent.width - 2px;
+        height: parent.height - 2px;
+        content-height: max(self.visible-height, ed.preferred-height + 24px);
+        content-width: self.visible-width;
+        TouchArea {
+            mouse-cursor: MouseCursor.text;
+            clicked => {
+                ed.focus();
+            }
+        }
+        ed := TextInput {
+            x: 12px;
+            y: 12px;
+            width: sv.visible-width - 24px;
+            text <=> root.text;
+            single-line: false;
+            wrap: word-wrap;
+            read-only: root.read-only;
+            color: Theme.foreground;
+            font-size: root.mono ? Theme.code-size + 1px : Theme.ui-base;
+            font-family: root.mono ? Theme.mono-font : "";
+            accessible-label: root.label;
+            edited => {
+                root.edited(self.text);
+            }
+        }
+    }
+}

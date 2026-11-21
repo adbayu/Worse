@@ -1,0 +1,86 @@
+import { Theme } from "../theme/tokens.slint";
+import { Icon, Icons, Button, IconButton, Divider, Card, Tag, Dialog } from "../components/controls.slint";
+import { PageHeader, Group, SettingRow, Switch, TextField, Select, SelectOption, StatusLine } from "parts.slint";
+
+export struct InboxSourceRow {
+    id: string,
+    repo: string,
+    folder: string,
+    detail: string,
+    enabled: bool,
+    failing: bool,
+    has-router: bool,
+}
+
+export struct InboxTicketRow {
+    id: string,
+    title: string,
+    meta: string,
+    status: string,
+    tone: string,
+    pr: string,
+    error: string,
+    has-session: bool,
+    can-post: bool,
+    can-stop: bool,
+    can-discard: bool,
+    shadow: bool,
+}
+
+export struct InboxTriggerRow {
+    title: string,
+    verdict: string,
+    accepted: bool,
+    time: string,
+}
+
+// Design S4 inbox row: unread dot, agent chip, title + meta, status pill.
+export struct InboxNotice {
+    id: string,
+    chip: string,
+    tint: color,
+    title: string,
+    meta: string,
+    pill: string,
+    pill-tint: color,
+    trailing: string,
+    unread: bool,
+    can-open: bool,
+}
+
+export global InboxUi {
+    in property <[InboxNotice]> notices;
+    in property <string> filter: "all";
+    in property <int> count-all;
+    in property <int> count-unread;
+    in property <int> count-subagents;
+    in property <int> count-builds;
+    in property <bool> enabled;
+    in property <bool> gh-ready;
+    in property <string> gh-text;
+    in property <int> gh-state;
+    in property <bool> gh-installing;
+    in property <[InboxSourceRow]> sources;
+    in property <[InboxTicketRow]> tickets;
+    in property <[InboxTriggerRow]> triggers;
+    in property <string> error;
+    in property <string> busy;
+    in property <[SelectOption]> agents;
+    in-out property <bool> form-open;
+    in-out property <string> form-id;
+    in-out property <string> form-repo;
+    in-out property <string> form-folder;
+    in-out property <string> form-users;
+    in-out property <string> form-handle;
+    in-out property <string> form-agent;
+    in-out property <string> form-agent-label;
+    in-out property <int> form-minutes: 2;
+    in-out property <bool> form-draft;
+    in-out property <bool> form-enabled: true;
+    in-out property <bool> form-route;
+    in-out property <string> form-shadow;
+    in-out property <string> form-error;
+    callback set-enabled(bool);
+    callback action(string, string);
+    callback save-form();
+}

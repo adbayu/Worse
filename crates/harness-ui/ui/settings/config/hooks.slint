@@ -1,0 +1,99 @@
+import { Theme } from "../../theme/tokens.slint";
+import { ConfigUi, ResRow } from "../globals.slint";
+import { Pill, Hairline, DCard, CardHead } from "./parts.slint";
+import { EmptyBody } from "./list_row.slint";
+
+export component HookRow inherits Rectangle {
+    in property <ResRow> item;
+    height: 40px;
+    background: ta.has-hover || (ConfigUi.editing && !ConfigUi.is-new && ConfigUi.edit-name == root.item.name) ? Theme.surface-hover.with-alpha(0.6) : Theme.surface.with-alpha(0);
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            ConfigUi.edit(root.item.name);
+        }
+    }
+    HorizontalLayout {
+        padding-left: 16px;
+        padding-right: 16px;
+        spacing: 16px;
+        HorizontalLayout {
+            width: 140px;
+            alignment: start;
+            VerticalLayout {
+                alignment: center;
+                Pill {
+                    text: root.item.detail != "" ? root.item.detail : ".*";
+                    tint: Theme.info;
+                }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 1;
+            Rectangle {
+                height: 23px;
+                border-radius: 6px;
+                background: Theme.surface;
+                Text {
+                    x: 10px;
+                    width: parent.width - 20px;
+                    text: root.item.extra;
+                    font-size: 11px;
+                    font-family: Theme.mono-font;
+                    color: Theme.foreground-subtle;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
+            }
+        }
+        Rectangle {
+            width: 16px;
+            xt := Text {
+                text: "✕"; font-family: "Segoe UI Symbol";
+                font-size: 11px;
+                color: xa.has-hover ? Theme.destructive : Theme.icon-subtlest;
+                vertical-alignment: center;
+                horizontal-alignment: center;
+            }
+            xa := TouchArea {
+                mouse-cursor: pointer;
+                clicked => {
+                    ConfigUi.remove(root.item.name);
+                }
+            }
+        }
+    }
+}
+
+export component HookCards inherits VerticalLayout {
+    spacing: 20px;
+    if ConfigUi.groups.length == 0: DCard {
+        EmptyBody { }
+    }
+    for g in ConfigUi.groups: DCard {
+        VerticalLayout {
+            CardHead {
+                title: g.name;
+                sub: g.count == 1 ? "1 hook" : g.count + " hooks";
+                VerticalLayout {
+                    alignment: center;
+                    Pill {
+                        text: "active";
+                        tint: Theme.success;
+                    }
+                }
+            }
+            Hairline { }
+            VerticalLayout {
+                padding-top: 6px;
+                padding-bottom: 8px;
+                for r in ConfigUi.rows: VerticalLayout {
+                    if r.group == g.name: HookRow {
+                        item: r;
+                    }
+                }
+            }
+        }
+    }
+}

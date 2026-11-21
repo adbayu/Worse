@@ -1,0 +1,54 @@
+import { AgentRow } from "../models.slint";
+import { DockUi } from "./dock.slint";
+import { MenuItem, MenuShell } from "../components/controls.slint";
+import { Theme } from "../theme/tokens.slint";
+
+export component AgentPicker inherits HorizontalLayout {
+    in property <[AgentRow]> agents;
+    in property <string> sticky;
+    // 全部 agent 都耗尽（暂停）时允许手动选择已耗尽的 agent 重试：hub 会清除其耗尽标记并恢复暂停的回合。
+    in property <bool> paused;
+    callback choose(string);
+    // Above the agent button that opened it (the button sits at the left of the composer).
+    alignment: start;
+    // Set from `report` (a plain property: binding it to the position would be a layout loop).
+    property <length> pad;
+    property <length> anchor: DockUi.anchor-x;
+    padding-left: root.pad;
+    changed anchor => {
+        root.report();
+    }
+    function report() {
+        DockUi.menu-x = self.absolute-position.x;
+        DockUi.menu-y = self.absolute-position.y;
+        DockUi.menu-w = self.width;
+        root.pad = clamp(DockUi.anchor-x - self.absolute-position.x, 0px, max(0px, self.width - 268px));
+    }
+    init => {
+        root.report();
+    }
+    changed absolute-position => {
+        root.report();
+    }
+    changed width => {
+        root.report();
+    }
+    MenuShell {
+        width: 260px;
+        for a[i] in root.agents: MenuItem {
+            property <bool> selectable: a.state == 0 || (a.state == 2 && root.paused);
+            text: a.name;
+            label: "agent-option " + a.name;
+            detail: a.id == root.sticky ? @tr("Active") : a.state == 0 ? @tr("Fallback #{0}", i + 1) : (a.state == 1 ? @tr("Not installed") : (a.reset != "" ? @tr("Limit reached · resets {0}", a.reset) : @tr("Limit reached")));
+            detail-color: a.state == 2 ? Theme.warning-surface-foreground : Theme.foreground-subtle;
+            description: a.id == root.sticky ? @tr("Active agent; on a usage limit Harness switches automatically down the fallback order") : a.state == 0 ? @tr("Fallback #{0}: used automatically when the agents above hit their limit", i + 1) : self.detail;
+            enabled: self.selectable;
+            checked: a.id == root.sticky;
+            clicked => {
+                root.choose(a.id);
+            }
+        }
+    }
+}
+
+// Round send / stop button (ZCode composer: 28px circle, arrow-up; primary when enabled).

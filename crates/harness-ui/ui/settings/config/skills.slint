@@ -1,0 +1,103 @@
+import { Theme } from "../../theme/tokens.slint";
+import { ConfigUi, ResRow } from "../globals.slint";
+import { Switch } from "../parts.slint";
+import { ConfigCopy } from "./types.slint";
+import { Pill, Dot, DCard } from "./parts.slint";
+import { EmptyBody } from "./list_row.slint";
+
+export component SkillCard inherits Rectangle {
+    in property <ResRow> item;
+    in property <bool> selected;
+    background: ta.has-hover || root.selected ? Theme.surface : Theme.card;
+    border-width: 1px;
+    border-color: root.selected ? Theme.border-hover : Theme.border;
+    border-radius: 10px;
+    animate background { duration: Theme.dur-hover; }
+    ta := TouchArea {
+        enabled: !root.item.builtin;
+        mouse-cursor: pointer;
+        clicked => {
+            ConfigUi.edit(root.item.name);
+        }
+    }
+    VerticalLayout {
+        padding-top: 12px;
+        padding-bottom: 12px;
+        padding-left: 14px;
+        padding-right: 14px;
+        spacing: 8px;
+        HorizontalLayout {
+            height: 18px;
+            spacing: 8px;
+            HorizontalLayout {
+                spacing: 7px;
+                horizontal-stretch: 1;
+                VerticalLayout {
+                    alignment: center;
+                    Dot {
+                        tint: root.item.enabled ? Theme.accent-fg : Theme.foreground-subtlest;
+                    }
+                }
+                Text {
+                    text: root.item.name;
+                    font-size: 12px;
+                    color: Theme.foreground;
+                    vertical-alignment: center;
+                    overflow: elide;
+                    horizontal-stretch: 1;
+                }
+            }
+            if root.item.toggleable: Switch {
+                label: @tr("Enable {0}", root.item.name);
+                checked: root.item.enabled;
+                enabled: ConfigUi.can-disable;
+                toggled(on) => {
+                    ConfigUi.toggle(root.item.name, on);
+                }
+            }
+        }
+        Text {
+            text: root.item.summary != "" ? root.item.summary : "No description";
+            font-size: 11px;
+            color: Theme.foreground-subtlest;
+            overflow: elide;
+        }
+        HorizontalLayout {
+            spacing: 6px;
+            height: 16px;
+            Pill {
+                small: true;
+                text: root.item.builtin ? "built-in" : ConfigCopy.scope-name(root.item.scope);
+                tint: ConfigCopy.scope-tint(root.item.scope);
+            }
+            Text {
+                text: root.item.path;
+                font-size: 10px;
+                color: Theme.icon-subtlest;
+                vertical-alignment: center;
+                overflow: elide;
+                horizontal-stretch: 1;
+            }
+        }
+    }
+}
+
+export component SkillGrid inherits Rectangle {
+    property <length> cell-w: (self.width - 24px) / 3;
+    property <length> cell-h: 89px;
+    property <int> row-count: ceil(ConfigUi.rows.length / 3);
+    height: ConfigUi.rows.length == 0 ? 120px : root.row-count * root.cell-h + (root.row-count - 1) * 12px;
+    if ConfigUi.rows.length == 0: DCard {
+        width: root.width;
+        height: 120px;
+        EmptyBody { }
+    }
+    for r[i] in ConfigUi.rows: SkillCard {
+        x: mod(i, 3) * (root.cell-w + 12px);
+        y: floor(i / 3) * (root.cell-h + 12px);
+        width: root.cell-w;
+        height: root.cell-h;
+        item: r;
+        selected: ConfigUi.editing && !ConfigUi.is-new && ConfigUi.edit-name == r.name;
+    }
+}

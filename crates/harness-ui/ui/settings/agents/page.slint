@@ -1,0 +1,280 @@
+import { Theme } from "../../theme/tokens.slint";
+import { Icon, Icons, Button, IconButton, Divider, Dialog, Spinner } from "../../components/controls.slint";
+import { AgentsUi, AgentCard, ProviderPreset } from "../globals.slint";
+import { Select, TextField, TextArea, Switch } from "../parts.slint";
+import { SetupUi } from "../../setup.slint";
+import { AgentLogo, AgentMark } from "../../components/agent_logo.slint";
+import { FallbackRow } from "./types.slint";
+import { AgentsLook, Pill, Caps, SegBox, Seg, DButton, Glyph, Tile, Hint, SectionHead, SectionCard, ManageRow } from "./parts.slint";
+import { AgentCardView } from "./card.slint";
+import { ClaudeAccounts, AgyAccounts, AgentsFooter } from "./accounts.slint";
+import { ProviderCard, FallbackItem } from "./providers.slint";
+
+export component AgentsPage inherits VerticalLayout {
+    in property <bool> stacked;
+    in property <[FallbackRow]> fallback;
+    callback move-fallback(int, int);
+    // 0 Agents, 1 API Providers (design sub-tabs).
+    property <int> tab: 0;
+    // Agents filter: 0 All, 1 Enabled, 2 Installed.
+    property <int> filter: 0;
+    // Provider whose "⋯" menu is open ("" = none).
+    property <string> provider-menu: "";
+    property <[AgentCard]> cards: AgentsUi.cards;
+    pure function en(i: int) -> int {
+        return root.cards[i].enabled ? 1 : 0;
+    }
+    pure function missing(i: int) -> int {
+        return i < root.cards.length && !root.cards[i].installed ? 1 : 0;
+    }
+    property <int> n-enabled: en(0) + en(1) + en(2) + en(3) + en(4) + en(5) + en(6) + en(7);
+    property <int> n-missing: missing(0) + missing(1) + missing(2) + missing(3) + missing(4) + missing(5) + missing(6) + missing(7);
+    spacing: 0px;
+    // Header (design: pad [22,28,16,28], title 22 + subtitle 12.5, gap 5) and the full-width rule.
+    VerticalLayout {
+        padding-top: 22px;
+        padding-left: 28px;
+        padding-right: 28px;
+        padding-bottom: 16px;
+        spacing: 5px;
+        Text {
+            text: root.tab == 0 ? @tr("Agents") : "API Providers";
+            font-family: Theme.display-font;
+            font-size: 22px;
+            font-weight: 700;
+            color: Theme.foreground;
+            accessible-role: AccessibleRole.text;
+        }
+        Text {
+            text: root.tab == 0 ? @tr("Choose which agents Harness can run, the permission mode they start in, and which model each one uses by default. Applies to new sessions.") : "Bring your own OpenAI-compatible endpoints. Harness fails over down this list when a provider is rate limited or out of quota.";
+            font-size: 12.5px;
+            color: Theme.muted;
+            wrap: word-wrap;
+        }
+    }
+    Rectangle {
+        height: 1px;
+        background: AgentsLook.rule;
+    }
+    VerticalLayout {
+        padding-top: root.tab == 0 ? 16px : 14px;
+        padding-left: 28px;
+        padding-right: 28px;
+        padding-bottom: 20px;
+        spacing: root.tab == 0 ? 10px : 12px;
+        // Sub-tabs (design: 30 tall, pad [0,11], radius 8; active = raised + #2A2D33 stroke).
+        HorizontalLayout {
+            height: 34px;
+            spacing: 4px;
+            alignment: start;
+            for t[i] in [@tr("Agents"), "API Providers"]: Rectangle {
+                height: 30px;
+                border-radius: 8px;
+                background: root.tab == i ? Theme.raised : (tta.has-hover ? Theme.hover : Theme.hover.with-alpha(0));
+                border-width: root.tab == i ? 1px : 0px;
+                border-color: Theme.border-hover;
+                accessible-role: AccessibleRole.tab;
+                accessible-label: t;
+                accessible-item-selected: root.tab == i;
+                accessible-action-default => {
+                    root.tab = i;
+                }
+                HorizontalLayout {
+                    padding-left: 11px;
+                    padding-right: 11px;
+                    Text {
+                        text: t;
+                        font-size: 12px;
+                        font-weight: root.tab == i ? Theme.weight-semibold : Theme.weight-normal;
+                        color: root.tab == i ? Theme.foreground : Theme.muted;
+                        vertical-alignment: center;
+                        accessible-role: none;
+                    }
+                }
+                tta := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => {
+                        root.tab = i;
+                    }
+                }
+            }
+        }
+        // ---------------- Agents ----------------
+        if root.tab == 0: VerticalLayout {
+            spacing: 10px;
+            // Toolbar: "5 AGENTS" + count pills … All / Enabled / Installed.
+            HorizontalLayout {
+                height: 26px;
+                spacing: 10px;
+                Caps {
+                    text: root.cards.length + " AGENTS";
+                }
+                VerticalLayout {
+                    alignment: center;
+                    Pill {
+                        text: root.n-enabled + " enabled";
+                        tone: Theme.success;
+                        size: 10px;
+                        pad-h: 8px;
+                    }
+                }
+                if root.n-missing > 0: VerticalLayout {
+                    alignment: center;
+                    Pill {
+                        text: root.n-missing + " not installed";
+                        size: 10px;
+                        pad-h: 8px;
+                    }
+                }
+                Rectangle {
+                    horizontal-stretch: 1;
+                }
+                SegBox {
+                    Seg {
+                        text: "All";
+                        active: root.filter == 0;
+                        clicked => {
+                            root.filter = 0;
+                        }
+                    }
+                    Seg {
+                        text: "Enabled";
+                        active: root.filter == 1;
+                        clicked => {
+                            root.filter = 1;
+                        }
+                    }
+                    Seg {
+                        text: "Installed";
+                        active: root.filter == 2;
+                        clicked => {
+                            root.filter = 2;
+                        }
+                    }
+                }
+            }
+            // Agent list (gap 12).
+            VerticalLayout {
+                padding-top: 0px;
+                spacing: 0px;
+                for c in root.cards: VerticalLayout {
+                    if root.filter == 0 || (root.filter == 1 && c.enabled) || (root.filter == 2 && c.installed): VerticalLayout {
+                        padding-bottom: 12px;
+                        AgentCardView {
+                            card: c;
+                        }
+                    }
+                }
+            }
+            // Account managers (not in the design frame; kept so sign-in / remove / order stay reachable).
+            if AgentsUi.accounts.length > 0 || AgentsUi.account-error != "": ClaudeAccounts { }
+            if AgentsUi.agy-available: AgyAccounts { }
+            Rectangle {
+                height: 40px;
+            }
+            // Footer (design: 1px #24272D rule, 46 tall row: hint left, "Re-detect agents" right).
+            AgentsFooter { }
+        }
+        // ---------------- API Providers ----------------
+        if root.tab == 1: VerticalLayout {
+            spacing: 12px;
+            SectionHead {
+                title: "Configured providers";
+                pill: AgentsUi.providers.length;
+                action: "Add provider";
+                act => {
+                    AgentsUi.provider-open = true;
+                }
+            }
+            VerticalLayout {
+                spacing: 6px;
+                for p in AgentsUi.providers: ProviderCard {
+                    p: p;
+                    menu <=> root.provider-menu;
+                }
+                if AgentsUi.providers.length == 0: Rectangle {
+                    height: 50px;
+                    border-radius: 10px;
+                    border-width: 1px;
+                    border-color: Theme.border;
+                    Text {
+                        text: "No custom providers yet. Any OpenAI-compatible API works; the model must support tool calling.";
+                        font-size: 11px;
+                        color: Theme.icon-subtlest;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+            SectionHead {
+                title: "Fallback order";
+                pill: "▲ ▼ to reorder";
+                action: "Add to fallback";
+                act => {
+                    root.tab = 0;
+                    root.filter = 0;
+                }
+            }
+            Rectangle {
+                background: Theme.surface;
+                border-radius: 10px;
+                border-width: 1px;
+                border-color: Theme.border;
+                clip: true;
+                VerticalLayout {
+                    padding: 1px;
+                    for a[i] in root.fallback: FallbackItem {
+                        a: a;
+                        index: i;
+                        count: root.fallback.length;
+                        move(from, by) => {
+                            root.move-fallback(from, by);
+                        }
+                    }
+                    if root.fallback.length > 0: Rectangle {
+                        height: 1px;
+                        background: AgentsLook.rule;
+                    }
+                    Rectangle {
+                        height: 34px;
+                        background: ata.has-hover ? Theme.hover : Theme.hover.with-alpha(0);
+                        accessible-role: button;
+                        accessible-label: "Add to fallback";
+                        accessible-action-default => {
+                            root.tab = 0;
+                        }
+                        HorizontalLayout {
+                            padding-left: 12px;
+                            spacing: 6px;
+                            alignment: start;
+                            Text {
+                                text: "+";
+                                font-size: 11px;
+                                color: Theme.muted;
+                                vertical-alignment: center;
+                            }
+                            Text {
+                                text: root.fallback.length == 0 ? @tr("No agent is enabled. Add to fallback") : "Add to fallback";
+                                font-size: 11.5px;
+                                color: Theme.muted;
+                                vertical-alignment: center;
+                            }
+                        }
+                        ata := TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => {
+                                root.tab = 0;
+                            }
+                        }
+                    }
+                }
+            }
+            Text {
+                text: "Fallback is automatic: each session uses the agent you pick, and when it hits a usage limit Harness switches to the next ready agent in this order and continues the turn. Enabled agents join the fallback order; turn one off in Agents to take it out. New or removed providers take effect after Harness restarts.";
+                font-size: 11px;
+                color: Theme.icon-subtlest;
+                wrap: word-wrap;
+            }
+        }
+    }
+}

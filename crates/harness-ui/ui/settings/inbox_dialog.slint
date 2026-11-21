@@ -1,0 +1,175 @@
+import { Theme } from "../theme/tokens.slint";
+import { Icon, Icons, Button, IconButton, Divider, Card, Tag, Dialog } from "../components/controls.slint";
+import { PageHeader, Group, SettingRow, Switch, TextField, Select, SelectOption, StatusLine } from "parts.slint";
+import { InboxUi } from "./inbox_ui.slint";
+import { Caption } from "./inbox_rows.slint";
+
+export component FormRow inherits VerticalLayout {
+    in property <string> title;
+    in property <string> hint;
+    spacing: 6px;
+    Text {
+        text: root.title;
+        font-size: Theme.ui-sm;
+        font-weight: Theme.weight-medium;
+        color: Theme.foreground-subtle;
+    }
+    @children
+    if root.hint != "": Caption {
+        text: root.hint;
+        wrap: word-wrap;
+    }
+}
+
+export component SourceDialog inherits Dialog {
+    title: InboxUi.form-id == "" ? @tr("Add repository") : @tr("Edit repository");
+    close-label: @tr("Close");
+    dialog-width: 520px;
+    close => {
+        InboxUi.form-open = false;
+    }
+    FormRow {
+        title: @tr("Repository");
+        hint: @tr("owner/name on GitHub");
+        repo := TextField {
+            label: @tr("Repository");
+            placeholder: "owner/name";
+            mono: true;
+            text <=> InboxUi.form-repo;
+            init => {
+                self.focus();
+            }
+        }
+    }
+    FormRow {
+        title: @tr("Local folder");
+        hint: @tr("The clone Harness works in. Each ticket gets its own worktree and branch.");
+        TextField {
+            label: @tr("Local folder");
+            mono: true;
+            text <=> InboxUi.form-folder;
+        }
+    }
+    FormRow {
+        title: @tr("Allowed users");
+        hint: @tr("GitHub logins, comma separated. Requests from anyone else are ignored.");
+        TextField {
+            label: @tr("Allowed users");
+            placeholder: "octocat, hubot";
+            text <=> InboxUi.form-users;
+        }
+    }
+    HorizontalLayout {
+        spacing: 12px;
+        FormRow {
+            title: @tr("Mention handle");
+            TextField {
+                label: @tr("Mention handle");
+                placeholder: "@harness";
+                text <=> InboxUi.form-handle;
+            }
+        }
+        FormRow {
+            title: @tr("Check every (minutes)");
+            TextField {
+                label: @tr("Check every (minutes)");
+                text: InboxUi.form-minutes;
+                edited(value) => {
+                    InboxUi.form-minutes = value.to-float().round();
+                }
+            }
+        }
+    }
+    FormRow {
+        title: @tr("Worker agent");
+        Select {
+            label: @tr("Worker agent");
+            options: InboxUi.agents;
+            current: InboxUi.form-agent;
+            current-label: InboxUi.form-agent-label;
+            select(id) => {
+                InboxUi.form-agent = id;
+                InboxUi.action("agent-label", id);
+            }
+        }
+    }
+    FormRow {
+        title: @tr("Shadow labels");
+        hint: @tr("Issues with one of these labels get a private proposal from the worker agent. Nothing is posted until you promote it.");
+        TextField {
+            label: @tr("Shadow labels");
+            placeholder: "harness-shadow";
+            text <=> InboxUi.form-shadow;
+        }
+    }
+    HorizontalLayout {
+        spacing: 10px;
+        VerticalLayout {
+            alignment: center;
+            Switch {
+                label: @tr("Route with Orchestra");
+                checked: InboxUi.form-route;
+                toggled(on) => {
+                    InboxUi.form-route = on;
+                }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 1;
+            Text {
+                text: @tr("Route with Orchestra: the Orchestrator picks the agent for each new request");
+                font-size: Theme.ui-sm;
+                color: Theme.foreground-subtle;
+                wrap: word-wrap;
+            }
+        }
+    }
+    HorizontalLayout {
+        spacing: 10px;
+        VerticalLayout {
+            alignment: center;
+            Switch {
+                label: @tr("Draft first");
+                checked: InboxUi.form-draft;
+                toggled(on) => {
+                    InboxUi.form-draft = on;
+                }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 1;
+            Text {
+                text: @tr("Draft first: wait for Post before pushing and replying");
+                font-size: Theme.ui-sm;
+                color: Theme.foreground-subtle;
+                wrap: word-wrap;
+            }
+        }
+    }
+    if InboxUi.form-error != "": StatusLine {
+        text: InboxUi.form-error;
+        error: true;
+    }
+    HorizontalLayout {
+        alignment: end;
+        spacing: 8px;
+        Button {
+            text: @tr("Cancel");
+            size: "lg";
+            clicked => {
+                InboxUi.form-open = false;
+            }
+        }
+        Button {
+            text: @tr("Save");
+            variant: "primary";
+            size: "lg";
+            enabled: InboxUi.form-repo != "" && InboxUi.form-folder != "";
+            clicked => {
+                InboxUi.save-form();
+            }
+        }
+    }
+}

@@ -1,0 +1,189 @@
+import { ListView } from "std-widgets.slint";
+import { Theme } from "../theme/tokens.slint";
+import { Icon, Icons, Button, IconButton, Tag, Dialog, MenuItem } from "../components/controls.slint";
+import { TextField, TextArea, Switch } from "../settings/parts.slint";
+import { GraphRow, ResultLine, GitUi } from "./git_ui.slint";
+
+export component GraphLine inherits Rectangle {
+    in property <GraphRow> item;
+    in property <bool> selected;
+    callback pick();
+    height: 28px;
+    border-radius: Theme.radius-md;
+    background: root.selected ? Theme.selected : ta.has-hover ? Theme.hover : transparent;
+    accessible-role: list-item;
+    accessible-label: "commit " + item.short + " " + item.subject;
+    accessible-description: item.refs;
+    accessible-action-default => {
+        root.pick();
+    }
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.pick();
+        }
+    }
+    HorizontalLayout {
+        padding-left: Theme.space-1;
+        padding-right: Theme.space-2;
+        spacing: Theme.space-2;
+        Rectangle {
+            width: max(item.lanes, 1) * 14px;
+            horizontal-stretch: 0;
+            // Lines run from y = -1 to 29 (src/gitui.rs) so consecutive rows overlap by a pixel and stay joined.
+            Path {
+                y: -1px;
+                width: parent.width;
+                height: 30px;
+                viewbox-y: -1;
+                viewbox-width: max(item.lanes, 1) * 14;
+                viewbox-height: 30;
+                commands: item.path;
+                stroke: Theme.icon-subtle;
+                stroke-width: 1.5px;
+            }
+            Rectangle {
+                x: (item.lane * 14 + 3) * 1px;
+                y: 10px;
+                width: 8px;
+                height: 8px;
+                border-radius: 4px;
+                background: Theme.primary;
+            }
+        }
+        Text {
+            text: item.short;
+            font-family: Theme.mono-font;
+            font-size: Theme.ui-xs;
+            color: Theme.foreground-subtle;
+            vertical-alignment: center;
+            horizontal-stretch: 0;
+        }
+        if item.refs != "": VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 0;
+            Tag {
+                text: item.refs;
+                tone: "progress";
+            }
+        }
+        Text {
+            text: item.subject;
+            font-size: Theme.ui-sm;
+            color: Theme.foreground;
+            vertical-alignment: center;
+            overflow: elide;
+            horizontal-stretch: 1;
+        }
+        Text {
+            text: item.author;
+            font-size: Theme.ui-xs;
+            color: Theme.foreground-subtle;
+            vertical-alignment: center;
+            horizontal-stretch: 0;
+            overflow: elide;
+        }
+        Text {
+            text: item.date;
+            font-size: Theme.ui-xs;
+            color: Theme.foreground-subtlest;
+            vertical-alignment: center;
+            horizontal-stretch: 0;
+        }
+    }
+}
+
+// Commit graph: one page of `git log` rows with lanes, click inspects a commit, "Load more" fetches the next page.
+export component GraphDialog inherits Dialog {
+    title: @tr("Commit graph");
+    close-label: @tr("Close");
+    dialog-width: 760px;
+    close => {
+        GitUi.open("");
+    }
+    Rectangle {
+        height: min(max(GitUi.graph.length, 1) * 28px + 8px, 360px);
+        ListView {
+            for r[i] in GitUi.graph: GraphLine {
+                item: r;
+                selected: i == GitUi.graph-selected;
+                pick => {
+                    GitUi.graph-selected = GitUi.graph-selected == i ? -1 : i;
+                }
+            }
+        }
+        if GitUi.graph.length == 0 && !GitUi.busy: Text {
+            text: @tr("No commits yet");
+            font-size: Theme.ui-sm;
+            color: Theme.foreground-subtle;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+    }
+    if GitUi.graph-selected >= 0 && GitUi.graph-selected < GitUi.graph.length: Rectangle {
+        border-radius: Theme.radius-lg;
+        background: Theme.secondary;
+        VerticalLayout {
+            padding: Theme.space-2;
+            spacing: Theme.space-1;
+            HorizontalLayout {
+                spacing: Theme.space-1;
+                Text {
+                    text: GitUi.graph[GitUi.graph-selected].hash;
+                    font-family: Theme.mono-font;
+                    font-size: Theme.ui-xs;
+                    color: Theme.foreground;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    overflow: elide;
+                    accessible-role: AccessibleRole.text;
+                    accessible-label: "commit hash " + self.text;
+                }
+                IconButton {
+                    icon: Icons.copy;
+                    label: @tr("Copy commit hash");
+                    size: Theme.control-sm;
+                    icon-size: Theme.icon-sm;
+                    clicked => {
+                        GitUi.copy-hash(GitUi.graph[GitUi.graph-selected].hash);
+                    }
+                }
+            }
+            Text {
+                text: GitUi.graph[GitUi.graph-selected].subject;
+                wrap: word-wrap;
+                font-size: Theme.ui-sm;
+                font-weight: Theme.weight-medium;
+                color: Theme.foreground;
+            }
+            Text {
+                text: @tr("{0} · {1} · parents {2}", GitUi.graph[GitUi.graph-selected].author, GitUi.graph[GitUi.graph-selected].date, GitUi.graph[GitUi.graph-selected].parents);
+                wrap: word-wrap;
+                font-size: Theme.ui-xs;
+                color: Theme.foreground-subtle;
+                accessible-role: AccessibleRole.text;
+                accessible-label: "commit detail " + self.text;
+            }
+        }
+    }
+    ResultLine { }
+    HorizontalLayout {
+        alignment: end;
+        spacing: 8px;
+        if GitUi.graph-more: Button {
+            text: @tr("Load more");
+            size: "lg";
+            enabled: !GitUi.busy;
+            clicked => {
+                GitUi.load-more();
+            }
+        }
+        Button {
+            text: @tr("Close");
+            size: "lg";
+            clicked => {
+                GitUi.open("");
+            }
+        }
+    }
+}

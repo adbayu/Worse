@@ -1,0 +1,136 @@
+import { ScrollView } from "std-widgets.slint";
+import { Theme } from "../theme/tokens.slint";
+import { Icon, Icons, Button, IconButton, Divider, Dialog } from "../components/controls.slint";
+import { SettingsUi, DiffUi, ConfigUi, DocUi, ShortcutsUi, ProjectsUi, ArchiveUi } from "globals.slint";
+import { ConfirmDialog, StatusLine } from "parts.slint";
+import { GeneralPage, AppearancePage } from "general.slint";
+import { ShortcutsPage } from "shortcuts.slint";
+import { AgentsPage, FallbackRow } from "agents.slint";
+import { ConfigPage, DocPage } from "config.slint";
+import { Labels } from "labels.slint";
+import { ProjectsPage, ArchivePage } from "data.slint";
+import { OrchestraPage } from "orchestra.slint";
+import { InboxPage, SourceDialog, InboxUi } from "inbox.slint";
+import { ImportPage } from "import.slint";
+import { RemotePage } from "remote.slint";
+import { SecurityPage } from "security.slint";
+import { PerformancePage, PerformanceUi } from "performance.slint";
+
+// Nav item (design "nav · X", frame S1): 196x32, radius 8, pad [0,10], gap 10; glyph icon 12 #6B717C + label 13
+// #C9CCD2; active = fill #1C1F24, icon #7C8CFF, label #EDEEF0.
+export global NavIcons {
+    pure public function of(id: string) -> image {
+        if id == "general" { return Icons.settings; }
+        if id == "appearance" { return Icons.palette; }
+        if id == "agents" { return Icons.bot; }
+        if id == "orchestra" { return Icons.network; }
+        if id == "inbox" { return Icons.inbox; }
+        if id == "remote" { return Icons.monitor; }
+        if id == "security" { return Icons.shield-check; }
+        if id == "shortcuts" { return Icons.keyboard; }
+        if id == "instructions" { return Icons.file-text; }
+        if id == "memory" { return Icons.brain; }
+        if id == "subagent" { return Icons.git-fork; }
+        if id == "mcp" { return Icons.cable; }
+        if id == "skill" { return Icons.sparkles; }
+        if id == "command" { return Icons.square-terminal; }
+        if id == "hook" { return Icons.anchor; }
+        if id == "projects" { return Icons.folders; }
+        if id == "archive" { return Icons.archive; }
+        if id == "import" { return Icons.download; }
+        if id == "performance" { return Icons.clock; }
+        Icons.settings-2
+    }
+}
+
+export component NavButton inherits Rectangle {
+    in property <string> id;
+    in property <bool> rail;
+    in property <bool> active;
+    height: 34px;
+    border-radius: Theme.radius-md;
+    background: root.active ? Theme.raised : (ta.has-hover ? Theme.hover : transparent);
+    animate background { duration: Theme.dur-hover; }
+    accessible-role: button;
+    accessible-label: Labels.page-label(root.id);
+    accessible-item-selected: root.active;
+    accessible-action-default => {
+        SettingsUi.open-page(root.id);
+    }
+    HorizontalLayout {
+        padding-left: root.rail ? 0px : 10px;
+        padding-right: root.rail ? 0px : 10px;
+        spacing: 10px;
+        alignment: root.rail ? LayoutAlignment.center : LayoutAlignment.start;
+        Icon {
+            source: NavIcons.of(root.id);
+            size: 18px;
+            tint: root.active ? Theme.accent-fg : Theme.icon-subtlest;
+            animate tint { duration: Theme.dur-hover; }
+        }
+        if !root.rail: Text {
+            text: Labels.nav-label(root.id);
+            font-size: Theme.ui-font-size;
+            color: root.active ? Theme.foreground : Theme.foreground-subtle;
+            vertical-alignment: center;
+            overflow: elide;
+            horizontal-stretch: 1;
+            accessible-role: none;
+            animate color { duration: Theme.dur-hover; }
+        }
+    }
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            SettingsUi.open-page(root.id);
+        }
+    }
+}
+
+// Nav group heading (design "cap · X": 10px caps #5D636D, letterSpacing 8%).
+export component NavCaption inherits Text {
+    in property <int> group;
+    text: Labels.group-label(root.group);
+    font-size: Theme.ui-xs;
+    font-weight: Theme.weight-semibold;
+    color: Theme.caps-label;
+    letter-spacing: 0.8px;
+    vertical-alignment: center;
+    overflow: elide;
+}
+
+// Nav list (design "nav list": VSTACK gap 2; a 16px gap frame before each later caps label).
+export component Nav inherits VerticalLayout {
+    in property <bool> rail;
+    in property <bool> list-mode;
+    spacing: 2px;
+    for g in [0, 1, 2]: VerticalLayout {
+        spacing: 0px;
+        vertical-stretch: 0;
+        if g > 0: Rectangle {
+            height: 18px;
+        }
+        if !root.rail: NavCaption {
+            group: g;
+            height: 12px;
+        }
+        if root.rail && g > 0: Rectangle {
+            height: 1px;
+            background: Theme.border;
+        }
+        // Entries of other groups leave an empty, zero-height wrapper (a repeater cannot filter), so the 2px
+        // gap is padding on matching wrappers only.
+        for e in SettingsUi.nav: VerticalLayout {
+            vertical-stretch: 0;
+            padding-top: e.group == g ? 2px : 0px;
+            if e.group == g: NavButton {
+                id: e.id;
+                rail: root.rail;
+                active: SettingsUi.page == e.id && !root.list-mode;
+            }
+        }
+    }
+    Rectangle {
+        vertical-stretch: 1;
+    }
+}

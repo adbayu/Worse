@@ -1,28 +1,31 @@
 //! Hub configuration.
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::Arc;
+use harness_agent_config::AgentKind;
+use harness_config::Limits;
+use harness_core_api::{AgentDefaults, AgentId};
 
-use harness_agent_config::{AgentKind, AuthProbe, FileExistenceProbe};
-use harness_core_api::{AgentDefaults, AgentId, FileSearchSource};
-
-use serde::Deserialize;
-
-use crate::agents::{builtin_agents, AgentSpec, ErrorDialect, Transport};
+use crate::agents::{builtin_agents, AgentSpec};
 use crate::error::HubError;
 use crate::helpers::HelperLaunch;
+
+mod agents_file;
+mod policy;
+
+pub use policy::{
+    AutoUpdatePolicy, DelegationPolicy, FactCheckPolicy, SharedAuthProbe, SharedFileSearch,
+};
 
 /// File name of the agent configuration under the hub home.
 pub const AGENTS_FILE: &str = "agents.json";
 
 /// Default idle period after which an unused agent process is stopped (spec §10).
-pub const DEFAULT_AGENT_IDLE: Duration = Duration::from_secs(300);
+pub const DEFAULT_AGENT_IDLE: Duration = Limits::DEFAULT.agent_idle();
 /// Grace period between closing an agent's stdin and killing its process tree.
-pub const SHUTDOWN_GRACE: Duration = Duration::from_secs(3);
+pub const SHUTDOWN_GRACE: Duration = Limits::DEFAULT.shutdown_grace();
 
 /// Everything the hub needs to start.
 #[derive(Debug, Clone)]
@@ -76,117 +79,11 @@ pub struct HubConfig {
     /// Fact check for deep research reports (docs/specs/harness/deep-research.md, section "Fact check"). The UI
     /// keeps it in step with settings `research.factCheck`. `from_env`: on.
     pub fact_check: FactCheckPolicy,
-}
-
-/// Live fact-check switch shared between the UI and the hub.
-#[derive(Debug, Clone)]
-pub struct FactCheckPolicy {
-    on: Arc<AtomicBool>,
-}
-
-impl Default for FactCheckPolicy {
-    fn default() -> Self {
-        Self {
-            on: Arc::new(AtomicBool::new(true)),
-        }
-    }
-}
-
-impl FactCheckPolicy {
-    #[must_use]
-    pub fn on(&self) -> bool {
-        self.on.load(Ordering::Relaxed)
-    }
-
-    pub fn set_on(&self, value: bool) {
-        self.on.store(value, Ordering::Relaxed);
-    }
-}
-
-/// Live delegation settings shared between the UI and the hub.
-#[derive(Debug, Clone)]
-pub struct DelegationPolicy {
-    limit: Arc<AtomicUsize>,
-    nested_limit: Arc<AtomicUsize>,
-    nested: Arc<AtomicBool>,
-}
-
-impl Default for DelegationPolicy {
-    fn default() -> Self {
-        Self {
-            limit: Arc::new(AtomicUsize::new(4)),
-            nested_limit: Arc::new(AtomicUsize::new(4)),
-            nested: Arc::new(AtomicBool::new(false)),
-        }
-    }
-}
-
-impl DelegationPolicy {
-    /// Direct subagents that may run at once under one top-level session (at least 1); nested ones do not count.
-    #[must_use]
-    pub fn limit(&self) -> usize {
-        self.limit.load(Ordering::Relaxed).max(1)
-    }
-
-    pub fn set_limit(&self, value: usize) {
-        self.limit.store(value.max(1), Ordering::Relaxed);
-    }
-
-    /// Subagents that one subagent may run at once under itself (its own quota, at least 1).
-    #[must_use]
-    pub fn nested_limit(&self) -> usize {
-        self.nested_limit.load(Ordering::Relaxed).max(1)
-    }
-
-    pub fn set_nested_limit(&self, value: usize) {
-        self.nested_limit.store(value.max(1), Ordering::Relaxed);
-    }
-
-    /// The quota that applies to `parent`'s own subagents.
-    #[must_use]
-    pub fn limit_for(&self, parent_is_subagent: bool) -> usize {
-        if parent_is_subagent {
-            self.nested_limit()
-        } else {
-            self.limit()
-        }
-    }
-
-    /// Whether a subagent may delegate to subagents of its own.
-    #[must_use]
-    pub fn nested(&self) -> bool {
-        self.nested.load(Ordering::Relaxed)
-    }
-
-    pub fn set_nested(&self, value: bool) {
-        self.nested.store(value, Ordering::Relaxed);
-    }
-}
-
-/// Shared [`FileSearchSource`] (`HubConfig` stays `Debug`/`Clone`).
-#[derive(Clone)]
-pub struct SharedFileSearch(pub Arc<dyn FileSearchSource>);
-
-impl std::fmt::Debug for SharedFileSearch {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("SharedFileSearch")
-    }
-}
-
-/// Shared [`AuthProbe`] (gates inject a static one).
-#[derive(Clone)]
-pub struct SharedAuthProbe(pub Arc<dyn AuthProbe>);
-
-impl Default for SharedAuthProbe {
-    fn default() -> Self {
-        Self(Arc::new(FileExistenceProbe))
-    }
-}
-
-impl std::fmt::Debug for SharedAuthProbe {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("SharedAuthProbe")
-    }
+    /// Automatic update of the npm-installed ACP adapters and agent CLIs (phase-9-parity.md §9.10). The UI
+    /// keeps it in step with settings `setup.autoUpdateAdapters`. `from_env`: on.
+    pub auto_update: AutoUpdatePolicy,
+    /// Failover policy of turns (spec §6.4). `from_env`: [`crate::selector::StickyThenFallback`].
+    pub agent_selector: crate::selector::SharedAgentSelector,
 }
 
 impl HubConfig {
@@ -197,12 +94,8 @@ impl HubConfig {
     ///
     /// When no home directory or helper path can be resolved.
     pub fn from_env() -> Result<Self, HubError> {
-        let home = match std::env::var_os("HARNESS_HOME") {
-            Some(home) if !home.is_empty() => PathBuf::from(home),
-            _ => user_home()
-                .ok_or_else(|| HubError::Config("no home directory (set HARNESS_HOME)".into()))?
-                .join(".harness"),
-        };
+        let home = harness_config::harness_home()
+            .ok_or_else(|| HubError::Config("no home directory (set HARNESS_HOME)".into()))?;
         let agent_idle_timeout = std::env::var("HARNESS_AGENT_IDLE_SECS")
             .ok()
             .and_then(|v| v.trim().parse::<u64>().ok())
@@ -224,7 +117,7 @@ impl HubConfig {
             }),
             agent_idle_timeout,
             helpers,
-            event_capacity: 4096,
+            event_capacity: Limits::DEFAULT.event_capacity,
             load_agents_file: true,
             turn_snapshots: std::env::var("HARNESS_TURN_SNAPSHOTS")
                 .map_or(true, |v| v.trim() != "0"),
@@ -234,10 +127,12 @@ impl HubConfig {
             file_search: None,
             config_paths: harness_agent_config::ConfigPaths::from_env(&home_for_paths, None).ok(),
             import_roots: harness_import::ImportRoots::from_env(),
-            schedule_min_interval_secs: 300,
+            schedule_min_interval_secs: Limits::DEFAULT.schedule_min_interval_secs,
             agy_creds: crate::agy_cred::SharedAgyCredStore::default(),
             delegation: DelegationPolicy::default(),
             fact_check: FactCheckPolicy::default(),
+            auto_update: AutoUpdatePolicy::default(),
+            agent_selector: crate::selector::SharedAgentSelector::default(),
         })
     }
 
@@ -247,126 +142,9 @@ impl HubConfig {
         self.home.join(AGENTS_FILE)
     }
 
-    /// Applies `<home>/agents.json` when it exists (spec §15.1 request 1): an entry with a known id replaces
-    /// that agent in place, a new id is appended to the agents and to the default fallback order;
-    /// `replaceBuiltins: true` drops the previous list first.
-    ///
-    /// # Errors
-    ///
-    /// Unreadable or invalid file (the hub must not start with a half-read configuration).
-    pub async fn apply_agents_file(&mut self) -> Result<(), HubError> {
-        let path = self.agents_file();
-        let bytes = match tokio::fs::read(&path).await {
-            Ok(bytes) => bytes,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
-            Err(e) => return Err(HubError::Config(format!("{}: {e}", path.display()))),
-        };
-        let file: AgentsFile = serde_json::from_slice(&bytes)
-            .map_err(|e| HubError::Config(format!("{}: {e}", path.display())))?;
-        let (replace, entries) = match file {
-            AgentsFile::List(entries) => (false, entries),
-            AgentsFile::Object {
-                replace_builtins,
-                agents,
-            } => (replace_builtins, agents),
-        };
-        if replace {
-            self.agents.clear();
-            self.default_fallback_order.clear();
-        }
-        for entry in entries {
-            let spec = entry.into_spec(&path)?;
-            if let Some(slot) = self.agents.iter_mut().find(|a| a.id == spec.id) {
-                *slot = spec;
-            } else {
-                self.default_fallback_order.push(spec.id.clone());
-                self.agents.push(spec);
-            }
-        }
-        if self.agents.is_empty() {
-            return Err(HubError::Config(format!("{}: no agents", path.display())));
-        }
-        Ok(())
-    }
-
     /// Path of the SQLite store.
     #[must_use]
     pub fn db_path(&self) -> PathBuf {
         self.home.join("harness.sqlite")
-    }
-}
-
-fn user_home() -> Option<PathBuf> {
-    let keys: &[&str] = if cfg!(windows) {
-        &["USERPROFILE", "HOME"]
-    } else {
-        &["HOME"]
-    };
-    keys.iter()
-        .filter_map(std::env::var_os)
-        .find(|v| !v.is_empty())
-        .map(PathBuf::from)
-}
-
-/// `agents.json`: a plain list or `{ replaceBuiltins, agents }`.
-#[derive(Deserialize)]
-#[serde(untagged)]
-enum AgentsFile {
-    List(Vec<AgentEntry>),
-    #[serde(rename_all = "camelCase")]
-    Object {
-        #[serde(default)]
-        replace_builtins: bool,
-        agents: Vec<AgentEntry>,
-    },
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct AgentEntry {
-    id: String,
-    display_name: Option<String>,
-    program: String,
-    #[serde(default)]
-    args: Vec<String>,
-    #[serde(default)]
-    env: std::collections::BTreeMap<String, String>,
-    install_hint: Option<String>,
-    dialect: Option<String>,
-}
-
-impl AgentEntry {
-    fn into_spec(self, file: &std::path::Path) -> Result<AgentSpec, HubError> {
-        let id = self.id.trim().to_owned();
-        if id.is_empty() || self.program.trim().is_empty() {
-            return Err(HubError::Config(format!(
-                "{}: every agent needs a non-empty id and program",
-                file.display()
-            )));
-        }
-        let dialect = match self.dialect.as_deref() {
-            None | Some("generic") => ErrorDialect::Generic,
-            Some("claudeCode") => ErrorDialect::ClaudeCode,
-            Some("codex") => ErrorDialect::Codex,
-            Some("agy") => ErrorDialect::Agy,
-            Some(other) => {
-                return Err(HubError::Config(format!(
-                    "{}: unknown dialect {other} for agent {id}",
-                    file.display()
-                )))
-            }
-        };
-        Ok(AgentSpec {
-            display_name: self.display_name.unwrap_or_else(|| id.clone()),
-            id: AgentId::new(id),
-            program: self.program,
-            args: self.args,
-            env: self.env.into_iter().collect(),
-            install_hint: self
-                .install_hint
-                .unwrap_or_else(|| format!("configured in {AGENTS_FILE}")),
-            transport: Transport::Acp,
-            dialect,
-        })
     }
 }

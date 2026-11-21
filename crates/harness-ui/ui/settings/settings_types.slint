@@ -1,0 +1,218 @@
+import { SelectOption } from "parts.slint";
+
+export struct NavEntry {
+    id: string,
+    group: int,
+}
+
+export struct DiffLine {
+    // 0 context, 1 added, 2 removed, 3 hunk / file header
+    kind: int,
+    text: string,
+}
+
+export struct ResRow {
+    name: string,
+    scope: string,
+    enabled: bool,
+    toggleable: bool,
+    summary: string,
+    path: string,
+    // Hooks: event name used as a group heading (empty for other concepts).
+    group: string,
+    builtin: bool,
+    // Table columns of the agent-config pages (design S9-S13). MCP: transport; Subagents: model;
+    // Commands: argument hint; Hooks: matcher.
+    detail: string,
+    // Subagents: tools; Hooks: command.
+    extra: string,
+}
+
+// Hooks page: one card per event.
+export struct ResGroup {
+    name: string,
+    count: int,
+}
+
+// Memory page: one entry = one markdown section (heading + body) of MEMORY.md.
+export struct DocEntry {
+    title: string,
+    detail: string,
+    // Section index in the document (entries can be filtered by the search).
+    index: int,
+}
+
+export struct FormField {
+    key: string,
+    value: string,
+    // "text" | "multiline" | "select" | "switch" | "mono"
+    kind: string,
+    options: [SelectOption],
+    enabled: bool,
+}
+
+export struct ShortcutRow {
+    id: string,
+    // "global" | "composer"
+    scope: string,
+    bindings: [string],
+    custom: bool,
+}
+
+export struct AgentCard {
+    id: string,
+    name: string,
+    installed: bool,
+    // CLI installed, ACP adapter missing (§9.10).
+    adapter-missing: bool,
+    version: string,
+    // 0 present, 1 absent, 2 unknown
+    auth: int,
+    enabled: bool,
+    mode: string,
+    model: string,
+    effort: string,
+    modes: [SelectOption],
+    models: [SelectOption],
+    efforts: [SelectOption],
+    mode-label: string,
+    model-label: string,
+    effort-label: string,
+    program: string,
+    args: string,
+    env: string,
+    // Connection test (hub test_agent): 0 not run, 1 running, 2 passed, 3 failed.
+    test-state: int,
+    test-latency: int,
+    test-error: string,
+}
+
+export struct ProjectRow {
+    id: string,
+    name: string,
+    path: string,
+    // Last two path segments (design S14 sub line: "ZCode/Worse").
+    short: string,
+    sessions: int,
+    last-used: string,
+    unused: bool,
+    selected: bool,
+    // Workspace of the current window (design S14 "open" pill).
+    current: bool,
+}
+
+export struct ArchiveRow {
+    id: string,
+    title: string,
+    project: string,
+    updated: string,
+    // Display name of the session's agent (design S15 AGENT column).
+    agent: string,
+}
+
+// MCP / Skills / Commands / Hooks / Subagents (one pattern, spec §6.2).
+export struct SkillRow {
+    name: string,
+    description: string,
+    group: string,
+    installed: bool,
+    update: bool,
+    busy: bool,
+    // Skill trigger health (spec skill-health.md): grade of the installed skill, empty when unknown.
+    health: string,
+    health-detail: string,
+}
+
+// Extra Claude account (phase-9-parity.md §9.6).
+export struct AccountRow {
+    id: string,
+    label: string,
+    // 0 signed in, 1 not signed in, 2 unknown
+    auth: int,
+    // false until Harness restarts
+    loaded: bool,
+}
+
+// Antigravity (agy) login slot; the login itself stays in Windows Credential Manager.
+export struct AgyAccountRow {
+    id: string,
+    name: string,
+    signed-in: bool,
+    active: bool,
+    exhausted: bool,
+}
+
+// Custom OpenAI-compatible provider (phase-9-parity.md §9.7). The key never reaches the UI.
+export struct ProviderRow {
+    id: string,
+    label: string,
+    model: string,
+    endpoint: string,
+    has-key: bool,
+    // false until Harness restarts
+    loaded: bool,
+    // "" = OpenAI-compatible endpoint, "command-code" = one API key of the Command Code CLI
+    kind: string,
+}
+
+// A ready-made API provider: picking it fills the endpoint and a default model, so only a key is needed.
+export struct ProviderPreset {
+    id: string,
+    name: string,
+    // short line under the name ("OpenAI-compatible", "local, no key")
+    tag: string,
+    url: string,
+    model: string,
+    // shown once picked: where the key comes from, limits
+    note: string,
+    // page that creates keys ("" = none)
+    key-url: string,
+    // a local server that needs no key
+    keyless: bool,
+    // monogram for providers without a logo
+    letter: string,
+}
+
+export struct VulnRow {
+    package: string,
+    version: string,
+    id: string,
+    severity: string,
+    fixed: string,
+    source: string,
+}
+
+// One entry of Harness's local memory (Settings › Memory › Recall): a saved memory or the digest of a session.
+export struct RecallRow {
+    id: string,
+    // "fact" | "preference" | "decision" | "howto" | "episode"
+    kind: string,
+    text: string,
+    // "3d ago · Claude Code · worse"
+    meta: string,
+    pinned: bool,
+}
+
+// A name floating over the graph picture: a community's, at the middle of its stars or under its planet.
+export struct GraphLabel {
+    // index of the community (what `view-focus-cluster` takes)
+    cluster: int,
+    x: length,
+    y: length,
+    alpha: float,
+    // its best connected node
+    title: string,
+    // "50 nodes"
+    note: string,
+    // colour slot (0 = the largest community; -1 = "other")
+    tone: int,
+}
+
+// A node in a list beside the picture: a search result, or one of the chosen node's neighbours.
+export struct GraphHit {
+    index: int,
+    title: string,
+    // "23 links · src/client.py"
+    note: string,
+    tone: int,
+}

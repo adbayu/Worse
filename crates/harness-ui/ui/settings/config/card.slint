@@ -1,0 +1,260 @@
+import { Theme } from "../../theme/tokens.slint";
+import { ConfigUi, DocUi, ResRow, FormField, SettingsUi, RecallUi, RecallRow, GraphUi } from "../globals.slint";
+import { PageHeader, Group, SettingRow, Switch, TextField, TextArea, Select, SearchField, UnsupportedNotice, StatusLine } from "../parts.slint";
+import { Labels } from "../labels.slint";
+import { Icons, IconButton, Segmented, MenuShell, MenuItem } from "../../components/controls.slint";
+import { AgentDot, ConfigCopy } from "./types.slint";
+import { Pill, Btn, Dot, Hairline, DCard, CardHead, Th, Muted, AgentChip, ChipBar } from "./parts.slint";
+
+export component TargetBar inherits HorizontalLayout {
+    in property <string> agent;
+    in property <string> scope;
+    in property <bool> with-harness: false;
+    in property <bool> with-scope: true;
+    callback select-agent(string);
+    callback select-scope(string);
+    spacing: 8px;
+    ChipBar {
+        AgentChip {
+            agent-id: "claude-code";
+            text: "Claude Code";
+            active: root.agent == "claude-code";
+            picked => {
+                root.select-agent("claude-code");
+            }
+        }
+        AgentChip {
+            agent-id: "codex";
+            text: "Codex";
+            active: root.agent == "codex";
+            picked => {
+                root.select-agent("codex");
+            }
+        }
+        AgentChip {
+            agent-id: "agy";
+            text: "agy";
+            active: root.agent == "agy";
+            picked => {
+                root.select-agent("agy");
+            }
+        }
+        if root.with-harness: AgentChip {
+            agent-id: "harness";
+            text: "Harness";
+            active: root.agent == "harness";
+            picked => {
+                root.select-agent("harness");
+            }
+        }
+    }
+    Rectangle {
+        horizontal-stretch: 1;
+    }
+    if root.with-scope: VerticalLayout {
+        alignment: center;
+        Segmented {
+            options: [{ id: "user", label: @tr("User") }, { id: "workspace", label: @tr("Workspace") }];
+            current: root.scope;
+            select(id) => {
+                root.select-scope(id);
+            }
+        }
+    }
+}
+
+export component ImportButton inherits Rectangle {
+    width: btn.preferred-width;
+    height: 28px;
+    btn := Btn {
+        x: 0;
+        y: 0;
+        text: "Import from Claude Code";
+        clicked => {
+            menu.show();
+        }
+    }
+    menu := PopupWindow {
+        x: 0;
+        y: root.height + 4px;
+        width: 220px;
+        MenuShell {
+            MenuItem {
+                text: "From Claude Code";
+                show-check: false;
+                clicked => {
+                    ConfigUi.import("claude-code");
+                    menu.close();
+                }
+            }
+            MenuItem {
+                text: "From Codex";
+                show-check: false;
+                clicked => {
+                    ConfigUi.import("codex");
+                    menu.close();
+                }
+            }
+            MenuItem {
+                text: "From agy";
+                show-check: false;
+                clicked => {
+                    ConfigUi.import("agy");
+                    menu.close();
+                }
+            }
+            MenuItem {
+                text: "All";
+                show-check: false;
+                clicked => {
+                    ConfigUi.import("all");
+                    menu.close();
+                }
+            }
+        }
+    }
+}
+
+export component FieldEditor inherits VerticalLayout {
+    in property <FormField> field;
+    spacing: 6px;
+    if root.field.kind != "switch": Text {
+        text: Labels.field-label(root.field.key);
+        font-size: 11px;
+        color: Theme.icon-subtlest;
+    }
+    if root.field.kind == "text" || root.field.kind == "mono": TextField {
+        text: root.field.value;
+        label: Labels.field-label(root.field.key);
+        placeholder: Labels.field-hint(root.field.key);
+        mono: root.field.kind == "mono";
+        enabled: root.field.enabled;
+        edited(v) => {
+            ConfigUi.set-field(root.field.key, v);
+        }
+    }
+    if root.field.kind == "multiline": TextArea {
+        height: 120px;
+        text: root.field.value;
+        label: Labels.field-label(root.field.key);
+        mono: root.field.key != "description";
+        edited(v) => {
+            ConfigUi.set-field(root.field.key, v);
+        }
+    }
+    if root.field.kind == "select": Select {
+        label: Labels.field-label(root.field.key);
+        options: root.field.options;
+        current: root.field.value;
+        current-label: root.field.value;
+        enabled: root.field.enabled;
+        select(id) => {
+            ConfigUi.set-field(root.field.key, id);
+        }
+    }
+    if root.field.kind == "switch": HorizontalLayout {
+        spacing: 10px;
+        Text {
+            text: Labels.field-label(root.field.key);
+            font-size: 13px;
+            color: Theme.foreground;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+        }
+        Switch {
+            label: Labels.field-label(root.field.key);
+            checked: root.field.value == "true";
+            toggled(on) => {
+                ConfigUi.set-field(root.field.key, on ? "true" : "false");
+            }
+        }
+    }
+    if Labels.field-hint(root.field.key) != "" && root.field.kind == "multiline": Text {
+        text: Labels.field-hint(root.field.key);
+        font-size: 11px;
+        color: Theme.icon-subtlest;
+    }
+}
+
+export component DetailCard inherits DCard {
+    VerticalLayout {
+        CardHead {
+            title: ConfigUi.is-new ? Labels.new-label(ConfigUi.concept) : (ConfigUi.concept == "command" ? "/" + ConfigUi.edit-name : ConfigUi.edit-name);
+            sub: ConfigCopy.detail-kind(ConfigUi.concept) + (ConfigUi.raw-path != "" ? " · " + ConfigUi.raw-path : "");
+            VerticalLayout {
+                alignment: center;
+                Segmented {
+                    options: [{ id: "form", label: @tr("Form") }, { id: "raw", label: @tr("Raw") }];
+                    current: ConfigUi.raw-mode ? "raw" : "form";
+                    select(id) => {
+                        ConfigUi.raw-mode = id == "raw";
+                    }
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                IconButton {
+                    icon: Icons.x;
+                    label: @tr("Close editor");
+                    size: 26px;
+                    icon-size: Theme.icon-xs;
+                    clicked => {
+                        ConfigUi.close-editor();
+                    }
+                }
+            }
+        }
+        Hairline { }
+        VerticalLayout {
+            padding-top: 14px;
+            padding-left: 16px;
+            padding-right: 16px;
+            padding-bottom: 16px;
+            spacing: 10px;
+            if !ConfigUi.raw-mode: VerticalLayout {
+                spacing: 12px;
+                for f in ConfigUi.form: FieldEditor {
+                    field: f;
+                }
+            }
+            if ConfigUi.raw-mode: TextArea {
+                height: 200px;
+                label: @tr("Raw configuration");
+                text <=> ConfigUi.raw;
+            }
+            if ConfigUi.error != "": StatusLine {
+                text: ConfigUi.error;
+                error: true;
+            }
+            HorizontalLayout {
+                spacing: 8px;
+                alignment: start;
+                Btn {
+                    text: "Save";
+                    primary: true;
+                    clicked => {
+                        ConfigUi.save();
+                    }
+                }
+                Btn {
+                    text: "Discard";
+                    clicked => {
+                        ConfigUi.close-editor();
+                    }
+                }
+                if !ConfigUi.is-new: Btn {
+                    text: ConfigUi.concept == "mcp" ? "Remove" : "Delete";
+                    clicked => {
+                        ConfigUi.remove(ConfigUi.edit-name);
+                    }
+                }
+                if !ConfigUi.is-new && ConfigUi.agent != "harness" && (ConfigUi.concept == "mcp" || ConfigUi.concept == "skill"): Btn {
+                    text: "Copy to Harness";
+                    clicked => {
+                        ConfigUi.copy-to-harness(ConfigUi.edit-name);
+                    }
+                }
+            }
+        }
+    }
+}

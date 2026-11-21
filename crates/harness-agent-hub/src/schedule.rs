@@ -21,6 +21,8 @@ use crate::store;
 use crate::store_chat;
 use crate::util::{new_id, now_ms};
 
+mod runner;
+
 const ENABLED_KEY: &str = "schedules_enabled";
 
 /// The hub's scheduler slot: the lazy task and its wake-up.
@@ -260,108 +262,6 @@ impl Hub {
         self.run_and_record(schedule, false).await
     }
 
-    /// Sends the prompt and records `last_run`/`last_result` (and `next_run` for a due run).
-    async fn run_and_record(
-        &self,
-        mut schedule: ScheduledPrompt,
-        due: bool,
-    ) -> ApiResult<ScheduleRun> {
-        let now = now_ms();
-        let outcome = self.run_schedule(&schedule).await;
-        schedule.last_run = Some(now);
-        match &outcome {
-            Ok(_) => schedule.last_result = Some("sent".into()),
-            Err(error) => {
-                schedule.last_result = Some(error.to_string());
-                if matches!(error, ApiError::NotFound(_)) {
-                    // 目标会话已不存在：停用该计划，避免每个周期重复失败（spec §9.2.1）。
-                    schedule.enabled = false;
-                    schedule.next_run = None;
-                }
-            }
-        }
-        if due && schedule.enabled {
-            schedule.next_run = next_run(&schedule.kind, now);
-        }
-        let stored = schedule.clone();
-        self.ctx
-            .store
-            .run(move |c| store_chat::save_schedule(c, &stored))
-            .await?;
-        self.ctx.events.emit(None, EventKind::SchedulesChanged);
-        outcome
-    }
-
-    async fn run_schedule(&self, schedule: &ScheduledPrompt) -> ApiResult<ScheduleRun> {
-        let session_id = match &schedule.target {
-            ScheduleTarget::Session { session_id } => {
-                self.load_row(session_id).await?;
-                session_id.clone()
-            }
-            ScheduleTarget::NewSession {
-                workspace_path,
-                agent,
-            } => {
-                self.do_create_session(CreateSession {
-                    workspace_path: workspace_path.clone(),
-                    workspace_identity: None,
-                    title: Some(schedule.title.clone()),
-                    agent: agent.clone(),
-                    worktree: None,
-                })
-                .await?
-                .id
-            }
-        };
-        let request = SendMessage {
-            session_id: session_id.clone(),
-            text: schedule.prompt.clone(),
-            agent: None,
-            client_message_id: None,
-            context: Vec::new(),
-        };
-        let origin = TurnOrigin {
-            schedule_id: schedule.id.clone(),
-            schedule_title: schedule.title.clone(),
-            background: None,
-        };
-        self.unarchive_for_send(&session_id).await?;
-        let accepted = self
-            .ask(&session_id, |reply| {
-                SessionCmd::SendScheduled(request, origin, reply)
-            })
-            .await?;
-        Ok(ScheduleRun {
-            session_id,
-            turn_id: accepted.turn_id,
-        })
-    }
-
-    /// Starts, wakes or stops the lazy task to match the switch and the enabled schedules.
-    pub(crate) async fn ensure_scheduler(&self) {
-        let wanted = self.check_open().is_ok()
-            && self.do_schedules_enabled().await.unwrap_or(false)
-            && self
-                .do_list_schedules()
-                .await
-                .is_ok_and(|list| list.iter().any(|s| s.enabled));
-        let scheduler = &self.scheduler;
-        if !wanted {
-            scheduler.stop();
-            return;
-        }
-        let Ok(mut slot) = scheduler.task.lock() else {
-            return;
-        };
-        if slot.as_ref().is_some_and(|t| !t.is_finished()) {
-            scheduler.wake.notify_one();
-            return;
-        }
-        let weak = self.me.clone();
-        let wake = Arc::clone(&scheduler.wake);
-        *slot = Some(tokio::spawn(run_loop(weak, wake)));
-    }
-
     /// Called once by `Hub::start`: no catch-up, then start the task if wanted.
     pub(crate) async fn start_scheduler(&self) {
         if self.do_schedules_enabled().await.unwrap_or(false) {
@@ -430,29 +330,4 @@ async fn run_loop(hub: Weak<Hub>, wake: Arc<Notify>) {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn interval_adds_seconds() {
-        assert_eq!(
-            next_run(&ScheduleKind::Interval { seconds: 5 }, 1_000),
-            Some(6_000)
-        );
-    }
-
-    #[test]
-    fn daily_is_in_the_future_on_an_allowed_weekday() {
-        let now = now_ms();
-        let kind = ScheduleKind::Daily {
-            minute_of_day: 9 * 60,
-            weekdays: vec![3],
-        };
-        let next = next_run(&kind, now);
-        assert!(next.is_some_and(|n| n > now && n - now <= 8 * 86_400_000));
-        let weekday = next
-            .and_then(|n| Local.timestamp_millis_opt(n).single())
-            .map(|t| t.weekday().number_from_monday());
-        assert_eq!(weekday, Some(3));
-    }
-}
+mod tests;

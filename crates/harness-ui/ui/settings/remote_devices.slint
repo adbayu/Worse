@@ -1,0 +1,211 @@
+import { Theme } from "../theme/tokens.slint";
+import { Divider } from "../components/controls.slint";
+import { SettingRow, Switch, TextField } from "parts.slint";
+import { SettingsUi } from "globals.slint";
+import { RemoteDevice, RemoteUi } from "./remote_ui.slint";
+import { RemoteLook, RCard, Sep, RButton, ToggleRow, FieldRow } from "./remote_parts.slint";
+
+export component PairCard inherits RCard {
+    title: @tr("Pair a device");
+    note: "ANDROID · PHONE BROWSER";
+    HorizontalLayout {
+        padding-top: 4px;
+        padding-bottom: 16px;
+        padding-left: 16px;
+        padding-right: 16px;
+        spacing: 20px;
+        Rectangle {
+            width: 182px;
+            height: 182px;
+            background: Theme.surface;
+            border-radius: 10px;
+            border-width: 1px;
+            border-color: Theme.border;
+            if RemoteUi.has-qr && RemoteUi.pair-code != "": Rectangle {
+                x: 11px;
+                y: 11px;
+                width: 160px;
+                height: 160px;
+                background: #FFFFFF;
+                border-radius: 8px;
+                accessible-role: AccessibleRole.image;
+                accessible-label: @tr("Pairing QR code");
+                Image {
+                    width: parent.width - 12px;
+                    height: parent.height - 12px;
+                    source: RemoteUi.qr;
+                    image-rendering: pixelated;
+                    image-fit: contain;
+                }
+            }
+            if !(RemoteUi.has-qr && RemoteUi.pair-code != ""): Text {
+                x: 16px;
+                width: parent.width - 32px;
+                height: parent.height;
+                text: RemoteUi.has-url ? "Generate a code to show the QR" : "The QR appears once the tunnel is up";
+                font-size: 11px;
+                color: Theme.icon-subtlest;
+                wrap: word-wrap;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+        VerticalLayout {
+            spacing: 10px;
+            horizontal-stretch: 1;
+            alignment: start;
+            Text {
+                text: "Scan with the Harness Android app";
+                font-size: 15px;
+                font-weight: Theme.weight-semibold;
+                color: Theme.foreground;
+            }
+            Text {
+                text: "Open Harness on your phone, tap “Pair device” and point the camera at the code. The device gets its own session list and can send messages to any agent that is running here.";
+                font-size: 12px;
+                color: Theme.muted;
+                wrap: word-wrap;
+            }
+            if RemoteUi.pair-code != "": HorizontalLayout {
+                spacing: 8px;
+                alignment: start;
+                Rectangle {
+                    height: 41px;
+                    background: Theme.raised;
+                    border-radius: 8px;
+                    border-width: 1px;
+                    border-color: Theme.border-hover;
+                    horizontal-stretch: 0;
+                    HorizontalLayout {
+                        padding-left: 12px;
+                        padding-right: 12px;
+                        Text {
+                            text: RemoteUi.pair-code;
+                            font-size: 22px;
+                            font-weight: Theme.weight-semibold;
+                            letter-spacing: 2px;
+                            color: Theme.foreground;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+                Text {
+                    text: RemoteUi.pair-expiry;
+                    font-size: 11px;
+                    color: Theme.icon-subtlest;
+                    vertical-alignment: center;
+                }
+            }
+            HorizontalLayout {
+                spacing: 10px;
+                alignment: start;
+                RButton {
+                    text: RemoteUi.pair-code != "" ? "Regenerate" : @tr("Pair new device");
+                    enabled: RemoteUi.server-state == 2;
+                    clicked => {
+                        RemoteUi.pair-new();
+                    }
+                }
+                if RemoteUi.pair-url != "": RButton {
+                    text: @tr("Copy pair link");
+                    clicked => {
+                        RemoteUi.copy(RemoteUi.pair-url);
+                    }
+                }
+                Text {
+                    text: RemoteUi.server-state == 2 ? "Only devices on the same tunnel can use it." : "Turn on remote access to pair a device.";
+                    font-size: 11px;
+                    color: Theme.icon-subtlest;
+                    vertical-alignment: center;
+                }
+            }
+        }
+    }
+}
+
+export component DevicesCard inherits RCard {
+    title: @tr("Paired devices");
+    note: RemoteUi.devices.length + (RemoteUi.devices.length == 1 ? " DEVICE" : " DEVICES");
+    for d[i] in RemoteUi.devices: VerticalLayout {
+        if i > 0: Sep { }
+        HorizontalLayout {
+            padding-top: 12px;
+            padding-bottom: 12px;
+            padding-left: 16px;
+            padding-right: 16px;
+            spacing: 12px;
+            VerticalLayout {
+                alignment: center;
+                Rectangle {
+                    width: 7px;
+                    height: 7px;
+                    border-radius: 3.5px;
+                    background: RemoteLook.offline;
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                Rectangle {
+                    width: 28px;
+                    height: 28px;
+                    border-radius: 8px;
+                    background: Theme.accent-fg.with-alpha(0.12);
+                    Text {
+                        text: "▯"; font-family: "Segoe UI Symbol";
+                        font-size: 11px;
+                        color: Theme.accent-fg;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        accessible-role: none;
+                    }
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                spacing: 3px;
+                horizontal-stretch: 1;
+                Text {
+                    text: d.name;
+                    font-size: 13px;
+                    color: Theme.foreground;
+                    overflow: elide;
+                }
+                Text {
+                    text: @tr("Paired {0} · last seen {1}", d.created, d.last-seen);
+                    font-size: 11px;
+                    color: Theme.icon-subtlest;
+                    overflow: elide;
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                RButton {
+                    text: "Revoke";
+                    danger: true;
+                    clicked => {
+                        RemoteUi.revoke(d.id);
+                    }
+                }
+            }
+        }
+    }
+    if RemoteUi.devices.length == 0: HorizontalLayout {
+        padding-top: 12px;
+        padding-bottom: 16px;
+        padding-left: 16px;
+        padding-right: 16px;
+        Text {
+            text: RemoteUi.server-state == 2 ? @tr("No paired devices") : @tr("Start the server to see paired devices");
+            font-size: 12px;
+            color: Theme.icon-subtlest;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+        }
+        RButton {
+            text: "Refresh";
+            clicked => {
+                RemoteUi.refresh();
+            }
+        }
+    }
+}

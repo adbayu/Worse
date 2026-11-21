@@ -1,0 +1,265 @@
+import { BoardUi } from "../board/board.slint";
+import { Icon, Icons, MenuItem, MenuShell } from "../components/controls.slint";
+import { Theme } from "../theme/tokens.slint";
+import { ChatUi } from "./globals.slint";
+
+export component SessionSearch inherits Rectangle {
+        height: 34px;
+        border-radius: Theme.radius-md;
+        background: srch-ta.has-hover ? Theme.surface-hover : Theme.surface;
+        border-width: 1px;
+        border-color: srch-ta.has-hover ? Theme.border-hover : Theme.border;
+        animate background, border-color { duration: Theme.dur-hover; easing: ease-out-quint; }
+        accessible-role: button;
+        accessible-label: @tr("Search");
+        accessible-action-default => {
+            ChatUi.palette-open = true;
+        }
+        HorizontalLayout {
+            padding-left: 11px;
+            padding-right: 6px;
+            spacing: 8px;
+            Icon {
+                y: (parent.height - self.height) / 2;
+                source: Icons.search;
+                size: Theme.icon-xs;
+                tint: Theme.icon-subtlest;
+            }
+            Text {
+                text: @tr("Search sessions");
+                font-size: Theme.ui-caption;
+                color: Theme.foreground-subtlest;
+                vertical-alignment: center;
+                horizontal-stretch: 1;
+                overflow: elide;
+                accessible-role: none;
+            }
+            Rectangle {
+                y: (parent.height - self.height) / 2;
+                height: 20px;
+                width: kbd-t.preferred-width + 12px;
+                border-radius: Theme.radius-sm;
+                background: Theme.raised;
+                border-width: 1px;
+                border-color: Theme.border-hover;
+                kbd-t := Text {
+                    text: "Ctrl K";
+                    font-size: Theme.ui-xs + 1px;
+                    color: Theme.muted;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    accessible-role: none;
+                }
+            }
+        }
+        srch-ta := TouchArea {
+            mouse-cursor: pointer;
+            clicked => {
+                ChatUi.palette-open = true;
+            }
+        }
+}
+
+export component AccountCard inherits Rectangle {
+    in property <string> initial;
+    in property <string> workspace;
+    callback open-settings();
+    callback open-page(string);
+    height: 52px;
+    border-radius: Theme.radius-lg;
+    background: Theme.surface;
+    border-width: 1px;
+    border-color: Theme.border;
+    HorizontalLayout {
+        padding: 4px;
+        padding-right: 6px;
+        spacing: 4px;
+        acct := Rectangle {
+            horizontal-stretch: 1;
+            border-radius: Theme.radius-md;
+            background: acct-ta.has-hover ? Theme.hover : Theme.hover.with-alpha(0);
+            transform-scale: acct-ta.pressed ? 0.97 : 1;
+            animate background { duration: Theme.dur-hover; easing: ease-out-quint; }
+            animate transform-scale { duration: Theme.dur-press; easing: ease-out-quint; }
+            accessible-role: button;
+            accessible-label: @tr("Account menu");
+            accessible-action-default => {
+                acct-menu.show();
+            }
+            acct-row := HorizontalLayout {
+                x: 8px;
+                width: parent.width - 16px;
+                spacing: 8px;
+                Rectangle {
+                    y: (parent.height - self.height) / 2;
+                    width: 26px;
+                    height: 26px;
+                    border-radius: 13px;
+                    background: Theme.surface-hover;
+                    border-width: 1px;
+                    border-color: Theme.glass-border;
+                    Text {
+                        text: root.initial;
+                        font-size: Theme.ui-sm;
+                        font-weight: Theme.weight-semibold;
+                        color: Theme.foreground;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        accessible-role: none;
+                    }
+                }
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    alignment: center;
+                    spacing: 6px;
+                    HorizontalLayout {
+                        spacing: 4px;
+                        Text {
+                            // 没有打开文件夹时只显示产品名。
+                            text: root.workspace != "" ? root.workspace : "Worse Harness";
+                            font-size: Theme.ui-sm;
+                            font-weight: Theme.weight-medium;
+                            color: Theme.foreground;
+                            vertical-alignment: center;
+                            overflow: elide;
+                        }
+                        Text {
+                            text: root.workspace != "" ? "· Harness" : "";
+                            font-size: Theme.ui-sm;
+                            color: Theme.foreground-subtle;
+                            vertical-alignment: center;
+                            horizontal-stretch: 1;
+                        }
+                    }
+                    // Plan usage track (only when the agent reports usage).
+                    if ChatUi.usage-known: Rectangle {
+                        height: 3px;
+                        border-radius: 1.5px;
+                        background: Theme.border-hover;
+                        Rectangle {
+                            x: 0;
+                            width: parent.width * clamp(ChatUi.usage-ratio, 0, 1);
+                            height: parent.height;
+                            border-radius: 1.5px;
+                            background: ChatUi.usage-ratio > 0.9 ? Theme.destructive : ChatUi.usage-ratio > 0.7 ? Theme.warning-surface-foreground : Theme.accent-fg;
+                        }
+                    }
+                }
+            }
+            acct-ta := TouchArea {
+                mouse-cursor: pointer;
+                clicked => {
+                    acct-menu.show();
+                }
+            }
+            acct-menu := PopupWindow {
+                x: 0;
+                y: -self.height - 8px;
+                width: 260px;
+                MenuShell {
+                    HorizontalLayout {
+                        height: 26px;
+                        padding-left: 10px;
+                        Text {
+                            text: root.workspace != "" ? root.workspace + " · " + @tr("Local") : @tr("Local");
+                            font-size: Theme.ui-sm;
+                            font-weight: Theme.weight-medium;
+                            color: Theme.foreground-subtle;
+                            vertical-alignment: center;
+                            overflow: elide;
+                        }
+                    }
+                    MenuItem {
+                        text: @tr("Settings");
+                        detail: "Ctrl+,";
+                        show-check: false;
+                        has-icon: true;
+                        icon: Icons.settings;
+                        clicked => {
+                            acct-menu.close();
+                            root.open-settings();
+                        }
+                    }
+                    MenuItem {
+                        text: @tr("Agents & usage");
+                        show-check: false;
+                        has-icon: true;
+                        icon: Icons.bot;
+                        clicked => {
+                            acct-menu.close();
+                            root.open-page("agents");
+                        }
+                    }
+                    MenuItem {
+                        text: @tr("Appearance");
+                        show-check: false;
+                        has-icon: true;
+                        icon: Icons.palette;
+                        clicked => {
+                            acct-menu.close();
+                            root.open-page("appearance");
+                        }
+                    }
+                    MenuItem {
+                        text: @tr("Keyboard shortcuts");
+                        show-check: false;
+                        has-icon: true;
+                        icon: Icons.keyboard;
+                        clicked => {
+                            acct-menu.close();
+                            root.open-page("shortcuts");
+                        }
+                    }
+                    Rectangle {
+                        height: 9px;
+                        Rectangle {
+                            y: 4px;
+                            height: 1px;
+                            background: Theme.popover-border;
+                        }
+                    }
+                    MenuItem {
+                        text: @tr("Scheduled prompts");
+                        show-check: false;
+                        has-icon: true;
+                        icon: Icons.calendar-clock;
+                        clicked => {
+                            acct-menu.close();
+                            ChatUi.schedule-action("open", "");
+                        }
+                    }
+                    MenuItem {
+                        text: @tr("Board");
+                        show-check: false;
+                        has-icon: true;
+                        icon: Icons.square-kanban;
+                        clicked => {
+                            acct-menu.close();
+                            BoardUi.action("open", "");
+                        }
+                    }
+                    MenuItem {
+                        text: @tr("Projects");
+                        show-check: false;
+                        has-icon: true;
+                        icon: Icons.folders;
+                        clicked => {
+                            acct-menu.close();
+                            root.open-page("projects");
+                        }
+                    }
+                    MenuItem {
+                        text: @tr("Archived sessions");
+                        show-check: false;
+                        has-icon: true;
+                        icon: Icons.archive;
+                        clicked => {
+                            acct-menu.close();
+                            root.open-page("archive");
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

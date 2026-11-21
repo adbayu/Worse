@@ -1,0 +1,172 @@
+import { Theme } from "../theme/tokens.slint";
+import { Icon, Icons } from "../components/controls.slint";
+import { ProjectsUi, ArchiveUi } from "globals.slint";
+import { PageHeader, SearchField, UnsupportedNotice, SetButton, Pill, Dot, CapsLabel } from "parts.slint";
+import { LinkText, Rule, EmptyBody, TableHead } from "./data_parts.slint";
+
+export component ArchivePage inherits VerticalLayout {
+    in property <bool> stacked;
+    callback request-delete(string);
+    spacing: 20px;
+    PageHeader {
+        title: @tr("Archive");
+        description: @tr("Archived sessions are hidden from the sidebar but keep their full transcript and diffs.");
+    }
+    if !ArchiveUi.available: UnsupportedNotice {
+        title: @tr("Archiving needs the hub archive API");
+        reason: @tr("Harness sessions cannot be archived yet; this page lists archived sessions once the hub supports it.");
+    }
+    // Toolbar (design: search 34 tall fills the row).
+    SearchField {
+        placeholder: @tr("Search archived sessions…");
+        text <=> ArchiveUi.query;
+        edited(q) => {
+            ArchiveUi.search(q);
+        }
+    }
+    Rectangle {
+        background: Theme.card;
+        border-radius: 12px;
+        border-width: 1px;
+        border-color: Theme.card-border;
+        clip: true;
+        VerticalLayout {
+            padding: 1px;
+            TableHead {
+                title: @tr("Archived sessions");
+                sub: @tr("{0} sessions", ArchiveUi.rows.length);
+            }
+            Rule { }
+            // Columns 250 / 150 / 120 / 130 / 140 (actions right-aligned).
+            VerticalLayout {
+                padding-top: 4px;
+                HorizontalLayout {
+                    height: 30px;
+                    padding-left: 16px;
+                    padding-right: 16px;
+                    CapsLabel {
+                        text: @tr("SESSION");
+                        min-width: root.stacked ? 0px : 250px;
+                        max-width: root.stacked ? 100000px : 250px;
+                        horizontal-stretch: root.stacked ? 1 : 0;
+                    }
+                    if !root.stacked: CapsLabel {
+                        text: @tr("PROJECT");
+                        width: 150px;
+                    }
+                    if !root.stacked: CapsLabel {
+                        text: @tr("AGENT");
+                        width: 120px;
+                    }
+                    CapsLabel {
+                        text: @tr("ARCHIVED");
+                        width: 130px;
+                    }
+                    CapsLabel {
+                        text: @tr("ACTIONS");
+                        width: 140px;
+                        horizontal-alignment: right;
+                    }
+                    if !root.stacked: Rectangle {
+                        horizontal-stretch: 1;
+                    }
+                }
+                Rule { }
+            }
+            VerticalLayout {
+                padding-bottom: 8px;
+                for a[i] in ArchiveUi.rows: Rectangle {
+                    height: 48px;
+                    background: ata.has-hover ? Theme.hover : (Math.mod(i, 2) == 0 ? Theme.surface : transparent);
+                    animate background { duration: Theme.dur-hover; }
+                    ata := TouchArea { }
+                    HorizontalLayout {
+                        padding-left: 16px;
+                        padding-right: 16px;
+                        Text {
+                            min-width: root.stacked ? 0px : 250px;
+                            max-width: root.stacked ? 100000px : 250px;
+                            horizontal-stretch: root.stacked ? 1 : 0;
+                            text: a.title;
+                            font-size: 12px;
+                            color: Theme.foreground-subtle;
+                            vertical-alignment: center;
+                            overflow: elide;
+                        }
+                        if !root.stacked: Text {
+                            width: 150px;
+                            text: a.project;
+                            font-size: 11px;
+                            color: Theme.muted;
+                            vertical-alignment: center;
+                            overflow: elide;
+                        }
+                        if !root.stacked: HorizontalLayout {
+                            width: 120px;
+                            spacing: 6px;
+                            alignment: start;
+                            VerticalLayout {
+                                alignment: center;
+                                Dot {
+                                    size: 6px;
+                                    tint: a.agent == "Claude Code" ? Theme.ember : a.agent == "Codex" ? Theme.success : a.agent == "Harness" ? Theme.accent-fg : Theme.info;
+                                }
+                            }
+                            Text {
+                                text: a.agent;
+                                font-size: 11px;
+                                color: Theme.foreground-subtle;
+                                vertical-alignment: center;
+                                overflow: elide;
+                            }
+                        }
+                        Text {
+                            width: 130px;
+                            text: a.updated;
+                            font-size: 11px;
+                            color: Theme.icon-subtlest;
+                            vertical-alignment: center;
+                            overflow: elide;
+                        }
+                        HorizontalLayout {
+                            width: 140px;
+                            spacing: 10px;
+                            alignment: end;
+                            LinkText {
+                                text: @tr("Restore");
+                                tint: Theme.accent-fg;
+                                clicked => {
+                                    ArchiveUi.unarchive(a.id);
+                                }
+                            }
+                            LinkText {
+                                text: @tr("Delete");
+                                tint: Theme.destructive;
+                                clicked => {
+                                    root.request-delete(a.id);
+                                }
+                            }
+                        }
+                        if !root.stacked: Rectangle {
+                            horizontal-stretch: 1;
+                        }
+                    }
+                }
+                if ArchiveUi.rows.length == 0: EmptyBody {
+                    icon: Icons.archive;
+                    title: @tr("No archived sessions");
+                    hint: @tr("Archiving a session from the sidebar moves it here.");
+                }
+            }
+        }
+    }
+    if ArchiveUi.has-more: HorizontalLayout {
+        alignment: center;
+        SetButton {
+            text: @tr("Show more");
+            clicked => {
+                ArchiveUi.more();
+            }
+        }
+    }
+}

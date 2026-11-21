@@ -7,6 +7,7 @@
 pub mod about;
 mod accounts;
 pub mod acp;
+mod adapter_update;
 mod admin;
 pub mod agents;
 mod agy_accounts;
@@ -53,6 +54,7 @@ mod research;
 mod research_figures;
 mod resume;
 mod schedule;
+pub mod selector;
 mod session;
 pub(crate) mod session_notes;
 pub mod setup;
@@ -64,6 +66,9 @@ mod util;
 mod worktree;
 
 pub use agy_cred::{AgyCredStore, CredAttribute, CredBlob, SharedAgyCredStore};
-pub use config::{DelegationPolicy, FactCheckPolicy, HubConfig, SharedAuthProbe, SharedFileSearch};
+pub use config::{
+    AutoUpdatePolicy, DelegationPolicy, FactCheckPolicy, HubConfig, SharedAuthProbe,
+    SharedFileSearch,
+};
 pub use error::HubError;
 pub use hub::Hub;

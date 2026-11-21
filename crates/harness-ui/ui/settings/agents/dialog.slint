@@ -1,0 +1,303 @@
+import { Theme } from "../../theme/tokens.slint";
+import { Icon, Icons, Button, IconButton, Divider, Dialog, Spinner } from "../../components/controls.slint";
+import { AgentsUi, AgentCard, ProviderPreset } from "../globals.slint";
+import { Select, TextField, TextArea, Switch } from "../parts.slint";
+import { SetupUi } from "../../setup.slint";
+import { AgentLogo, AgentMark } from "../../components/agent_logo.slint";
+import { AgentsLook, DButton, Tile, Hint, LabeledField, PresetTile, LinkText } from "./parts.slint";
+
+export component ProviderDialog inherits Dialog {
+    property <string> picked: AgentsUi.provider-preset;
+    property <ProviderPreset> preset: AgentsUi.provider-current;
+    // The Command Code CLI preset: a name and one key per line, no endpoint or model.
+    property <bool> command-code: AgentsUi.provider-kind == "command-code";
+    // Several keys (one per line) instead of the single masked key field.
+    property <bool> many-keys: root.command-code;
+    property <int> cols: 3;
+    property <length> gap: 6px;
+    property <length> tile-h: 40px;
+    title: root.picked == "" ? @tr("Add provider") : root.preset.name;
+    close-label: @tr("Close");
+    dialog-width: 580px;
+    close => {
+        AgentsUi.provider-open = false;
+        AgentsUi.provider-kind = "";
+        AgentsUi.provider-preset = "";
+    }
+    // ---------- step 1: pick a provider ----------
+    if root.picked == "": VerticalLayout {
+        spacing: 12px;
+        Text {
+            text: "Pick a provider: the endpoint and a model are filled in, so only the API key is needed.";
+            font-size: 11.5px;
+            color: Theme.muted;
+            wrap: word-wrap;
+        }
+        grid := Rectangle {
+            property <int> rows: (AgentsUi.presets.length + root.cols - 1) / root.cols;
+            property <length> tile-w: (self.width - (root.cols - 1) * root.gap) / root.cols;
+            height: self.rows * root.tile-h + (self.rows - 1) * root.gap;
+            for p[i] in AgentsUi.presets: PresetTile {
+                x: mod(i, root.cols) * (grid.tile-w + root.gap);
+                y: floor(i / root.cols) * (root.tile-h + root.gap);
+                width: grid.tile-w;
+                height: root.tile-h;
+                name: p.name;
+                tag: p.tag;
+                letter: p.letter;
+                clicked => {
+                    root.many-keys = p.id == "command-code-cli";
+                    AgentsUi.pick-preset(p.id);
+                }
+            }
+        }
+    }
+    // ---------- step 2: key (and model) ----------
+    if root.picked != "": VerticalLayout {
+        spacing: 14px;
+        HorizontalLayout {
+            spacing: 10px;
+            AgentMark {
+                y: (parent.height - self.height) / 2;
+                name: root.preset.name;
+                letter: root.preset.letter;
+                size: 22px;
+            }
+            Text {
+                text: root.preset.note != "" ? root.preset.note : root.preset.tag;
+                font-size: 11px;
+                color: Theme.foreground-subtle;
+                wrap: word-wrap;
+                horizontal-stretch: 1;
+                vertical-alignment: center;
+            }
+            LinkText {
+                text: "Change";
+                clicked => {
+                    AgentsUi.provider-preset = "";
+                    AgentsUi.provider-kind = "";
+                }
+            }
+        }
+        LabeledField {
+            title: "Name";
+            hint: root.many-keys ? "several keys are numbered: " + AgentsUi.provider-label + " 1, " + AgentsUi.provider-label + " 2, …" : "";
+            TextField {
+                height: 34px;
+                text <=> AgentsUi.provider-label;
+                placeholder: "My provider";
+                label: "Provider name";
+            }
+        }
+        VerticalLayout {
+            spacing: 6px;
+            HorizontalLayout {
+                spacing: 8px;
+                Text {
+                    text: root.many-keys ? "API keys" : "API key";
+                    font-size: 11px;
+                    font-weight: Theme.weight-medium;
+                    color: Theme.foreground-subtle;
+                    vertical-alignment: center;
+                }
+                Text {
+                    text: root.preset.keyless ? "optional for a local server" : root.many-keys ? "one per line; new sessions take them in turn (round robin)" : "stored in Harness's data folder, never shown again";
+                    font-size: 10px;
+                    color: Theme.icon-subtlest;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    overflow: elide;
+                }
+                if !root.command-code: LinkText {
+                    text: root.many-keys ? "One key" : "Several keys";
+                    clicked => {
+                        root.many-keys = !root.many-keys;
+                    }
+                }
+                if root.preset.key-url != "": LinkText {
+                    text: "Get a key ↗";
+                    clicked => {
+                        AgentsUi.open-key-page(root.preset.key-url);
+                    }
+                }
+            }
+            if root.many-keys: TextArea {
+                min-height: 72px;
+                max-height: 72px;
+                text <=> AgentsUi.provider-key;
+                label: "API keys";
+            }
+            if !root.many-keys: TextField {
+                height: 34px;
+                text <=> AgentsUi.provider-key;
+                placeholder: root.preset.keyless ? "not needed" : "Paste the key";
+                label: "API key";
+                password: true;
+                accepted(text) => {
+                    if AgentsUi.provider-model == "" {
+                        AgentsUi.fetch-models();
+                    }
+                }
+            }
+        }
+        if !root.command-code && !AgentsUi.provider-edit-url: HorizontalLayout {
+            spacing: 8px;
+            Text {
+                text: "Endpoint";
+                font-size: 11px;
+                color: Theme.foreground-subtle;
+                vertical-alignment: center;
+            }
+            Text {
+                text: AgentsUi.provider-url;
+                font-family: Theme.mono-font;
+                font-size: 10.5px;
+                color: Theme.muted;
+                vertical-alignment: center;
+                overflow: elide;
+                horizontal-stretch: 1;
+            }
+            LinkText {
+                text: "Edit";
+                clicked => {
+                    AgentsUi.provider-edit-url = true;
+                }
+            }
+        }
+        if !root.command-code && AgentsUi.provider-edit-url: LabeledField {
+            title: "Endpoint (base URL)";
+            hint: "the part before /chat/completions";
+            TextField {
+                height: 34px;
+                text <=> AgentsUi.provider-url;
+                placeholder: "https://example.com/v1";
+                label: "Base URL";
+            }
+        }
+        if !root.command-code: VerticalLayout {
+            spacing: 6px;
+            HorizontalLayout {
+                spacing: 8px;
+                Text {
+                    text: "Model";
+                    font-size: 11px;
+                    font-weight: Theme.weight-medium;
+                    color: Theme.foreground-subtle;
+                    vertical-alignment: center;
+                }
+                Text {
+                    text: AgentsUi.provider-models-note != "" ? AgentsUi.provider-models-note : root.picked == "hermes" ? "the gateway's model name (hermes-agent unless a profile renames it)" : "must support tool (function) calling";
+                    font-size: 10px;
+                    color: Theme.icon-subtlest;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    overflow: elide;
+                }
+                if AgentsUi.provider-models-loading: Spinner {
+                    width: 12px;
+                    height: 12px;
+                    y: (parent.height - self.height) / 2;
+                }
+            }
+            HorizontalLayout {
+                spacing: 8px;
+                TextField {
+                    height: 34px;
+                    text <=> AgentsUi.provider-model;
+                    placeholder: "model id, or list the endpoint's models";
+                    label: "Model ID";
+                    edited(text) => {
+                        AgentsUi.filter-models(text);
+                    }
+                    accepted(text) => {
+                        AgentsUi.add-provider();
+                    }
+                }
+                DButton {
+                    text: "List models";
+                    h: 34px;
+                    pad: 12px;
+                    enabled: !AgentsUi.provider-models-loading && AgentsUi.provider-url != "";
+                    clicked => {
+                        AgentsUi.fetch-models();
+                    }
+                }
+            }
+            if AgentsUi.provider-models.length > 0: Rectangle {
+                height: min(132px, AgentsUi.provider-models.length * 24px + 8px);
+                border-radius: 8px;
+                border-width: 1px;
+                border-color: AgentsLook.rule;
+                background: Theme.surface;
+                clip: true;
+                Flickable {
+                    content-height: models-col.preferred-height;
+                    models-col := VerticalLayout {
+                        padding: 4px;
+                        for m in AgentsUi.provider-models: Rectangle {
+                            height: 24px;
+                            border-radius: 6px;
+                            background: m == AgentsUi.provider-model ? Theme.primary.with-alpha(0.18) : mta.has-hover ? Theme.hover : transparent;
+                            mta := TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => {
+                                    AgentsUi.provider-model = m;
+                                }
+                            }
+                            Text {
+                                x: 8px;
+                                width: parent.width - 16px;
+                                text: m;
+                                font-family: Theme.mono-font;
+                                font-size: 11px;
+                                color: Theme.foreground;
+                                vertical-alignment: center;
+                                overflow: elide;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if AgentsUi.provider-error != "": Text {
+            text: AgentsUi.provider-error;
+            font-size: 11px;
+            color: Theme.destructive-surface-foreground;
+            wrap: word-wrap;
+        }
+        Rectangle {
+            height: 1px;
+            background: AgentsLook.rule;
+        }
+        HorizontalLayout {
+            spacing: 8px;
+            Text {
+                text: "Takes effect after Harness restarts.";
+                font-size: 11px;
+                color: Theme.muted;
+                vertical-alignment: center;
+                horizontal-stretch: 1;
+            }
+            DButton {
+                text: "Cancel";
+                h: 30px;
+                pad: 12px;
+                clicked => {
+                    AgentsUi.provider-open = false;
+                    AgentsUi.provider-kind = "";
+                    AgentsUi.provider-preset = "";
+                }
+            }
+            DButton {
+                text: root.command-code || root.many-keys ? "Save keys" : "Save provider";
+                h: 30px;
+                pad: 12px;
+                primary: true;
+                enabled: AgentsUi.provider-label != "" && (root.command-code ? AgentsUi.provider-key != "" : AgentsUi.provider-url != "" && AgentsUi.provider-model != "" && (root.preset.keyless || root.picked == "custom" || AgentsUi.provider-key != ""));
+                clicked => {
+                    AgentsUi.add-provider();
+                }
+            }
+        }
+    }
+}

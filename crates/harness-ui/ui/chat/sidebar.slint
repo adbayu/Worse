@@ -1,0 +1,194 @@
+import { BoardUi } from "../board/board.slint";
+import { SessionRow, AgentTint } from "../models.slint";
+import { ChatUi } from "./globals.slint";
+import { AsciiArt, GlyphAnim } from "../components/ascii.slint";
+import { Button, Icon, IconButton, Icons, MenuItem, MenuShell, SectionLabel, StatusDot } from "../components/controls.slint";
+import { ListView } from "std-widgets.slint";
+import { Theme } from "../theme/tokens.slint";
+import { AccountCard, SessionSearch } from "./account_card.slint";
+import { SessionItem } from "./session_item.slint";
+
+export component Sidebar inherits Rectangle {
+    in property <[SessionRow]> sessions;
+    in property <string> initial;
+    in property <string> workspace;
+    // Narrow drawer: no brand row above the sidebar, so show the New session button inside it.
+    in property <bool> show-new: false;
+    callback new-session();
+    callback new-menu(length, length);
+    callback new-worktree-session();
+    callback open-session(string);
+    callback archive-session(string);
+    callback open-settings();
+    // Opens a settings page from the sidebar ("projects", "archive").
+    callback open-page(string);
+    // Session context menu at a window position (right click or the row's "More" button).
+    callback menu(string, length, length);
+    // Group menu (header right click or its "More" button).
+    callback group-menu(string, length, length);
+    // Session drag (R11): the dragged session id, the pointer y in the sidebar and the drop list geometry.
+    property <string> drag-id;
+    property <bool> dragged;
+    property <length> drag-y;
+    property <length> drop-row: 28px;
+    property <length> drop-top: root.height - 48px - (ChatUi.groups.length + 1) * root.drop-row;
+    // Nothing here yet: the ASCII bunny naps where the list would be.
+    if root.sessions.length == 0: VerticalLayout {
+        x: 0;
+        y: root.height * 0.32;
+        width: root.width;
+        height: 96px;
+        alignment: center;
+        spacing: 10px;
+        HorizontalLayout {
+            alignment: center;
+            GlyphAnim {
+                frames: AsciiArt.bunny-sleep;
+                divider: 6;
+                font-size: 13px;
+                color: Theme.foreground-subtlest;
+            }
+        }
+        Text {
+            text: @tr("No sessions yet");
+            font-size: Theme.ui-sm;
+            color: Theme.foreground-subtlest;
+            horizontal-alignment: center;
+            accessible-role: none;
+        }
+    }
+    VerticalLayout {
+        padding: 12px;
+        padding-top: 4px;
+        spacing: 2px;
+        if root.show-new: HorizontalLayout {
+            padding-top: 8px;
+            padding-bottom: 8px;
+            spacing: 6px;
+            Button {
+                horizontal-stretch: 1;
+                text: @tr("New session");
+                variant: "primary";
+                has-icon: true;
+                icon: Icons.plus;
+                clicked => {
+                    root.new-session();
+                }
+            }
+            Button {
+                label: "New session in worktree";
+                variant: "secondary";
+                has-icon: true;
+                icon: Icons.git-fork;
+                clicked => {
+                    root.new-worktree-session();
+                }
+            }
+        }
+        SessionSearch { }
+        Rectangle {
+            height: 8px;
+        }
+        HorizontalLayout {
+            height: 28px;
+            padding-left: 10px;
+            SectionLabel {
+                text: @tr("Sessions");
+                horizontal-stretch: 1;
+            }
+            IconButton {
+                icon: Icons.plus;
+                label: @tr("New group");
+                size: Theme.control-sm;
+                icon-size: Theme.icon-xs;
+                clicked => {
+                    ChatUi.group-action("new", "");
+                }
+            }
+        }
+        ListView {
+            vertical-stretch: 1;
+            for s in root.sessions: SessionItem {
+                s: s;
+                origin-y: root.absolute-position.y;
+                drop-row: root.drop-row;
+                drop-top: root.drop-top;
+                drag-id <=> root.drag-id;
+                dragged <=> root.dragged;
+                drag-y <=> root.drag-y;
+                open-session(id) => {
+                    root.open-session(id);
+                }
+                archive-session(id) => {
+                    root.archive-session(id);
+                }
+                menu(id, x, y) => {
+                    root.menu(id, x, y);
+                }
+                group-menu(id, x, y) => {
+                    root.group-menu(id, x, y);
+                }
+            }
+        }
+        Rectangle {
+            height: 6px;
+        }
+        // Account card (design 01): avatar, workspace name, plan usage track, settings gear.
+        AccountCard {
+            initial: root.initial;
+            workspace: root.workspace;
+            open-settings => { root.open-settings(); }
+            open-page(id) => { root.open-page(id); }
+        }
+    }
+    // Drop targets while a session is dragged: one row per group, then "No group".
+    if root.drag-id != "": Rectangle {
+        x: 8px;
+        y: root.drop-top;
+        width: root.width - 16px;
+        height: (ChatUi.groups.length + 1) * root.drop-row;
+        border-radius: Theme.radius-lg;
+        border-width: 1px;
+        border-color: Theme.border;
+        background: Theme.popover;
+        drop-shadow-blur: 12px;
+        drop-shadow-color: #00000022;
+        for g[gi] in ChatUi.groups: Rectangle {
+            y: gi * root.drop-row;
+            height: root.drop-row;
+            border-radius: Theme.radius-md;
+            background: root.drag-y >= root.drop-top + gi * root.drop-row && root.drag-y < root.drop-top + (gi + 1) * root.drop-row ? Theme.hover : transparent;
+            HorizontalLayout {
+                padding-left: 10px;
+                spacing: 6px;
+                Rectangle {
+                    y: (parent.height - self.height) / 2;
+                    width: 8px;
+                    height: 8px;
+                    border-radius: 4px;
+                    background: ChatUi.group-color(g.color);
+                }
+                Text {
+                    text: @tr("Move to {0}", g.name);
+                    font-size: Theme.ui-sm;
+                    color: Theme.foreground;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                }
+            }
+        }
+        Rectangle {
+            y: ChatUi.groups.length * root.drop-row;
+            height: root.drop-row;
+            border-radius: Theme.radius-md;
+            background: root.drag-y >= root.drop-top + ChatUi.groups.length * root.drop-row ? Theme.hover : transparent;
+            Text {
+                x: 24px;
+                text: @tr("Remove from group");
+                font-size: Theme.ui-sm;
+                color: Theme.foreground-subtle;
+                vertical-alignment: center;
+            }
+        }
+    }
+}

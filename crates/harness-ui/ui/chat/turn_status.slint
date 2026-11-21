@@ -1,0 +1,309 @@
+import { Theme } from "../theme/tokens.slint";
+import { Icon, Icons, IconsFill, Spinner, Button, IconButton, Tag, Divider, Dialog } from "../components/controls.slint";
+import { TextField, TextArea, Switch } from "../settings/parts.slint";
+import { AgentTint, Pill, ProgressTrack, CapsHeader } from "../panels/common.slint";
+import { ChatUi, ChatImage, ToolPart, ChangeRow, PlanRow, ScheduleRow, SubagentRow } from "globals.slint";
+import { LiveUi } from "../panels/live.slint";
+import { ArtClock } from "../components/ascii.slint";
+
+// Thinking block (live agent_thought_chunk): collapsed to one line, expands to the full text.
+export component ThinkingRow inherits VerticalLayout {
+    in property <int> id;
+    in property <string> text;
+    in property <string> preview;
+    in property <bool> active;
+    in property <bool> expanded;
+    // The expanded text sits in a conditional element of a list row: the layout's width does not reach its
+    // height measurement there, so the row was measured as if the text were one line and the next rows were
+    // drawn over it. An explicit width (kept in a plain property to avoid a width binding loop) fixes the
+    // height, as in the message and tool rows.
+    property <length> content-width: 400px;
+    changed width => {
+        root.content-width = root.width;
+    }
+    init => {
+        root.content-width = root.width;
+    }
+    spacing: 4px;
+    Rectangle {
+        height: 30px;
+        border-radius: Theme.radius-md;
+        background: tha.has-hover ? Theme.hover : Theme.hover.with-alpha(0);
+        animate background { duration: Theme.dur-hover; easing: ease-out-quint; }
+        accessible-role: AccessibleRole.button;
+        accessible-label: root.active ? @tr("Thinking…") : @tr("Thought");
+        accessible-description: root.expanded ? "expanded" : "collapsed";
+        accessible-action-default => {
+            ChatUi.toggle-detail(root.id);
+        }
+        tha := TouchArea {
+            mouse-cursor: pointer;
+            clicked => {
+                ChatUi.toggle-detail(root.id);
+            }
+        }
+        HorizontalLayout {
+            padding-left: 8px;
+            padding-right: 8px;
+            spacing: 9px;
+            Icon {
+                y: (parent.height - self.height) / 2;
+                source: Icons.brain;
+                size: Theme.icon-xs;
+                tint: Theme.icon-subtlest;
+            }
+            Text {
+                text: root.active ? @tr("Thinking…") : @tr("Thought");
+                font-size: Theme.ui-base;
+                font-weight: Theme.weight-medium;
+                color: Theme.foreground-subtle;
+                // Same 2 s breathing as before, stepped by the shared busy clock (90 ms) instead of every frame.
+                opacity: root.active && !Theme.reduce-motion ? 0.6 + 0.4 * abs(sin(ArtClock.busy-tick * 16.2deg)) : 1;
+                vertical-alignment: center;
+                accessible-role: none;
+            }
+            Text {
+                text: root.expanded ? "" : root.preview;
+                font-size: Theme.ui-sm;
+                color: Theme.foreground-subtlest;
+                vertical-alignment: center;
+                overflow: elide;
+                horizontal-stretch: 1;
+                accessible-role: none;
+            }
+            Image {
+                y: (parent.height - self.height) / 2;
+                width: 14px;
+                height: 14px;
+                source: Icons.chevron-right;
+                colorize: Theme.icon-subtle;
+                transform-rotation: root.expanded ? 90deg : 0deg;
+                animate transform-rotation { duration: Theme.dur-move; easing: ease-out-quint; }
+                accessible-role: none;
+            }
+        }
+    }
+    if root.expanded: HorizontalLayout {
+        padding-left: 17px;
+        spacing: 14px;
+        Rectangle {
+            width: 2px;
+            border-radius: 1px;
+            background: Theme.border-hover;
+        }
+        Text {
+            // 17 padding + 2 rule + 14 spacing sit to its left.
+            width: max(40px, root.content-width - 33px);
+            text: root.text;
+            wrap: word-wrap;
+            font-size: Theme.ui-sm;
+            color: Theme.foreground-subtle;
+            accessible-role: AccessibleRole.text;
+            accessible-label: "thought " + root.text;
+        }
+    }
+}
+
+// Changed-files summary under a turn's last reply (R14): undo restores the files the turn changed, reapply
+// writes them back. dir: 1 = undo available, 2 = reapply available.
+export component ChangesCard inherits Rectangle {
+    in property <int> id;
+    in property <[ChangeRow]> files;
+    in property <int> dir;
+    in property <string> note;
+    property <bool> open;
+    border-radius: Theme.radius-lg;
+    border-width: 1px;
+    border-color: Theme.border;
+    background: Theme.surface;
+    clip: true;
+    accessible-role: AccessibleRole.groupbox;
+    accessible-label: @tr("{n} file changed" | "{n} files changed" % root.files.length);
+    VerticalLayout {
+        HorizontalLayout {
+            height: 36px;
+            padding-left: 12px;
+            padding-right: 6px;
+            spacing: 8px;
+            Icon {
+                y: (parent.height - self.height) / 2;
+                source: root.dir == 2 ? Icons.rotate-ccw : Icons.check;
+                size: 14px;
+                tint: root.dir == 2 ? Theme.icon-subtle : Theme.success-surface-foreground;
+            }
+            Rectangle {
+                horizontal-stretch: 1;
+                accessible-role: AccessibleRole.button;
+                accessible-label: root.dir == 2 ? @tr("{n} file changed (undone)" | "{n} files changed (undone)" % root.files.length) : @tr("{n} file changed" | "{n} files changed" % root.files.length);
+                accessible-action-default => {
+                    root.open = !root.open;
+                }
+                TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => {
+                        root.open = !root.open;
+                    }
+                }
+                Text {
+                    x: 0;
+                    width: parent.width;
+                    text: root.dir == 2 ? @tr("{n} file changed (undone)" | "{n} files changed (undone)" % root.files.length) : @tr("{n} file changed" | "{n} files changed" % root.files.length);
+                    font-size: 13px;
+                    font-weight: Theme.weight-medium;
+                    color: Theme.foreground;
+                    vertical-alignment: center;
+                    overflow: elide;
+                    accessible-role: none;
+                }
+            }
+            Image {
+                y: (parent.height - self.height) / 2;
+                width: 12px;
+                height: 12px;
+                source: Icons.chevron-down;
+                colorize: Theme.icon-subtle;
+                transform-rotation: root.open ? 180deg : 0deg;
+                animate transform-rotation { duration: Theme.dur-move; easing: ease-out-quint; }
+                accessible-role: none;
+            }
+            if root.dir == 1: Button {
+                y: (parent.height - self.height) / 2;
+                text: @tr("Undo changes");
+                size: "sm";
+                variant: "ghost";
+                has-icon: true;
+                icon: Icons.rotate-ccw;
+                clicked => {
+                    ChatUi.turn-action("undo", root.id);
+                }
+            }
+            if root.dir == 2: Button {
+                y: (parent.height - self.height) / 2;
+                text: @tr("Reapply changes");
+                size: "sm";
+                variant: "ghost";
+                has-icon: true;
+                icon: Icons.rotate-cw;
+                clicked => {
+                    ChatUi.turn-action("reapply", root.id);
+                }
+            }
+        }
+        if root.open: Rectangle {
+            height: 1px;
+            background: Theme.border;
+        }
+        if root.open: Rectangle {
+          background: Theme.card;
+          VerticalLayout {
+            padding-left: 12px;
+            padding-right: 12px;
+            padding-top: 6px;
+            padding-bottom: 8px;
+            for f in root.files: HorizontalLayout {
+                height: 22px;
+                spacing: 8px;
+                accessible-role: AccessibleRole.text;
+                accessible-label: "changed " + f.path + (f.safe ? "" : " (modified since)");
+                Text {
+                    text: f.action == 1 ? "D" : "M";
+                    width: 12px;
+                    font-family: Theme.mono-font;
+                    font-size: Theme.code-size;
+                    font-weight: Theme.weight-semibold;
+                    color: f.action == 1 ? Theme.destructive-surface-foreground : Theme.success-surface-foreground;
+                    vertical-alignment: center;
+                    accessible-role: none;
+                }
+                Text {
+                    text: f.path;
+                    font-size: 12px;
+                    color: Theme.foreground-subtle;
+                    vertical-alignment: center;
+                    overflow: elide;
+                    horizontal-stretch: 1;
+                    accessible-role: none;
+                }
+                if !f.safe: Tag {
+                    text: @tr("Modified since");
+                    tone: "warning";
+                    accessible-role: none;
+                }
+            }
+            if root.note != "": Text {
+                text: root.note;
+                wrap: word-wrap;
+                font-size: 12px;
+                color: Theme.muted;
+            }
+          }
+        }
+    }
+}
+
+// Status panel above the composer: the agent's plan / todo list (collapsible) and the context meter.
+export component StatusPanel inherits Rectangle {
+    property <int> done: 0;
+    border-radius: Theme.radius-lg;
+    border-width: 1px;
+    border-color: Theme.border;
+    background: Theme.surface;
+    accessible-role: AccessibleRole.groupbox;
+    accessible-label: @tr("Plan");
+    VerticalLayout {
+        HorizontalLayout {
+            height: 32px;
+            padding-left: 10px;
+            padding-right: 4px;
+            spacing: 8px;
+            Icon {
+                source: Icons.list-todo;
+                size: Theme.icon-sm;
+                tint: Theme.icon-subtle;
+            }
+            Text {
+                text: @tr("Plan");
+                font-size: 13px;
+                font-weight: Theme.weight-medium;
+                color: Theme.foreground;
+                vertical-alignment: center;
+                horizontal-stretch: 1;
+            }
+            IconButton {
+                y: (parent.height - self.height) / 2;
+                icon: ChatUi.plan-open ? Icons.chevron-down : Icons.chevron-up;
+                label: ChatUi.plan-open ? @tr("Collapse plan") : @tr("Expand plan");
+                size: Theme.control-sm;
+                icon-size: Theme.icon-xs;
+                clicked => {
+                    ChatUi.plan-open = !ChatUi.plan-open;
+                }
+            }
+        }
+        if ChatUi.plan-open: VerticalLayout {
+            padding-left: 10px;
+            padding-right: 10px;
+            padding-bottom: 6px;
+            for e in ChatUi.plan: HorizontalLayout {
+                spacing: 8px;
+                padding-top: 2px;
+                padding-bottom: 2px;
+                accessible-role: AccessibleRole.text;
+                accessible-label: (e.status == 2 ? "done " : e.status == 1 ? "doing " : "todo ") + e.text;
+                Icon {
+                    source: e.status == 2 ? Icons.circle-check : e.status == 1 ? Icons.loader-circle : Icons.square;
+                    size: Theme.icon-sm;
+                    tint: e.status == 2 ? Theme.success-surface-foreground : e.status == 1 ? Theme.accent-fg : Theme.icon-subtle;
+                }
+                Text {
+                    text: e.text;
+                    wrap: word-wrap;
+                    horizontal-stretch: 1;
+                    font-size: Theme.ui-sm;
+                    color: e.status == 2 ? Theme.foreground-subtlest : Theme.foreground;
+                    accessible-role: none;
+                }
+            }
+        }
+    }
+}

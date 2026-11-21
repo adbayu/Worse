@@ -1,0 +1,367 @@
+// Settings shell (redesign 2026-11, frames S1–S16): full-window page, 220px nav with three groups and glyph icons,
+// content with 32px padding and an 880px column.
+import { ScrollView } from "std-widgets.slint";
+import { Theme } from "../theme/tokens.slint";
+import { Icon, Icons, Button, IconButton, Divider, Dialog } from "../components/controls.slint";
+import { SettingsUi, DiffUi, ConfigUi, DocUi, ShortcutsUi, ProjectsUi, ArchiveUi } from "globals.slint";
+import { ConfirmDialog, StatusLine } from "parts.slint";
+import { GeneralPage, AppearancePage } from "general.slint";
+import { ShortcutsPage } from "shortcuts.slint";
+import { AgentsPage, FallbackRow } from "agents.slint";
+import { ConfigPage, DocPage } from "config.slint";
+import { Labels } from "labels.slint";
+import { ProjectsPage, ArchivePage } from "data.slint";
+import { OrchestraPage } from "orchestra.slint";
+import { InboxPage, SourceDialog, InboxUi } from "inbox.slint";
+import { ImportPage } from "import.slint";
+import { RemotePage } from "remote.slint";
+import { SecurityPage } from "security.slint";
+import { PerformancePage, PerformanceUi } from "performance.slint";
+import { DiffDialog } from "./diff_dialog.slint";
+export { DiffDialog }
+import { NavIcons, NavButton, NavCaption, Nav } from "./shell_nav.slint";
+export { NavIcons, NavButton, NavCaption, Nav }
+export { PerformanceUi }
+
+export { FallbackRow }
+
+// Settings page (design frames S1–S16, 1440x900): full-window, 220px nav (fill #111215, pad [20,12,20,12]) + content
+// (pad 32, 880px page column, left-aligned). Narrow windows (< 720px) show the nav as its own page; content widths
+// under ~860px collapse the nav to a 60px glyph rail.
+export component SettingsShell inherits Rectangle {
+    in property <[FallbackRow]> fallback;
+    in property <bool> narrow;
+    // Nav footer (design "nav foot": "v0.9.4" left + "New build ready" accent right). The version row shows when
+    // `version` is set; the update label only when `update-ready`.
+    in property <string> version;
+    in property <bool> update-ready: false;
+    callback close();
+    callback move-fallback(int, int);
+    callback restart-for-update();
+    // Projects "+ Add folder": the window's Open folder flow.
+    callback add-folder();
+    property <bool> confirm-reset: false;
+    property <bool> confirm-reset-settings: false;
+    property <int> confirm-remove: 0;
+    // Archived session awaiting delete confirmation ("" = none).
+    property <string> confirm-delete: "";
+    // Content padding (design: 32 on every side, 880 column). Written from a changed callback to avoid a
+    // width -> padding -> layout binding loop.
+    property <length> side-pad: 32px;
+    property <length> right-pad: 32px;
+    property <bool> stacked: false;
+    // Agents (frames 02/03) is full-bleed: the page draws its own 28px padding.
+    property <bool> bleed: SettingsUi.page == "agents";
+    property <bool> rail: !root.narrow && root.width < 860px;
+    background: transparent;
+    accessible-role: AccessibleRole.text;
+    accessible-label: @tr("Settings");
+    // Swallow clicks so nothing underneath reacts.
+    TouchArea { }
+    HorizontalLayout {
+        if !root.narrow || SettingsUi.narrow-nav: nav-panel := Rectangle {
+            width: root.narrow ? root.width : root.rail ? 60px : 220px;
+            background: Theme.panel;
+            VerticalLayout {
+                padding-top: 20px;
+                padding-bottom: 20px;
+                padding-left: root.rail ? 8px : 12px;
+                padding-right: root.rail ? 8px : 12px;
+                spacing: 2px;
+                // "nav head": "Settings" 15 + kbd hint 11 #6B717C, gap 8, 30 tall.
+                if !root.rail: HorizontalLayout {
+                    height: 30px;
+                    spacing: 8px;
+                    Text {
+                        text: @tr("Settings");
+                        font-size: 15px;
+                        font-weight: Theme.weight-semibold;
+                        color: Theme.foreground;
+                        vertical-alignment: center;
+                    }
+                    Text {
+                        text: "Ctrl+,";
+                        font-size: Theme.ui-font-size - 3px;
+                        color: Theme.icon-subtlest;
+                        vertical-alignment: center;
+                        horizontal-stretch: 1;
+                        accessible-role: none;
+                    }
+                    if root.narrow: IconButton {
+                        y: (parent.height - self.height) / 2;
+                        icon: Icons.x;
+                        label: @tr("Close settings");
+                        size: 28px;
+                        icon-size: 15px;
+                        clicked => {
+                            root.close();
+                        }
+                    }
+                }
+                if root.rail: Rectangle {
+                    height: 30px;
+                }
+                // "gap" 14.
+                Rectangle {
+                    height: 14px;
+                }
+                nav-scroll := ScrollView {
+                    vertical-stretch: 1;
+                    content-height: max(self.visible-height, nav.preferred-height);
+                    nav := Nav {
+                        // When the list scrolls, its rows end short of the scrollbar instead of running under it.
+                        width: parent.width - (self.preferred-height > nav-scroll.visible-height ? 10px : 0px);
+                        height: max(parent.height, self.preferred-height);
+                        rail: root.rail;
+                        list-mode: root.narrow;
+                    }
+                }
+                // "nav foot": 1px #24272D rule, gap 6, then version / "New build ready" spaceBetween. A little room
+                // above the rule, so a half-scrolled row does not sit on it.
+                if !root.rail && (root.version != "" || root.update-ready): VerticalLayout {
+                    padding-top: 8px;
+                    spacing: 6px;
+                    Rectangle {
+                        height: 1px;
+                        background: Theme.border;
+                    }
+                    HorizontalLayout {
+                        height: 16px;
+                        alignment: space-between;
+                        Text {
+                            text: root.version != "" ? "v" + root.version : "";
+                            font-size: Theme.ui-font-size - 3px;
+                            color: Theme.icon-subtlest;
+                            vertical-alignment: top;
+                        }
+                        if root.update-ready: Text {
+                            text: @tr("New build ready");
+                            font-size: Theme.ui-font-size - 3px;
+                            color: Theme.accent-fg;
+                            vertical-alignment: top;
+                        }
+                    }
+                }
+            }
+        }
+        if !root.narrow || !SettingsUi.narrow-nav: frame := Rectangle {
+            horizontal-stretch: 1;
+            background: Theme.glass-panel;
+            init => {
+                root.side-pad = self.width >= 760px ? 32px : self.width >= 520px ? 24px : 16px;
+                root.right-pad = self.width >= 760px ? max(32px, self.width - 32px - 880px) : root.side-pad;
+                root.stacked = self.width < 600px;
+            }
+            changed width => {
+                root.side-pad = self.width >= 760px ? 32px : self.width >= 520px ? 24px : 16px;
+                root.right-pad = self.width >= 760px ? max(32px, self.width - 32px - 880px) : root.side-pad;
+                root.stacked = self.width < 600px;
+            }
+            // Narrow window: a back row replaces the nav.
+            if root.narrow: HorizontalLayout {
+                x: 0px;
+                y: 0px;
+                width: parent.width;
+                height: 44px;
+                padding-left: 8px;
+                padding-right: 8px;
+                IconButton {
+                    y: (parent.height - self.height) / 2;
+                    icon: Icons.chevron-left;
+                    label: @tr("All settings");
+                    clicked => {
+                        SettingsUi.narrow-nav = true;
+                    }
+                }
+                if SettingsUi.status != "": StatusLine {
+                    text: SettingsUi.status;
+                    error: SettingsUi.status-error;
+                }
+                Rectangle { horizontal-stretch: 1; }
+                IconButton {
+                    y: (parent.height - self.height) / 2;
+                    icon: Icons.x;
+                    label: @tr("Close settings");
+                    clicked => {
+                        root.close();
+                    }
+                }
+            }
+            // Wide: a 44px strip on top holds the close button, so the scrollbar starts below it; the scroll area is
+            // inset from the right/bottom edge so its scrollbar never sits on the modal border or rounded corner.
+            content-scroll := ScrollView {
+                x: 0px;
+                y: 44px;
+                width: parent.width - (root.narrow ? 0px : 6px);
+                height: parent.height - 44px - (root.narrow ? 0px : 6px);
+                content-width: self.visible-width;
+                scrolled => {
+                    if ConfigUi.hidden > 0 && -self.viewport-y + self.visible-height >= self.viewport-height - 600px {
+                        ConfigUi.show-more();
+                    }
+                }
+                VerticalLayout {
+                    width: content-scroll.visible-width;
+                    alignment: start;
+                    padding-left: root.bleed ? 0px : root.side-pad;
+                    padding-right: root.bleed ? 0px : root.right-pad;
+                    padding-top: root.bleed ? 0px : (root.narrow ? 32px : 4px);
+                    padding-bottom: root.bleed ? 0px : 32px;
+                    if SettingsUi.page == "general": GeneralPage {
+                        stacked: root.stacked;
+                        update-ready: root.update-ready;
+                        restart-for-update => {
+                            root.restart-for-update();
+                        }
+                        request-reset-settings => {
+                            root.confirm-reset-settings = true;
+                        }
+                    }
+                    if SettingsUi.page == "appearance": AppearancePage {
+                        stacked: root.stacked;
+                    }
+                    if SettingsUi.page == "agents": AgentsPage {
+                        stacked: root.stacked;
+                        fallback: root.fallback;
+                        move-fallback(i, d) => {
+                            root.move-fallback(i, d);
+                        }
+                    }
+                    if SettingsUi.page == "orchestra": OrchestraPage {
+                        stacked: root.stacked;
+                    }
+                    if SettingsUi.page == "inbox": InboxPage {
+                        stacked: root.stacked;
+                    }
+                    if SettingsUi.page == "shortcuts": ShortcutsPage {
+                        stacked: root.stacked;
+                        request-reset => {
+                            root.confirm-reset = true;
+                        }
+                    }
+                    if SettingsUi.page == "instructions" || SettingsUi.page == "memory": DocPage {
+                        stacked: root.stacked;
+                        memory-enabled: SettingsUi.get-bool("memory.workspaceMemoryEnabled", SettingsUi.rev);
+                        set-memory-enabled(on) => {
+                            SettingsUi.set-bool("memory.workspaceMemoryEnabled", on);
+                        }
+                    }
+                    if SettingsUi.page == "mcp" || SettingsUi.page == "skill" || SettingsUi.page == "command" || SettingsUi.page == "hook" || SettingsUi.page == "subagent": ConfigPage {
+                        stacked: root.stacked;
+                    }
+                    if SettingsUi.page == "projects": ProjectsPage {
+                        stacked: root.stacked;
+                        add-folder => {
+                            root.add-folder();
+                        }
+                        request-remove(delete-data) => {
+                            root.confirm-remove = delete-data ? 2 : 1;
+                        }
+                    }
+                    if SettingsUi.page == "archive": ArchivePage {
+                        stacked: root.stacked;
+                        request-delete(id) => {
+                            root.confirm-delete = id;
+                        }
+                    }
+                    if SettingsUi.page == "import": ImportPage {
+                        stacked: root.stacked;
+                    }
+                    if SettingsUi.page == "security": SecurityPage {
+                        stacked: root.stacked;
+                    }
+                    if SettingsUi.page == "performance": PerformancePage {
+                        stacked: root.stacked;
+                    }
+                    if SettingsUi.page == "remote": RemotePage {
+                        stacked: root.stacked;
+                    }
+                }
+            }
+            // The design has no top bar: the close affordance floats in the content's top-right corner, right of the
+            // 880px column (Esc also closes).
+            if !root.narrow: IconButton {
+                x: parent.width - self.width - 12px;
+                y: 8px;
+                size: 28px;
+                icon-size: 15px;
+                icon: Icons.x;
+                label: @tr("Close settings");
+                clicked => {
+                    root.close();
+                }
+            }
+            if !root.narrow && SettingsUi.status != "": Rectangle {
+                x: 0px;
+                y: parent.height - 34px;
+                width: parent.width;
+                height: 34px;
+                background: Theme.surface;
+                border-width: 1px;
+                border-color: Theme.border;
+                HorizontalLayout {
+                    padding-left: root.side-pad;
+                    padding-right: root.side-pad;
+                    StatusLine {
+                        text: SettingsUi.status;
+                        error: SettingsUi.status-error;
+                    }
+                }
+            }
+        }
+    }
+    if InboxUi.form-open: SourceDialog { }
+    if DiffUi.open: DiffDialog {
+        close => {
+            DiffUi.cancel();
+        }
+    }
+    if root.confirm-reset: ConfirmDialog {
+        title: @tr("Reset all shortcuts to defaults?");
+        message: @tr("This clears all custom keybinding overrides and restores every command to its default binding.");
+        confirm-text: @tr("Reset all to defaults");
+        close => {
+            root.confirm-reset = false;
+        }
+        confirm => {
+            ShortcutsUi.reset-all();
+            root.confirm-reset = false;
+        }
+    }
+    if root.confirm-reset-settings: ConfirmDialog {
+        title: @tr("Reset all settings to defaults?");
+        message: @tr("General, appearance, notification, update and orchestra preferences return to their defaults. Projects, sessions and API keys are kept.");
+        confirm-text: @tr("Reset all settings");
+        close => {
+            root.confirm-reset-settings = false;
+        }
+        confirm => {
+            SettingsUi.reset-settings();
+            root.confirm-reset-settings = false;
+        }
+    }
+    if root.confirm-remove > 0: ConfirmDialog {
+        title: root.confirm-remove == 2 ? @tr("Remove projects and delete their data?") : @tr("Remove projects?");
+        message: root.confirm-remove == 2 ? @tr("Sessions and Harness data of the selected projects are deleted. Files in the project folders are not touched.") : @tr("The selected projects leave the sidebar. Their sessions stay in Recent and search.");
+        confirm-text: @tr("Remove");
+        close => {
+            root.confirm-remove = 0;
+        }
+        confirm => {
+            ProjectsUi.remove-selected(root.confirm-remove == 2);
+            root.confirm-remove = 0;
+        }
+    }
+    if root.confirm-delete != "": ConfirmDialog {
+        title: @tr("Delete archived session?");
+        message: @tr("The session and its history are deleted permanently. Files in the project folder are not touched.");
+        confirm-text: @tr("Delete");
+        close => {
+            root.confirm-delete = "";
+        }
+        confirm => {
+            ArchiveUi.delete(root.confirm-delete);
+            root.confirm-delete = "";
+        }
+    }
+}

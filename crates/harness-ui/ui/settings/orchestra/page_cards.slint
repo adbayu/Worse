@@ -1,0 +1,253 @@
+import { Theme } from "../../theme/tokens.slint";
+import { Icon, Icons, Button, IconButton, Divider, Card, SectionLabel, MenuShell, MenuItem } from "../../components/controls.slint";
+import { TextArea, Switch, SelectOption, Select, TextField } from "../parts.slint";
+import { SettingsUi, DecisionUi } from "../globals.slint";
+import { OrchestraUi } from "./ui.slint";
+import { ODiv, OCard, ORow, OStepper, OButton, OPill, ODot, OSegmented, OAgentSelect, AddConnectionButton, InstructionsBox } from "./parts.slint";
+import { Canvas, AddAgentButton, CanvasPrefs } from "./canvas.slint";
+
+export component DecisionCard inherits OCard {
+    title: "Decision model";
+    note: "Routes work to agents";
+    ORow {
+        label: "Decision model";
+        description: "A small, cheap model that decides for Harness: when a task is delegated without naming an agent, it picks the agent of the team (and one of that agent's models) that suits the task. One of your API providers, for example OpenRouter or Command Code API with a small model.";
+        VerticalLayout {
+            alignment: center;
+            Select {
+                width: 240px;
+                label: "Decision model";
+                options: DecisionUi.providers;
+                current: DecisionUi.provider;
+                current-label: DecisionUi.provider-label;
+                reset-label: "Off";
+                placeholder: "Off";
+                empty-text: "Add an API provider first (Agents › API Providers)";
+                select(id) => {
+                    DecisionUi.set-provider(id);
+                }
+            }
+        }
+    }
+    ODiv { }
+    ORow {
+        label: "Model";
+        description: "The model to ask. Empty uses the provider's own model. Pick a fast one: every decision is one short request.";
+        VerticalLayout {
+            alignment: center;
+            TextField {
+                width: 240px;
+                height: 32px;
+                text <=> DecisionUi.model;
+                placeholder: "the provider's model";
+                label: "Decision model id";
+                enabled: DecisionUi.provider != "";
+                edited(text) => {
+                    DecisionUi.set-model(text);
+                }
+            }
+        }
+    }
+    ODiv { }
+    ORow {
+        label: "Pick the subagent";
+        description: "For a delegate call without an agent. Off, or when the model does not answer in time, the first available subagent is used as before.";
+        VerticalLayout {
+            alignment: center;
+            Switch {
+                label: "Pick the subagent";
+                checked: DecisionUi.delegation;
+                enabled: DecisionUi.provider != "";
+                toggled(on) => {
+                    DecisionUi.set-delegation(on);
+                }
+            }
+        }
+    }
+    if DecisionUi.note != "": Text {
+        text: DecisionUi.note;
+        font-size: 11px;
+        color: Theme.muted;
+        wrap: word-wrap;
+    }
+}
+
+export component ConnectionsCard inherits OCard {
+    title: @tr("Connections");
+    note: OrchestraUi.connections.length == 1 ? @tr("1 route") : @tr("{0} routes", OrchestraUi.connections.length);
+    for c[i] in OrchestraUi.connections: VerticalLayout {
+        if i > 0: ODiv { }
+        HorizontalLayout {
+            padding-left: 16px;
+            padding-right: 16px;
+            padding-top: 11px;
+            padding-bottom: 11px;
+            spacing: 10px;
+            VerticalLayout {
+                alignment: center;
+                ODot { tint: OrchestraUi.agent-color(c.from-agent); }
+            }
+            Text {
+                text: c.from-name;
+                font-size: 13px;
+                color: Theme.foreground;
+                vertical-alignment: center;
+            }
+            Text {
+                text: "→"; font-family: "Segoe UI Symbol";
+                font-size: 13px;
+                color: Theme.icon-subtlest;
+                vertical-alignment: center;
+            }
+            VerticalLayout {
+                alignment: center;
+                ODot { tint: OrchestraUi.agent-color(c.to-agent); }
+            }
+            Text {
+                text: c.to-name;
+                font-size: 13px;
+                color: Theme.foreground;
+                vertical-alignment: center;
+            }
+            VerticalLayout {
+                alignment: center;
+                OPill { text: OrchestraUi.route-label(c.role); }
+            }
+            Rectangle {
+                horizontal-stretch: 1;
+            }
+            Rectangle {
+                width: 16px;
+                accessible-role: button;
+                accessible-label: @tr("Remove connection {0} to {1}", c.from-name, c.to-name);
+                accessible-action-default => { OrchestraUi.remove-edge(c.edge); }
+                Text {
+                    text: "✕"; font-family: "Segoe UI Symbol";
+                    font-size: 12px;
+                    color: xta.has-hover ? Theme.foreground : Theme.icon-subtlest;
+                    accessible-role: none;
+                }
+                xta := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { OrchestraUi.remove-edge(c.edge); }
+                }
+            }
+        }
+    }
+    if OrchestraUi.connections.length == 0: HorizontalLayout {
+        padding-left: 16px;
+        padding-right: 16px;
+        padding-top: 11px;
+        padding-bottom: 11px;
+        Text {
+            text: @tr("No connections yet. Add agents in the canvas editor below, then connect them.");
+            font-size: 12px;
+            color: Theme.muted;
+            wrap: word-wrap;
+        }
+    }
+    ODiv { }
+    HorizontalLayout {
+        padding-left: 16px;
+        padding-right: 16px;
+        padding-top: 10px;
+        padding-bottom: 12px;
+        alignment: start;
+        AddConnectionButton { }
+    }
+}
+
+export component CanvasCard inherits OCard {
+    out property <float> zoom: canvas.zoom;
+    public function zoom-to(next: float) {
+        canvas.zoom-to(next);
+    }
+    public function fit() {
+        canvas.fit();
+    }
+    title: @tr("Canvas editor");
+    note: @tr("{0} agents", OrchestraUi.nodes.length);
+    VerticalLayout {
+        padding-left: 16px;
+        padding-right: 16px;
+        padding-top: 14px;
+        padding-bottom: 16px;
+        spacing: 12px;
+        HorizontalLayout {
+            spacing: 8px;
+            alignment: start;
+            AddAgentButton {
+                pick(id) => {
+                    OrchestraUi.add-node(id, canvas.center-x(), canvas.center-y());
+                }
+            }
+            Button {
+                text: @tr("Clear");
+                size: "lg";
+                enabled: OrchestraUi.nodes.length > 0;
+                clicked => {
+                    OrchestraUi.clear();
+                }
+            }
+        }
+        if OrchestraUi.error != "": Text {
+            text: OrchestraUi.error;
+            font-size: 12px;
+            color: Theme.destructive-surface-foreground;
+            wrap: word-wrap;
+        }
+        canvas := Canvas {
+            height: 460px;
+            zoom: SettingsUi.get-int("orchestra.canvasZoom", 0) / 100;
+            snap: SettingsUi.get-bool("orchestra.snapToGrid", SettingsUi.rev);
+        }
+        if OrchestraUi.selected != "": VerticalLayout {
+            spacing: 10px;
+            Text {
+                text: OrchestraUi.selected-name + " · " + OrchestraUi.role-label(OrchestraUi.selected-role);
+                font-size: 13px;
+                font-weight: Theme.weight-semibold;
+                color: Theme.foreground;
+            }
+            Text {
+                text: @tr("Instructions are added to every new task this agent gets.");
+                font-size: 12px;
+                color: Theme.muted;
+            }
+            TextArea {
+                text <=> OrchestraUi.instructions;
+                label: @tr("Instructions");
+                mono: false;
+                min-height: 110px;
+                edited(text) => {
+                    OrchestraUi.edit-instructions(text);
+                }
+            }
+            for l in OrchestraUi.links: HorizontalLayout {
+                spacing: 8px;
+                height: 30px;
+                Icon {
+                    source: Icons.network;
+                    size: Theme.icon-sm;
+                    tint: Theme.icon-subtle;
+                }
+                Text {
+                    text: l.name;
+                    font-size: 12px;
+                    color: Theme.foreground-subtle;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                }
+                IconButton {
+                    icon: Icons.x;
+                    label: @tr("Remove connection to {0}", l.name);
+                    size: Theme.control-sm;
+                    icon-size: Theme.icon-xs;
+                    clicked => {
+                        OrchestraUi.remove-edge(l.edge);
+                    }
+                }
+            }
+        }
+    }
+}

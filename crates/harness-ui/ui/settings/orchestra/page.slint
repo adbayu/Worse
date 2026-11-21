@@ -1,0 +1,188 @@
+import { Theme } from "../../theme/tokens.slint";
+import { Icon, Icons, Button, IconButton, Divider, Card, SectionLabel, MenuShell, MenuItem } from "../../components/controls.slint";
+import { TextArea, Switch, SelectOption, Select, TextField } from "../parts.slint";
+import { SettingsUi, DecisionUi } from "../globals.slint";
+import { OrchestraUi } from "./ui.slint";
+import { ODiv, OCard, ORow, OStepper, OButton, OPill, ODot, OSegmented, OAgentSelect, AddConnectionButton, InstructionsBox } from "./parts.slint";
+import { Canvas, AddAgentButton, CanvasPrefs } from "./canvas.slint";
+import { DecisionCard, ConnectionsCard, CanvasCard } from "./page_cards.slint";
+
+export component OrchestraPage inherits VerticalLayout {
+    in property <bool> stacked;
+    property <string> mode: SettingsUi.get-string("orchestra.defaultMode", SettingsUi.rev);
+    property <string> instr: SettingsUi.get-string("orchestra.instructions", SettingsUi.rev);
+    property <int> max-conc: SettingsUi.get-int("orchestra.maxConcurrent", SettingsUi.rev);
+    property <int> max-nested: SettingsUi.get-int("orchestra.maxNestedPerSubagent", SettingsUi.rev);
+    max-width: 880px;
+    alignment: start;
+    spacing: 20px;
+    // Title block: 22 #EDEEF0, gap 6, 13 #8A909A.
+    VerticalLayout {
+        spacing: 6px;
+        Text {
+            text: @tr("Orchestra");
+            font-family: Theme.display-font;
+            font-size: 22px;
+            font-weight: 700;
+            color: Theme.foreground;
+        }
+        Text {
+            text: @tr("How Harness delegates work to subagents.");
+            font-size: 13px;
+            color: Theme.muted;
+            wrap: word-wrap;
+        }
+    }
+    init => {
+        DecisionUi.refresh();
+    }
+    DecisionCard { }
+    OCard {
+        title: @tr("Concurrency");
+        note: @tr("Applies to new delegations");
+        ORow {
+            label: @tr("Max concurrent subagents");
+            description: @tr("Subagents the main chat runs at once. Subagents started by subagents are not counted here.");
+            VerticalLayout {
+                alignment: center;
+                OStepper {
+                    label: @tr("Max concurrent subagents");
+                    text: root.max-conc;
+                    can-dec: root.max-conc > 1;
+                    can-inc: true;
+                    dec => { SettingsUi.set-int("orchestra.maxConcurrent", max(1, root.max-conc - 1)); }
+                    inc => { SettingsUi.set-int("orchestra.maxConcurrent", root.max-conc + 1); }
+                }
+            }
+        }
+        ODiv { }
+        ORow {
+            label: @tr("Subagents can start subagents");
+            description: @tr("Lets a subagent split its task across more subagents. Applies to new subagents.");
+            VerticalLayout {
+                alignment: center;
+                Switch {
+                    label: @tr("Subagents can start subagents");
+                    checked: SettingsUi.get-bool("orchestra.nestedSubagents", SettingsUi.rev);
+                    toggled(on) => { SettingsUi.set-bool("orchestra.nestedSubagents", on); }
+                }
+            }
+        }
+        if SettingsUi.get-bool("orchestra.nestedSubagents", SettingsUi.rev): ODiv { }
+        if SettingsUi.get-bool("orchestra.nestedSubagents", SettingsUi.rev): ORow {
+            label: @tr("Max subagents per subagent");
+            description: @tr("Each subagent's own quota for the subagents it starts, separate from the main chat's limit.");
+            VerticalLayout {
+                alignment: center;
+                OStepper {
+                    label: @tr("Max subagents per subagent");
+                    text: root.max-nested;
+                    can-dec: root.max-nested > 1;
+                    can-inc: true;
+                    dec => { SettingsUi.set-int("orchestra.maxNestedPerSubagent", max(1, root.max-nested - 1)); }
+                    inc => { SettingsUi.set-int("orchestra.maxNestedPerSubagent", root.max-nested + 1); }
+                }
+            }
+        }
+        ODiv { }
+        ORow {
+            label: @tr("Default subagent");
+            description: @tr("Used when a task does not name an agent.");
+            VerticalLayout {
+                alignment: center;
+                OAgentSelect {
+                    current: SettingsUi.get-string("orchestra.defaultAgent", SettingsUi.rev);
+                    select(id) => { SettingsUi.set-string("orchestra.defaultAgent", id); }
+                }
+            }
+        }
+        ODiv { }
+        ORow {
+            label: @tr("Default mode");
+            description: @tr("Permission mode subagents start in.");
+            VerticalLayout {
+                alignment: center;
+                OSegmented {
+                    label: @tr("Default mode");
+                    options: [
+                        { id: "ask", label: @tr("Ask") },
+                        { id: "acceptEdits", label: @tr("Accept edits") },
+                        { id: "machine", label: @tr("Machine") },
+                    ];
+                    current: root.mode;
+                    select(id) => { SettingsUi.set-string("orchestra.defaultMode", id); }
+                }
+            }
+        }
+        ODiv { }
+        ORow {
+            label: @tr("Auto-claim paths");
+            description: @tr("Subagents claim files before editing so they never collide.");
+            VerticalLayout {
+                alignment: center;
+                Switch {
+                    label: @tr("Auto-claim paths");
+                    checked: SettingsUi.get-bool("orchestra.autoClaim", SettingsUi.rev);
+                    toggled(on) => { SettingsUi.set-bool("orchestra.autoClaim", on); }
+                }
+            }
+        }
+    }
+    // Pair: two 432 cards, gap 16 (stacked when narrow).
+    if !root.stacked: HorizontalLayout {
+        spacing: 16px;
+        instr-card := OCard {
+            horizontal-stretch: 1;
+            title: @tr("Subagent instructions");
+            note: @tr("Appended to every delegated task");
+            VerticalLayout {
+                padding-left: 16px;
+                padding-right: 16px;
+                padding-top: 14px;
+                padding-bottom: 14px;
+                spacing: 8px;
+                InstructionsBox {
+                    text: root.instr;
+                }
+                Text {
+                    text: @tr("{0} lines · Markdown", OrchestraUi.line-count(root.instr));
+                    font-size: 11px;
+                    color: Theme.icon-subtlest;
+                }
+            }
+        }
+        CanvasPrefs {
+            horizontal-stretch: 1;
+            zoom: canvas-card.zoom;
+            zoom-to(z) => { canvas-card.zoom-to(z); SettingsUi.set-int("orchestra.canvasZoom", round(canvas-card.zoom * 100)); }
+            fit => { canvas-card.fit(); SettingsUi.set-int("orchestra.canvasZoom", round(canvas-card.zoom * 100)); }
+        }
+    }
+    if root.stacked: OCard {
+        title: @tr("Subagent instructions");
+        note: @tr("Appended to every delegated task");
+        VerticalLayout {
+            padding-left: 16px;
+            padding-right: 16px;
+            padding-top: 14px;
+            padding-bottom: 14px;
+            spacing: 8px;
+            InstructionsBox {
+                text: root.instr;
+            }
+            Text {
+                text: @tr("{0} lines · Markdown", OrchestraUi.line-count(root.instr));
+                font-size: 11px;
+                color: Theme.icon-subtlest;
+            }
+        }
+    }
+    if root.stacked: CanvasPrefs {
+        zoom: canvas-card.zoom;
+        zoom-to(z) => { canvas-card.zoom-to(z); SettingsUi.set-int("orchestra.canvasZoom", round(canvas-card.zoom * 100)); }
+        fit => { canvas-card.fit(); SettingsUi.set-int("orchestra.canvasZoom", round(canvas-card.zoom * 100)); }
+    }
+    ConnectionsCard { }
+    // Existing team editor (kept below the designed cards).
+    canvas-card := CanvasCard { }
+}

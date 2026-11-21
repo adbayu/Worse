@@ -1,0 +1,241 @@
+import { ListView } from "std-widgets.slint";
+import { Theme } from "../theme/tokens.slint";
+import { Icons, Icon } from "../components/controls.slint";
+import { GraphUi } from "globals.slint";
+import { Knob, Chip, HitRow } from "./graph_parts.slint";
+
+export component GraphZoomBar inherits Rectangle {
+    in property <color> ink;
+    in property <color> glass;
+    in property <color> rim;
+    in property <bool> wide;
+    width: bar.preferred-width + 12px;
+    height: 36px;
+    border-radius: 18px;
+    background: root.glass;
+    border-width: 1px;
+    border-color: root.rim;
+    bar := HorizontalLayout {
+        padding-left: 6px;
+        padding-right: 6px;
+        spacing: 2px;
+        alignment: center;
+        VerticalLayout {
+            alignment: center;
+            Knob {
+                icon: Icons.minus;
+                label: "Zoom out";
+                ink: root.ink;
+                clicked => {
+                    GraphUi.view-zoom(0.8);
+                }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Knob {
+                icon: Icons.plus;
+                label: "Zoom in";
+                ink: root.ink;
+                clicked => {
+                    GraphUi.view-zoom(1.25);
+                }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Knob {
+                icon: Icons.rotate-ccw;
+                label: "Home view";
+                ink: root.ink;
+                clicked => {
+                    GraphUi.view-reset();
+                }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Knob {
+                icon: GraphUi.view-paused ? Icons.play : Icons.pause;
+                label: GraphUi.view-paused ? "Play" : "Pause";
+                ink: root.ink;
+                on: GraphUi.view-paused;
+                clicked => {
+                    GraphUi.view-set-paused(!GraphUi.view-paused);
+                }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Knob {
+                icon: root.wide ? Icons.minimize-2 : Icons.maximize-2;
+                label: root.wide ? "Back to the page" : "Fill the window";
+                ink: root.ink;
+                clicked => {
+                    GraphUi.view-wide = !root.wide;
+                }
+            }
+        }
+    }
+}
+
+export component GraphPanel inherits Rectangle {
+    in property <color> ink;
+    in property <color> glass;
+    in property <color> rim;
+    pure callback tone(int) -> color;
+    callback focus-canvas();
+    border-radius: 12px;
+    background: root.glass;
+    border-width: 1px;
+    border-color: root.rim;
+    TouchArea { }
+    VerticalLayout {
+        padding: 12px;
+        spacing: 9px;
+        HorizontalLayout {
+            spacing: 6px;
+            Text {
+                text: GraphUi.view-selected >= 0 ? "Node" : "Nodes";
+                font-size: 12px;
+                font-weight: 600;
+                color: root.ink;
+                vertical-alignment: center;
+                horizontal-stretch: 1;
+            }
+            Knob {
+                icon: Icons.x;
+                label: "Close";
+                ink: root.ink;
+                width: 24px;
+                height: 24px;
+                clicked => {
+                    GraphUi.list-open = false;
+                    GraphUi.view-pick(-1);
+                }
+            }
+        }
+        Rectangle {
+            height: 30px;
+            border-radius: 8px;
+            background: root.ink.with-alpha(0.06);
+            border-width: 1px;
+            border-color: query.has-focus ? root.ink.with-alpha(0.35) : root.rim;
+            Icon {
+                x: 8px;
+                width: 14px;
+                height: parent.height;
+                source: Icons.search;
+                size: 13px;
+                tint: root.ink.with-alpha(0.5);
+            }
+            if query.text == "": Text {
+                x: 28px;
+                width: parent.width - 36px;
+                height: parent.height;
+                text: "Search nodes";
+                font-size: 11.5px;
+                color: root.ink.with-alpha(0.38);
+                vertical-alignment: center;
+            }
+            query := TextInput {
+                x: 28px;
+                width: parent.width - 36px;
+                height: parent.height;
+                text <=> GraphUi.list-query;
+                font-size: 11.5px;
+                color: root.ink;
+                selection-background-color: root.ink.with-alpha(0.25);
+                selection-foreground-color: root.ink;
+                vertical-alignment: center;
+                single-line: true;
+                init => {
+                    if GraphUi.view-selected < 0 {
+                        self.focus();
+                    }
+                }
+                edited => {
+                    GraphUi.view-pick(-1);
+                    GraphUi.view-search(self.text);
+                }
+                key-pressed(event) => {
+                    if event.text == Key.Escape {
+                        root.focus-canvas();
+                        return accept;
+                    }
+                    return reject;
+                }
+            }
+        }
+        if GraphUi.view-selected >= 0: VerticalLayout {
+            alignment: start;
+            vertical-stretch: 0;
+            spacing: 6px;
+            Rectangle {
+                height: 18px;
+                HorizontalLayout {
+                    alignment: start;
+                    Rectangle {
+                        width: group.preferred-width + 14px;
+                        border-radius: 9px;
+                        background: root.ink.with-alpha(0.1);
+                        group := Text {
+                            text: GraphUi.sel-group;
+                            font-size: 9.5px;
+                            font-weight: 600;
+                            color: root.ink.with-alpha(0.7);
+                            vertical-alignment: center;
+                            horizontal-alignment: center;
+                        }
+                    }
+                }
+            }
+            Text {
+                text: GraphUi.sel-title;
+                font-size: 15px;
+                font-weight: 600;
+                color: root.ink;
+                wrap: word-wrap;
+            }
+            Text {
+                text: GraphUi.sel-note;
+                font-size: 10.5px;
+                color: root.ink.with-alpha(0.55);
+                wrap: word-wrap;
+            }
+            if GraphUi.sel-has-source: HorizontalLayout {
+                alignment: start;
+                Chip {
+                    text: "Open file ↗";
+                    ink: root.ink;
+                    glass: root.ink.with-alpha(0.06);
+                    rim: root.rim;
+                    clicked => {
+                        GraphUi.view-open-source();
+                    }
+                }
+            }
+            Rectangle {
+                height: 1px;
+                background: root.rim;
+            }
+            Text {
+                text: GraphUi.sel-links.length == 0 ? "No links among the nodes shown" : "Linked to";
+                font-size: 10px;
+                font-weight: 600;
+                color: root.ink.with-alpha(0.5);
+            }
+        }
+        ListView {
+            vertical-stretch: 1;
+            for row in GraphUi.view-selected >= 0 ? GraphUi.sel-links : GraphUi.list-hits: HitRow {
+                hit: row;
+                ink: root.ink;
+                dot: root.tone(row.tone);
+                clicked => {
+                    GraphUi.view-pick(row.index);
+                }
+            }
+        }
+    }
+}

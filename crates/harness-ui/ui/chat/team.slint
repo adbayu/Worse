@@ -1,0 +1,311 @@
+import { Theme } from "../theme/tokens.slint";
+import { Icon, Icons, IconsFill, Spinner, Button, IconButton, Tag, Divider, Dialog } from "../components/controls.slint";
+import { TextField, TextArea, Switch } from "../settings/parts.slint";
+import { AgentTint, Pill, ProgressTrack, CapsHeader } from "../panels/common.slint";
+import { ChatUi, ChatImage, ToolPart, ChangeRow, PlanRow, ScheduleRow, SubagentRow } from "globals.slint";
+import { LiveUi } from "../panels/live.slint";
+import { ArtClock } from "../components/ascii.slint";
+
+// Team strip above the composer of a session that delegated work: one lane per subagent that is still
+// working, with what it is doing right now and the steps just before. A click opens the subagent's session.
+export component TeamLane inherits Rectangle {
+    in property <SubagentRow> s;
+    property <color> tint: AgentTint.of(root.s.agent);
+    property <bool> waiting: root.s.status == 1;
+    height: root.s.trail.length > 0 ? 44px : 30px;
+    border-radius: Theme.radius-md;
+    background: la.has-hover ? Theme.hover : transparent;
+    animate background { duration: Theme.dur-hover; easing: ease-out-quint; }
+    accessible-role: AccessibleRole.button;
+    accessible-label: (root.s.agent-name != "" ? root.s.agent-name : root.s.agent) + ": " + root.s.title;
+    accessible-description: root.waiting ? "needs approval" : root.s.activity;
+    accessible-action-default => {
+        ChatUi.subagent-action("open", root.s.id);
+    }
+    la := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            ChatUi.subagent-action("open", root.s.id);
+        }
+    }
+    // Who.
+    Rectangle {
+        x: 8px;
+        y: 11px;
+        width: 8px;
+        height: 8px;
+        border-radius: 4px;
+        background: root.tint;
+    }
+    Text {
+        x: 24px;
+        y: 0;
+        height: 30px;
+        width: min(self.preferred-width, 120px);
+        text: root.s.agent-name != "" ? root.s.agent-name : root.s.agent;
+        font-size: Theme.ui-sm;
+        font-weight: Theme.weight-semibold;
+        color: Theme.foreground;
+        vertical-alignment: center;
+        overflow: elide;
+        accessible-role: none;
+    }
+    // Now: the step in progress, in the mono face, with the working glyphs in front.
+    now := Rectangle {
+        x: 152px;
+        y: 0;
+        height: 30px;
+        width: max(0px, root.width - self.x - 96px);
+        if !root.waiting: Spinner {
+            x: 0;
+            y: (parent.height - self.height) / 2;
+            size: 12px;
+            tint: root.tint;
+            clocked: true;
+        }
+        Text {
+            x: 20px;
+            width: parent.width - 20px;
+            height: parent.height;
+            text: root.waiting ? @tr("Needs approval — open to answer") : root.s.activity != "" ? root.s.activity : root.s.title != "" ? root.s.title : @tr("Thinking…");
+            font-family: root.waiting || root.s.activity == "" ? "" : Theme.art-font;
+            font-size: root.waiting || root.s.activity == "" ? Theme.ui-sm : 11px;
+            color: root.waiting ? Theme.warning-surface-foreground : Theme.foreground-subtle;
+            vertical-alignment: center;
+            overflow: elide;
+            accessible-role: none;
+        }
+    }
+    // Before: the last steps, newest first.
+    if root.s.trail.length > 0: Text {
+        x: 172px;
+        y: 25px;
+        width: max(0px, root.width - self.x - 12px);
+        text: "↳ " + root.s.trail[0] + (root.s.trail.length > 1 ? "  ·  " + root.s.trail[1] : "") + (root.s.trail.length > 2 ? "  ·  " + root.s.trail[2] : "");
+        font-family: Theme.art-font;
+        font-size: 10px;
+        color: Theme.foreground-subtlest;
+        overflow: elide;
+        accessible-role: none;
+    }
+    // Steps so far and the time it has been at it; Stop appears on hover.
+    Text {
+        x: parent.width - self.width - (la.has-hover || sta.has-hover ? 34px : 10px);
+        y: 0;
+        height: 30px;
+        text: (root.s.steps > 0 ? @tr("{n} step" | "{n} steps" % root.s.steps) + " · " : "") + ChatUi.elapsed(root.s.started-s, root.s.finished-s);
+        font-size: Theme.ui-xs + 1px;
+        color: Theme.foreground-subtlest;
+        vertical-alignment: center;
+        horizontal-alignment: right;
+        accessible-role: none;
+    }
+    if la.has-hover || sta.has-hover: Rectangle {
+        x: parent.width - 28px;
+        y: 4px;
+        width: 22px;
+        height: 22px;
+        border-radius: Theme.radius-sm;
+        background: sta.has-hover ? Theme.destructive.with-alpha(0.18) : transparent;
+        accessible-role: button;
+        accessible-label: @tr("Stop this subagent");
+        accessible-action-default => {
+            ChatUi.subagent-action("stop", root.s.id);
+        }
+        Rectangle {
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            width: 8px;
+            height: 8px;
+            border-radius: 2px;
+            background: sta.has-hover ? Theme.destructive : Theme.icon-subtle;
+        }
+    }
+    sta := TouchArea {
+        x: parent.width - 28px;
+        y: 4px;
+        width: 22px;
+        height: 22px;
+        mouse-cursor: pointer;
+        clicked => {
+            ChatUi.subagent-action("stop", root.s.id);
+        }
+    }
+}
+
+export component TeamStrip inherits Rectangle {
+    in-out property <bool> open: true;
+    callback orchestra();
+    property <int> shown: min(ChatUi.subagents-active.length, 4);
+    property <int> done: ChatUi.subagents.length - ChatUi.subagents-active.length;
+    border-radius: Theme.radius-lg;
+    background: Theme.surface;
+    border-width: 1px;
+    border-color: Theme.border;
+    accessible-role: AccessibleRole.groupbox;
+    accessible-label: @tr("Team");
+    // Elapsed times tick once a second while anyone is working.
+    Timer {
+        interval: 1s;
+        running: ChatUi.subagents-running > 0;
+        triggered => {
+            ChatUi.subagent-action("tick", "");
+        }
+    }
+    VerticalLayout {
+        padding: 4px;
+        Rectangle {
+            height: 26px;
+            hta := TouchArea {
+                mouse-cursor: pointer;
+                clicked => {
+                    root.open = !root.open;
+                }
+            }
+            Text {
+                x: 8px;
+                height: parent.height;
+                text: "▚";
+                font-family: Theme.art-font;
+                font-size: 11px;
+                color: Theme.accent-fg;
+                vertical-alignment: center;
+                accessible-role: none;
+            }
+            Text {
+                x: 24px;
+                height: parent.height;
+                text: @tr("Team") + "  ·  " + @tr("{0} working", ChatUi.subagents-active.length) + (ChatUi.subagents-waiting > 0 ? "  ·  " + @tr("{0} waiting for you", ChatUi.subagents-waiting) : "") + (root.done > 0 ? "  ·  " + @tr("{0} finished", root.done) : "");
+                font-size: Theme.ui-sm;
+                font-weight: Theme.weight-medium;
+                color: ChatUi.subagents-waiting > 0 ? Theme.warning-surface-foreground : Theme.foreground-subtle;
+                vertical-alignment: center;
+                accessible-role: none;
+            }
+            Rectangle {
+                x: parent.width - self.width - 28px;
+                y: (parent.height - self.height) / 2;
+                width: orch-t.preferred-width + 14px;
+                height: 20px;
+                border-radius: Theme.radius-sm;
+                background: ota.has-hover ? Theme.surface-hover : transparent;
+                accessible-role: button;
+                accessible-label: @tr("Open Orchestra");
+                accessible-action-default => {
+                    root.orchestra();
+                }
+                orch-t := Text {
+                    text: @tr("Orchestra") + " ↗";
+                    font-size: Theme.ui-xs + 1px;
+                    color: ota.has-hover ? Theme.foreground : Theme.foreground-subtlest;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+                ota := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => {
+                        root.orchestra();
+                    }
+                }
+            }
+            Image {
+                x: parent.width - 22px;
+                y: (parent.height - self.height) / 2;
+                width: 14px;
+                height: 14px;
+                source: Icons.chevron-right;
+                colorize: Theme.icon-subtle;
+                transform-rotation: root.open ? 90deg : 0deg;
+                animate transform-rotation { duration: Theme.dur-move; easing: ease-out-quint; }
+                accessible-role: none;
+            }
+        }
+        if root.open: VerticalLayout {
+            for s[i] in ChatUi.subagents-active: TeamLane {
+                visible: i < 4;
+                height: i < 4 ? (s.trail.length > 0 ? 44px : 30px) : 0px;
+                s: s;
+            }
+            if ChatUi.subagents-active.length > 4: Text {
+                height: 22px;
+                text: "   " + @tr("+{0} more in Orchestra", ChatUi.subagents-active.length - 4);
+                font-size: Theme.ui-xs + 1px;
+                color: Theme.foreground-subtlest;
+                vertical-alignment: center;
+            }
+        }
+    }
+}
+
+// Bar on top of a subagent session (§9.8): who delegated it and the way back.
+export component SubagentBar inherits Rectangle {
+    background: Theme.surface;
+    border-radius: Theme.radius-lg;
+    border-width: 1px;
+    border-color: Theme.border;
+    accessible-role: AccessibleRole.groupbox;
+    accessible-label: @tr("Subagent of {0}", ChatUi.parent-title);
+    HorizontalLayout {
+        padding: 6px;
+        padding-left: 12px;
+        spacing: 8px;
+        Rectangle {
+            y: (parent.height - self.height) / 2;
+            width: 20px;
+            height: 20px;
+            border-radius: 6px;
+            background: Theme.accent-soft;
+            Icon {
+                source: Icons.bot;
+                size: 12px;
+                tint: Theme.accent-fg;
+            }
+        }
+        Text {
+            text: @tr("Subagent of {0}", ChatUi.parent-title);
+            font-size: 13px;
+            color: Theme.foreground-subtle;
+            vertical-alignment: center;
+            overflow: elide;
+            horizontal-stretch: 1;
+            accessible-role: none;
+        }
+        Button {
+            text: @tr("Back to main session");
+            size: "sm";
+            has-icon: true;
+            icon: Icons.arrow-left;
+            clicked => {
+                ChatUi.subagent-action("back", ChatUi.parent-id);
+            }
+        }
+    }
+}
+
+// Context meter (ACP usage_update): a small ring-like bar + percentage; hover text has the token counts.
+export component ContextMeter inherits HorizontalLayout {
+    spacing: 4px;
+    accessible-role: AccessibleRole.text;
+    accessible-label: "context " + ChatUi.usage-text + (ChatUi.usage-cost != "" ? " · " + ChatUi.usage-cost : "");
+    Rectangle {
+        y: (parent.height - self.height) / 2;
+        width: 28px;
+        height: 4px;
+        border-radius: 2px;
+        background: Theme.border;
+        Rectangle {
+            x: 0;
+            width: parent.width * clamp(ChatUi.usage-ratio, 0, 1);
+            height: parent.height;
+            border-radius: 2px;
+            background: ChatUi.usage-ratio > 0.9 ? Theme.destructive : ChatUi.usage-ratio > 0.7 ? Theme.warning-surface-foreground : Theme.accent-fg;
+        }
+    }
+    Text {
+        text: round(ChatUi.usage-ratio * 100) + "%";
+        font-size: 12px;
+        color: Theme.muted;
+        vertical-alignment: center;
+        accessible-role: none;
+    }
+}

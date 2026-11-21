@@ -1,0 +1,262 @@
+import { Theme } from "../../theme/tokens.slint";
+import { Look } from "../../theme/look.slint";
+import { ThinkGlyph, GlyphAnim, AsciiArt } from "../../components/ascii.slint";
+import { Button } from "../../components/controls.slint";
+import { SettingsUi } from "../globals.slint";
+import { PageHeader, Group, SettingRow, Switch, TextField, Stepper, RangeSlider, Select, SetButton, Pill, SegmentedControl, CapsLabel, Dot } from "../parts.slint";
+import { BoolRow, TextRow, SectionCaps, ThemeOption, Swatch, ThinkTile, FieldTile } from "./parts.slint";
+import { BasicsGroup, StorageGroup } from "./page_groups.slint";
+
+export component GeneralPage inherits VerticalLayout {
+    in property <bool> stacked;
+    in property <bool> update-ready: false;
+    callback restart-for-update();
+    callback request-reset-settings();
+    property <bool> moving: false;
+    property <bool> confirm-move: false;
+    property <string> version: SettingsUi.get-string("app.version", SettingsUi.rev);
+    spacing: 18px;
+    PageHeader {
+        title: @tr("General");
+        description: @tr("Language, send key, startup, live updates and notifications.");
+    }
+    // Card · Basics
+    BasicsGroup {
+        stacked: root.stacked;
+        update-ready: root.update-ready;
+        version: root.version;
+        restart-for-update => {
+            root.restart-for-update();
+        }
+    }
+    // Card · Notifications
+    Group {
+        title: @tr("Notifications");
+        note: @tr("Desktop");
+        BoolRow {
+            first: true;
+            stacked: root.stacked;
+            key: "notifications.taskDone";
+            title: @tr("Subagent finished");
+            description: @tr("When a delegated task completes.");
+        }
+        BoolRow {
+            stacked: root.stacked;
+            key: "notifications.buildDone";
+            title: @tr("Build finished");
+            description: @tr("When cargo build or CI finishes.");
+        }
+        BoolRow {
+            stacked: root.stacked;
+            key: "notifications.prReview";
+            title: @tr("PR review requested");
+            description: @tr("When a pull request asks for you.");
+        }
+        BoolRow {
+            stacked: root.stacked;
+            key: "notifications.sound";
+            title: @tr("Play sound");
+            description: @tr("Play a short chime with notifications.");
+        }
+    }
+    // Card · Danger zone (no header: a single 66px row, pad 16).
+    Group {
+        SettingRow {
+            first: true;
+            stacked: root.stacked;
+            pad-y: 16px;
+            title: @tr("Reset all settings to defaults");
+            description: @tr("Projects, sessions and API keys are kept.");
+            SetButton {
+                text: @tr("Reset all settings");
+                variant: "destructive";
+                clicked => {
+                    root.request-reset-settings();
+                }
+            }
+        }
+    }
+
+    // ---- Beyond the design: existing settings, kept below ----
+    SectionCaps {
+        text: @tr("ADVANCED");
+    }
+    Group {
+        title: @tr("Conversation");
+        note: @tr("Chat view");
+        SettingRow {
+            first: true;
+            stacked: root.stacked;
+            title: @tr("Messages sent while running");
+            description: @tr("Queue waits for the current turn; Steer sends to the running agent.");
+            SegmentedControl {
+                label: @tr("Messages sent while running");
+                options: [{ id: "queue", label: @tr("Queue") }, { id: "steer", label: @tr("Steer") }];
+                current: SettingsUi.get-string("general.followUp", SettingsUi.rev);
+                select(id) => {
+                    SettingsUi.set-string("general.followUp", id);
+                }
+            }
+        }
+        BoolRow {
+            stacked: root.stacked;
+            key: "general.showReasoning";
+            title: @tr("Show reasoning");
+            description: @tr("Show the agent's thinking blocks in the conversation.");
+        }
+        BoolRow {
+            stacked: root.stacked;
+            key: "general.showTodos";
+            title: @tr("Show to-do lists");
+            description: @tr("Show the agent's plan as a checklist.");
+        }
+        BoolRow {
+            stacked: root.stacked;
+            key: "general.groupExploration";
+            title: @tr("Group exploration steps");
+            description: @tr("Collapse consecutive reads and searches into one row.");
+        }
+        BoolRow {
+            stacked: root.stacked;
+            key: "general.groupTerminal";
+            title: @tr("Group terminal commands");
+            description: @tr("Collapse consecutive commands into one row.");
+        }
+        BoolRow {
+            stacked: root.stacked;
+            key: "general.groupFileChanges";
+            title: @tr("Group file changes");
+            description: @tr("Collapse consecutive edits into one row.");
+        }
+    }
+    Group {
+        title: @tr("Research");
+        note: @tr("Deep research reports");
+        BoolRow {
+            first: true;
+            stacked: root.stacked;
+            key: "research.factCheck";
+            title: @tr("Fact-check reports");
+            description: @tr("Check every claim in a deep research report against its sources and flag the unsupported ones.");
+        }
+    }
+    Group {
+        title: @tr("Terminal");
+        note: @tr("Integrated terminals");
+        BoolRow {
+            first: true;
+            stacked: root.stacked;
+            key: "general.terminal.inheritSystemProfile";
+            title: @tr("Use the system shell profile");
+            description: @tr("Load your login shell profile (PATH, aliases) in integrated terminals.");
+        }
+        TextRow {
+            stacked: root.stacked;
+            key: "general.terminal.fontFamily";
+            title: @tr("Terminal font");
+            description: @tr("Font family for integrated terminals. Empty uses the default monospace font.");
+            placeholder: Theme.mono-font;
+        }
+        SettingRow {
+            stacked: root.stacked;
+            title: @tr("Terminal font size");
+            description: @tr("Text size in integrated terminals.");
+            Stepper {
+                label: @tr("Terminal font size");
+                value: SettingsUi.get-int("general.terminal.fontSize", SettingsUi.rev);
+                minimum: 9;
+                maximum: 24;
+                suffix: "px";
+                changed-value(v) => {
+                    SettingsUi.set-int("general.terminal.fontSize", v);
+                }
+            }
+        }
+        TextRow {
+            stacked: root.stacked;
+            key: "general.terminal.shell";
+            title: @tr("Integrated shell");
+            description: @tr("Program used for new terminals. Empty uses the system default.");
+            placeholder: @tr("System default");
+            mono: true;
+        }
+    }
+    Group {
+        title: @tr("Network");
+        note: @tr("New agents only");
+        TextRow {
+            first: true;
+            stacked: root.stacked;
+            key: "general.proxy.httpProxy";
+            title: @tr("HTTP proxy");
+            description: @tr("Passed to agent CLIs started by Harness.");
+            placeholder: "http://127.0.0.1:7890";
+            mono: true;
+        }
+        TextRow {
+            stacked: root.stacked;
+            key: "general.proxy.noProxy";
+            title: @tr("No proxy");
+            placeholder: "localhost,127.0.0.1";
+            mono: true;
+        }
+        TextRow {
+            stacked: root.stacked;
+            key: "general.proxy.caCertPath";
+            title: @tr("CA certificate");
+            description: @tr("Path to an extra PEM certificate trusted by agent CLIs.");
+            placeholder: @tr("Path to a .pem file");
+            mono: true;
+        }
+    }
+    Group {
+        title: @tr("System");
+        note: @tr("Window and power");
+        BoolRow {
+            first: true;
+            stacked: root.stacked;
+            key: "general.gpuRendering";
+            title: @tr("GPU rendering");
+            description: @tr("Draw with the GPU: smoother on very large screens and with animated wallpapers, at about 170 MB more memory. Off draws on the CPU and repaints only what changed. Restart Harness to apply.");
+        }
+        BoolRow {
+            stacked: root.stacked;
+            key: "notifications.closeToTray";
+            title: @tr("Keep running in the tray when closed");
+            description: @tr("Closing the window hides Harness instead of quitting.");
+        }
+        BoolRow {
+            stacked: root.stacked;
+            key: "notifications.keepAwake";
+            title: @tr("Keep the computer awake while agents run");
+            description: @tr("Prevents sleep while any session is working.");
+        }
+        BoolRow {
+            stacked: root.stacked;
+            key: "general.autoArchive";
+            title: @tr("Archive inactive sessions automatically");
+            description: @tr("Moves idle sessions to the archive.");
+        }
+        SettingRow {
+            stacked: root.stacked;
+            enabled: SettingsUi.get-bool("general.autoArchive", SettingsUi.rev);
+            title: @tr("Archive after");
+            description: @tr("Days without activity.");
+            Stepper {
+                label: @tr("Archive after");
+                value: SettingsUi.get-int("general.autoArchiveDays", SettingsUi.rev);
+                minimum: 1;
+                maximum: 365;
+                suffix: @tr(" days");
+                changed-value(v) => {
+                    SettingsUi.set-int("general.autoArchiveDays", v);
+                }
+            }
+        }
+    }
+    StorageGroup {
+        stacked: root.stacked;
+        moving <=> root.moving;
+        confirm-move <=> root.confirm-move;
+    }
+}

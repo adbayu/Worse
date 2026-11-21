@@ -1,0 +1,36 @@
+[[agent]]
+id = "claude-code"
+display_name = "Claude Code"
+# 修复：@zed-industries/claude-code-acp 已弃用并改名为 @agentclientprotocol/claude-agent-acp（bin 为 claude-agent-acp）。
+program = "claude-agent-acp"
+args = []
+install_hint = "install the ACP adapter: npm i -g @agentclientprotocol/claude-agent-acp (uses your `claude` login)"
+dialect = "claudeCode"
+
+[[agent]]
+id = "codex"
+display_name = "Codex"
+# 修复：@zed-industries/codex-acp 已弃用，改由 @agentclientprotocol/codex-acp 提供（bin 名不变）。
+program = "codex-acp"
+args = []
+install_hint = "install the ACP adapter: npm i -g @agentclientprotocol/codex-acp (uses your `codex` login)"
+dialect = "codex"
+
+[[agent]]
+id = "agy"
+display_name = "Antigravity (agy)"
+# agy 1.5.x: ACP 是子命令 `agy acp`，旧的 `--acp` 参数会让进程直接退出（-32099）。
+program = "agy"
+args = ["acp"]
+install_hint = "install the Antigravity CLI (agy) and sign in by running `agy`; Harness starts it as `agy acp`"
+dialect = "agy"
+
+[[agent]]
+id = "command-code"
+display_name = "Command Code"
+# The CLI speaks ACP itself (`command-code acp`, checked with 1.89.2). The npm package also installs `cmd`,
+# but that name is the Windows shell, so the long name is used everywhere.
+program = "command-code"
+args = ["acp"]
+install_hint = "install Command Code: npm i -g command-code, then sign in with `command-code login`, or add API keys under Settings › Agents › API providers"
+dialect = "generic"

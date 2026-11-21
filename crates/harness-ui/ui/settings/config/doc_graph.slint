@@ -1,0 +1,152 @@
+import { ScrollView } from "std-widgets.slint";
+import { Theme } from "../../theme/tokens.slint";
+import { ConfigUi, DocUi, ResRow, FormField, SettingsUi, RecallUi, RecallRow, GraphUi } from "../globals.slint";
+import { GraphCanvas } from "../graph_canvas.slint";
+import { PageHeader, Group, SettingRow, Switch, TextField, TextArea, Select, SearchField, UnsupportedNotice, StatusLine } from "../parts.slint";
+import { Labels } from "../labels.slint";
+import { SkillBrowse } from "../skills.slint";
+import { Icons, IconButton, Segmented, MenuShell, MenuItem } from "../../components/controls.slint";
+import { ConfigCopy, AgentDot } from "./types.slint";
+import { Pill, Btn, Dot, Hairline, DCard, CardHead, Th, Muted, AgentChip, ChipBar } from "./parts.slint";
+import { TargetBar } from "./card.slint";
+
+
+export component GraphBody inherits VerticalLayout {
+    spacing: 16px;
+    Group {
+        SettingRow {
+            first: true;
+            title: "Give agents the project graph";
+            description: "When the project has a Graphify graph, a new session is told about it and, with graphify-mcp installed, gets its tools (query_graph, get_neighbors, shortest_path…), whichever agent runs it.";
+            Switch {
+                label: "Give agents the project graph";
+                checked: GraphUi.give-agents;
+                toggled(on) => {
+                    GraphUi.set-give-agents(on);
+                }
+            }
+        }
+    }
+    DCard {
+        VerticalLayout {
+            CardHead {
+                title: "Graphify";
+                sub: GraphUi.installed ? GraphUi.cli-path : "not installed";
+            }
+            Hairline { }
+            VerticalLayout {
+                padding: 16px;
+                spacing: 12px;
+                if !GraphUi.installed: VerticalLayout {
+                    spacing: 8px;
+                    Text {
+                        text: "Graphify turns a project into a knowledge graph an agent can query instead of grepping. It is a separate tool (Python, Apache-2.0). Harness can install it and build the graph for you.";
+                        font-size: 12px;
+                        color: Theme.foreground-subtle;
+                        wrap: word-wrap;
+                    }
+                    Text {
+                        text: GraphUi.install-plan != "" ? "Set up runs: " + GraphUi.install-plan + ", then builds the graph of this project." : "Nothing on this computer can install it yet. Install uv (https://docs.astral.sh/uv), then press Check again. By hand: " + GraphUi.install-command;
+                        font-size: 11px;
+                        color: Theme.muted;
+                        wrap: word-wrap;
+                    }
+                }
+                if GraphUi.installed: Text {
+                    text: GraphUi.has-graph ? GraphUi.summary : "No graph for this project yet. Building reads the code with tree-sitter on this computer: no model, no API key.";
+                    font-size: 12px;
+                    color: GraphUi.has-graph ? Theme.foreground : Theme.foreground-subtle;
+                    wrap: word-wrap;
+                }
+                if GraphUi.installed && !GraphUi.mcp: Text {
+                    text: "graphify-mcp was not found, so agents are only pointed at the graph's files and the graphify command. For the query tools: " + GraphUi.install-command;
+                    font-size: 11px;
+                    color: Theme.muted;
+                    wrap: word-wrap;
+                }
+                Text {
+                    text: GraphUi.project;
+                    font-family: Theme.mono-font;
+                    font-size: 10.5px;
+                    color: Theme.icon-subtlest;
+                    overflow: elide;
+                }
+                HorizontalLayout {
+                    spacing: 8px;
+                    alignment: start;
+                    if !GraphUi.installed: Btn {
+                        text: GraphUi.busy ? "Setting up…" : "Set up Graphify";
+                        primary: true;
+                        enabled: !GraphUi.busy && GraphUi.install-plan != "";
+                        clicked => {
+                            GraphUi.install();
+                        }
+                    }
+                    if GraphUi.installed: Btn {
+                        text: GraphUi.busy ? "Working…" : GraphUi.has-graph ? "Update graph" : "Build graph";
+                        primary: true;
+                        enabled: !GraphUi.busy;
+                        clicked => {
+                            GraphUi.build();
+                        }
+                    }
+                    if GraphUi.has-html: Btn {
+                        text: "Open graph";
+                        clicked => {
+                            GraphUi.open-html();
+                        }
+                    }
+                    if GraphUi.has-report: Btn {
+                        text: "Open report";
+                        clicked => {
+                            GraphUi.open-report();
+                        }
+                    }
+                    Btn {
+                        text: "Check again";
+                        enabled: !GraphUi.busy;
+                        clicked => {
+                            GraphUi.refresh();
+                        }
+                    }
+                }
+                if GraphUi.note != "": Text {
+                    text: GraphUi.note;
+                    font-size: 11px;
+                    color: Theme.muted;
+                    wrap: word-wrap;
+                }
+                if GraphUi.log != "": Rectangle {
+                    border-radius: 8px;
+                    background: Theme.surface;
+                    border-width: 1px;
+                    border-color: Theme.border;
+                    VerticalLayout {
+                        padding: 10px;
+                        Text {
+                            text: GraphUi.log;
+                            font-family: Theme.mono-font;
+                            font-size: 10.5px;
+                            color: Theme.foreground-subtle;
+                            wrap: word-wrap;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if GraphUi.has-graph: Rectangle {
+        height: 540px;
+        // While the picture fills the window this one rests: one canvas at a time asks for frames.
+        if !GraphUi.view-wide: GraphCanvas {
+            width: 100%;
+            height: 100%;
+        }
+        if GraphUi.view-wide: Text {
+            text: "The picture is filling the window.";
+            font-size: 12px;
+            color: Theme.muted;
+        }
+    }
+}
+

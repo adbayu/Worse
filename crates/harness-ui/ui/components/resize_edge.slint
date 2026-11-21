@@ -1,0 +1,11 @@
+
+
+export component ResizeEdge inherits TouchArea {
+    callback start();
+    pointer-event(event) => {
+        if event.button == PointerEventButton.left && event.kind == PointerEventKind.down {
+            root.start();
+        }
+    }
+}
+

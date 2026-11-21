@@ -1,0 +1,137 @@
+import { QueueRow } from "../models.slint";
+import { DockUi } from "./dock.slint";
+import { Button, Icon, IconButton, Icons } from "../components/controls.slint";
+import { Theme } from "../theme/tokens.slint";
+
+export component QueueList inherits Rectangle {
+    in property <[QueueRow]> items;
+    callback cancel(string);
+    property <length> row-h: 34px;
+    property <int> drag-index: -1;
+    property <length> drag-dy;
+    // Design 01 card grammar: surface, radius 12, border; caps header.
+    background: Theme.surface;
+    border-radius: 12px;
+    border-width: 1px;
+    border-color: Theme.border;
+    VerticalLayout {
+        padding: 4px;
+        spacing: 0px;
+        Text {
+            height: 26px;
+            x: 10px;
+            text: @tr("Queued messages ({0})", root.items.length).to-uppercase();
+            font-size: 10px;
+            font-weight: Theme.weight-semibold;
+            letter-spacing: 0.8px;
+            color: Theme.caps-label;
+            vertical-alignment: center;
+        }
+        for q[qi] in root.items: Rectangle {
+            height: root.row-h;
+            z: root.drag-index == qi ? 1 : 0;
+            Rectangle {
+                y: root.drag-index == qi ? root.drag-dy : 0;
+                height: parent.height;
+                border-radius: Theme.radius-md;
+                background: root.drag-index == qi ? Theme.raised : qta.has-hover ? Theme.hover : transparent;
+                opacity: DockUi.editing-id == q.id ? 0.6 : 1;
+                qta := TouchArea { }
+                HorizontalLayout {
+                    padding-top: 2px;
+                    padding-bottom: 2px;
+                    padding-left: 2px;
+                    padding-right: 2px;
+                    spacing: 6px;
+                    Rectangle {
+                        width: Theme.control;
+                        accessible-role: AccessibleRole.slider;
+                        accessible-label: @tr("Drag to reorder: {0}", q.text);
+                        accessible-value: qi + 1;
+                        accessible-value-minimum: 1;
+                        accessible-value-maximum: root.items.length;
+                        accessible-value-step: 1;
+                        accessible-action-increment => {
+                            DockUi.queue-move(q.id, 1);
+                        }
+                        accessible-action-decrement => {
+                            DockUi.queue-move(q.id, -1);
+                        }
+                        Icon {
+                            source: Icons.grip-vertical;
+                            size: Theme.icon-sm;
+                            tint: Theme.icon-subtlest;
+                        }
+                        TouchArea {
+                            mouse-cursor: grab;
+                            pointer-event(e) => {
+                                if e.kind == PointerEventKind.down {
+                                    root.drag-index = qi;
+                                    root.drag-dy = 0;
+                                }
+                                if e.kind == PointerEventKind.up || e.kind == PointerEventKind.cancel {
+                                    if root.drag-index == qi {
+                                        // 释放时按位移换算目标行，只发一次整体重排；显示以 hub 的下一次 Queue 事件为准。
+                                        if e.kind == PointerEventKind.up && round(root.drag-dy / root.row-h) != 0 {
+                                            DockUi.queue-move(q.id, round(root.drag-dy / root.row-h));
+                                        }
+                                        root.drag-index = -1;
+                                        root.drag-dy = 0;
+                                    }
+                                }
+                            }
+                            moved => {
+                                if self.pressed && root.drag-index == qi {
+                                    // 修复：TouchArea 随拖动行一起偏移了 drag-dy，mouse-y 是相对已偏移位置的坐标；
+                                    // 不加回 drag-dy 时位移只收敛到指针实际位移的一半（拖两行只移动一行）。
+                                    root.drag-dy = clamp(self.mouse-y - self.pressed-y + root.drag-dy, -qi * root.row-h, (root.items.length - 1 - qi) * root.row-h);
+                                }
+                            }
+                        }
+                    }
+                    Text {
+                        text: q.text;
+                        font-size: Theme.ui-caption;
+                        color: Theme.foreground;
+                        vertical-alignment: center;
+                        overflow: elide;
+                        horizontal-stretch: 1;
+                        accessible-role: AccessibleRole.text;
+                        accessible-label: @tr("Queued: {0}", q.text);
+                    }
+                    Button {
+                        variant: "secondary";
+                        size: "sm";
+                        y: (parent.height - self.height) / 2;
+                        text: @tr("Steer");
+                        label: @tr("Steer queued message: {0}", q.text);
+                        enabled: DockUi.editing-id != q.id;
+                        clicked => {
+                            DockUi.queue-action("steer", q.id);
+                        }
+                    }
+                    IconButton {
+                        icon: Icons.pencil;
+                        icon-size: Theme.icon-sm;
+                        size: Theme.control;
+                        label: @tr("Edit queued message: {0}", q.text);
+                        enabled: DockUi.editing-id == "";
+                        clicked => {
+                            DockUi.queue-action("edit", q.id);
+                        }
+                    }
+                    IconButton {
+                        icon: Icons.trash-2;
+                        icon-size: Theme.icon-sm;
+                        size: Theme.control;
+                        label: @tr("Cancel queued message: {0}", q.text);
+                        clicked => {
+                            root.cancel(q.id);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+// Permission prompt in the composer dock (ZCode: card "Permission required" above the input).

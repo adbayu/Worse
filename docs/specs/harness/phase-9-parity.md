@@ -1103,7 +1103,22 @@ The shipped product is **one file**, `harness-slint.exe` (`harness-slint` elsewh
     - The "Set up agents" dialog opens when at least one row is `adapterMissing`, or when no CLI agent is `ready`.
     - Otherwise the flag is set to `true` silently. This is the case when all adapters are present, and it covers machines that were set up earlier and every gate that uses fake agents.
   - Closing the dialog with **Done**, **Skip for now** or **X** sets the flag.
-  - Installing needs one click: a global npm install changes the user's machine, so Harness does not run it unasked.
+  - Installing needs one click: a global npm install changes the user's machine, so Harness does not run it unasked. Updating an adapter the user already has is the exception below.
+- **Adapter auto-update (owner: hub `adapter_update`).**
+  - Setting `setup.autoUpdateAdapters` is a bool, default `true` (UI label: **Keep agent CLIs and adapters up to date**). The UI keeps `HubConfig::auto_update` (`AutoUpdatePolicy`) in step with it while the hub runs, like `research.factCheck`.
+  - The hub checks one minute after start, then wakes every 10 minutes and checks at most once per 24 hours. The stamp lives in `<home>/adapter-update.json` (`{"lastCheck": <unix seconds>}`). A check runs only while auto-update is on.
+  - One `<npm> ls -g --depth=0 --json` lists every global package. For a configured agent (`HubConfig::agents`) the check covers its ACP adapter (`@agentclientprotocol/claude-agent-acp`, `@agentclientprotocol/codex-acp`) and its CLI package (`@anthropic-ai/claude-code`, `@openai/codex`). The install events are reported under the agent id.
+  - `<npm> view <package> version` gives the published version. An update runs only when the package is in the listing and the published version is numerically greater (`1.2.10` > `1.2.9`; a missing part counts as 0; a `-prerelease` or `+build` suffix is ignored).
+  - A CLI that npm does not list is skipped: a native installer ([CC]) puts `claude` outside npm and it self-updates, so Harness leaves it alone. Auto-update never installs a package the user does not have and never touches the CLIs otherwise: the first install stays a click in the setup dialog.
+  - The upgrade reuses the install path above: the same single-flight lock (a running install or update wins and the check skips the package), `npm install -g <package>`, the same `AdapterInstall` events (`running` lines, then `succeeded` with "<package> updated to <version>", or `failed`), and the `npm prefix -g` search-directory refresh. Start, finish and every failure are logged (info / warn).
+  - A session that is already running keeps the adapter it started with; the next session picks up the new version (the pool spawns the program again).
+  - Acceptance (fake npm as in the gate, never the real global npm):
+    1. An older installed version and a newer published one → exactly one `install -g <package>` and an `AdapterInstall` `running…` → `succeeded` sequence.
+    2. Equal versions → no install.
+    3. Package not installed → no install (this is how a native-installer `claude` is skipped).
+    4. `setup.autoUpdateAdapters` off → no `npm view`.
+    5. Two checks within 24 hours → one `npm view`.
+    6. A globally installed `@openai/codex` behind the published version is upgraded in the same check as the adapters, with one `npm ls` for the whole run.
 - **UI** (`ui/setup.slint` + `src/setup.rs`; strings are English only, with no new zh-CN entries):
   - **Dialog.** There is one row per `SetupAgent`: the name, the CLI path or "CLI not found", a tag (Ready / Adapter missing / Not installed), and for `adapterMissing` an **Install** button. While an install runs, its row shows "Installing…".
   - Below the rows are the last 8 output lines of the running install (monospace) and the last error.
@@ -1116,6 +1131,7 @@ The shipped product is **one file**, `harness-slint.exe` (`harness-slint` elsewh
       - "Adapter missing" (warning) plus an **Install adapter** button when the CLI exists but the adapter does not.
       - "Not installed" only when the CLI is absent.
     - Fallback rows and the agent picker use the same state: picker/fallback state 3 is "Adapter missing".
+    - The "Adapter updates" card holds the **Keep agent CLIs and adapters up to date** switch (`setup.autoUpdateAdapters`).
   - When an install finishes, the UI requests `list_agents`, the overview and `setup_status` again, so the agent becomes usable without a restart.
 - **Event order**
 

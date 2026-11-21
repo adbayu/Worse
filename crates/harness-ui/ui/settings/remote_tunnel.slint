@@ -1,0 +1,247 @@
+import { Theme } from "../theme/tokens.slint";
+import { Divider } from "../components/controls.slint";
+import { SettingRow, Switch, TextField } from "parts.slint";
+import { SettingsUi } from "globals.slint";
+import { RemoteDevice, RemoteUi } from "./remote_ui.slint";
+import { RemoteLook, RCard, Sep, RButton, ToggleRow, FieldRow } from "./remote_parts.slint";
+
+export component TunnelCard inherits RCard {
+    in property <bool> running;
+    in property <bool> tunnel-running;
+    in property <string> bin;
+    in property <string> url;
+    in property <color> tunnel-tone;
+    title: "Tunnel";
+    note: root.bin != "" ? root.bin : "cloudflared";
+    HorizontalLayout {
+        padding-top: 14px;
+        padding-bottom: 14px;
+        padding-left: 16px;
+        padding-right: 16px;
+        spacing: 10px;
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                border-radius: 999px;
+                background: root.tunnel-tone.with-alpha(0.12);
+                horizontal-stretch: 0;
+                HorizontalLayout {
+                    padding-top: 3px;
+                    padding-bottom: 3px;
+                    padding-left: 8px;
+                    padding-right: 8px;
+                    Text {
+                        text: "● " + (RemoteUi.tunnel-state == 2 ? "Connected" : RemoteUi.tunnel-state == 1 ? @tr("Starting") : RemoteUi.tunnel-state == 3 ? @tr("Error") : @tr("Off"));
+                        font-size: 11px;
+                        font-weight: Theme.weight-medium;
+                        color: root.tunnel-tone;
+                    }
+                }
+            }
+        }
+        Text {
+            text: RemoteUi.tunnel-text != "" ? RemoteUi.tunnel-text : RemoteUi.tunnel-hint;
+            font-size: 12px;
+            color: Theme.muted;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+            overflow: elide;
+        }
+        Text {
+            text: RemoteUi.server-text;
+            font-size: 11px;
+            color: Theme.icon-subtlest;
+            vertical-alignment: center;
+            overflow: elide;
+            max-width: 320px;
+        }
+    }
+    Sep { }
+    HorizontalLayout {
+        padding-top: 14px;
+        padding-bottom: 14px;
+        padding-left: 16px;
+        padding-right: 16px;
+        spacing: 8px;
+        Rectangle {
+            height: 34px;
+            horizontal-stretch: 1;
+            background: Theme.surface;
+            border-radius: 8px;
+            border-width: 1px;
+            border-color: Theme.border;
+            HorizontalLayout {
+                padding-left: 12px;
+                padding-right: 12px;
+                Text {
+                    text: root.url != "" ? root.url : (root.running ? "Start the tunnel to get a public URL" : "Remote access is off");
+                    font-size: 12px;
+                    color: root.url != "" ? Theme.foreground-subtle : Theme.icon-subtlest;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
+            }
+            TouchArea {
+                enabled: RemoteUi.has-url;
+                mouse-cursor: RemoteUi.has-url ? MouseCursor.pointer : MouseCursor.default;
+                clicked => {
+                    RemoteUi.open-url(RemoteUi.public-url);
+                }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            RButton {
+                text: "Copy";
+                enabled: root.url != "";
+                clicked => {
+                    RemoteUi.copy(root.url);
+                }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            RButton {
+                text: root.tunnel-running ? "Restart tunnel" : @tr("Start tunnel");
+                enabled: RemoteUi.server-state == 2;
+                clicked => {
+                    if root.tunnel-running {
+                        RemoteUi.stop-tunnel();
+                    }
+                    RemoteUi.start-tunnel();
+                }
+            }
+        }
+    }
+    Sep { }
+    ToggleRow {
+        title: "Enable remote access";
+        description: "Start the tunnel automatically when Harness launches.";
+        Switch {
+            label: "Enable remote access";
+            checked: root.running;
+            toggled(on) => {
+                RemoteUi.set-enabled(on);
+            }
+        }
+    }
+    Sep { }
+    // Pairing is always required by the server; the toggle shows that state and cannot be turned off.
+    ToggleRow {
+        title: "Require pairing code";
+        description: "New devices must enter a 6-digit code before they can connect.";
+        Switch {
+            label: "Require pairing code (always on)";
+            checked: true;
+            enabled: false;
+        }
+    }
+}
+
+export component HelperCard inherits RCard {
+    in property <bool> stacked;
+    in property <bool> tunnel-running;
+    title: "Tunnel helper";
+    note: "ADVANCED";
+    Sep { }
+    FieldRow {
+        first: true;
+        stacked: root.stacked;
+        key: "remote.port";
+        numeric: true;
+        title: @tr("Port");
+        description: @tr("Loopback port of the local server. Applies the next time the server starts.");
+        placeholder: "7878";
+    }
+    FieldRow {
+        stacked: root.stacked;
+        key: "remote.tunnelBin";
+        title: @tr("Tunnel binary");
+        description: @tr("Started as: <binary> http <port> --name <subdomain>.");
+        placeholder: "cftunnel (on PATH) or C:\\tools\\cftunnel.exe";
+    }
+    FieldRow {
+        stacked: root.stacked;
+        key: "remote.subdomain";
+        title: @tr("Subdomain");
+        description: @tr("Name of the tunnel. Leave empty for a quick tunnel with a random host.");
+        placeholder: "harness";
+    }
+    FieldRow {
+        stacked: root.stacked;
+        key: "remote.tunnelDomain";
+        title: @tr("Tunnel domain");
+        description: @tr("Used as https://<subdomain>.<domain> when the helper prints no URL.");
+        placeholder: "example.com";
+    }
+    Sep { }
+    HorizontalLayout {
+        padding-top: 14px;
+        padding-bottom: 14px;
+        padding-left: 16px;
+        padding-right: 16px;
+        spacing: 8px;
+        VerticalLayout {
+            spacing: 3px;
+            horizontal-stretch: 1;
+            alignment: center;
+            Text {
+                text: @tr("Raw tunnel output");
+                font-size: 13px;
+                color: Theme.foreground;
+            }
+            Text {
+                text: RemoteUi.tunnel-log.length == 0 ? @tr("No output yet.") : @tr("Last {0} lines.", RemoteUi.tunnel-log.length);
+                font-size: 12px;
+                color: Theme.muted;
+            }
+        }
+        if root.tunnel-running: VerticalLayout {
+            alignment: center;
+            RButton {
+                text: @tr("Stop tunnel");
+                clicked => {
+                    RemoteUi.stop-tunnel();
+                }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            RButton {
+                text: RemoteUi.log-open ? @tr("Hide") : @tr("Show");
+                clicked => {
+                    RemoteUi.log-open = !RemoteUi.log-open;
+                }
+            }
+        }
+    }
+    if RemoteUi.log-open: VerticalLayout {
+        padding-left: 16px;
+        padding-right: 16px;
+        padding-bottom: 16px;
+        Rectangle {
+            background: Theme.canvas;
+            border-radius: 8px;
+            border-width: 1px;
+            border-color: Theme.border;
+            accessible-role: AccessibleRole.text;
+            accessible-label: @tr("Raw tunnel output");
+            VerticalLayout {
+                padding: 12px;
+                spacing: 2px;
+                for line in RemoteUi.tunnel-log: Text {
+                    text: line;
+                    font-family: Theme.mono-font;
+                    font-size: Theme.code-size;
+                    color: Theme.foreground-subtle;
+                    wrap: word-wrap;
+                }
+                if RemoteUi.tunnel-log.length == 0: Text {
+                    text: @tr("No output yet.");
+                    font-size: 11px;
+                    color: Theme.icon-subtlest;
+                }
+            }
+        }
+    }
+}

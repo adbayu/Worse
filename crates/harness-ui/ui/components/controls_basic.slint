@@ -1,0 +1,257 @@
+import { Theme } from "../theme/tokens.slint";
+import { Icons, IconsFill, Tiles } from "icons.slint";
+import { GlyphAnim, AsciiArt } from "ascii.slint";
+import { Look } from "../theme/look.slint";
+import { Frost } from "../theme/backdrop.slint";
+
+export component Icon inherits Rectangle {
+    in property <image> source;
+    in property <color> tint: Theme.icon;
+    in property <length> size: Theme.icon-size;
+    width: root.size;
+    min-height: root.size;
+    preferred-height: root.size;
+    accessible-role: none;
+    Image {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        width: root.size;
+        height: root.size;
+        source: root.source;
+        colorize: root.tint;
+        image-fit: contain;
+        accessible-role: none;
+        animate colorize { duration: Theme.dur-hover; }
+    }
+}
+
+export component Divider inherits Rectangle {
+    in property <bool> vertical: false;
+    min-height: root.vertical ? 0px : 1px;
+    max-height: root.vertical ? 100000px : 1px;
+    min-width: root.vertical ? 1px : 0px;
+    max-width: root.vertical ? 1px : 100000px;
+    background: Theme.border;
+    accessible-role: none;
+}
+
+export component Card inherits Rectangle {
+    in property <length> radius: Theme.radius-lg;
+    background: Theme.card;
+    border-radius: root.radius;
+    border-width: 1px;
+    border-color: Theme.card-border;
+}
+
+// Busy indicator: a quadrant glyph turning in place (unicode frames, no rotation transform).
+export component Spinner inherits Rectangle {
+    in property <color> tint: Theme.foreground;
+    in property <length> size: Theme.icon-sm;
+    // true: steps with ArtClock's busy clock (only for spinners shown while a turn runs, which is when that
+    // clock runs); false: its own timer.
+    in property <bool> clocked: false;
+    width: root.size;
+    height: root.size;
+    accessible-role: none;
+    GlyphAnim {
+        frames: AsciiArt.spinner;
+        interval: 95ms;
+        divider: root.clocked ? 1 : 0;
+        busy: true;
+        font-size: root.size * 1.05;
+        color: root.tint;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}
+
+// Glass pane: translucent tint, a rim that is brightest along the top edge, an inner glow (Skia only) and a
+// soft drop shadow. `strong` is the near-opaque cut for anything that floats over text.
+export component Glass inherits Rectangle {
+    in property <string> level: "panel";
+    in property <length> radius: Theme.radius-xl;
+    in property <bool> shadow: true;
+    in property <bool> highlight: true;
+    background: root.level == "strong" ? Theme.glass-strong : root.level == "deep" ? Theme.glass-deep : root.level == "card" ? Theme.card : Theme.glass;
+    border-radius: root.radius;
+    border-width: 1px;
+    border-color: root.level == "card" ? Theme.card-border : Theme.glass-rim;
+    drop-shadow-blur: root.shadow ? Theme.glass-shadow-blur : 0px;
+    drop-shadow-offset-y: root.shadow ? Theme.glass-shadow-y : 0px;
+    drop-shadow-color: root.shadow ? Theme.glass-shadow : transparent;
+    // Over a wallpaper the pane shows a frosted copy of it instead of its flat fill.
+    if Look.has-wallpaper && root.level != "card": Frost {
+        radius: root.radius;
+        veil: root.level == "strong" ? 0.3 : 0.18;
+    }
+    if root.highlight: Rectangle {
+        border-radius: root.radius;
+        inner-shadow-blur: Theme.glass-inner-blur;
+        inner-shadow-offset-y: 1px;
+        inner-shadow-color: Theme.glass-inner;
+        accessible-role: none;
+    }
+    @children
+}
+
+// Buttons: rounded rectangles with 13px semibold labels. primary = white on black (ink on paper),
+// secondary = raised + strong border, outline = surface, ghost = transparent, accent = flat accent fill,
+// destructive / warning = tinted fill + coloured border.
+export component Button inherits Rectangle {
+    in property <string> text;
+    in property <string> label: self.text;
+    in property <string> variant: "outline";
+    in property <string> size: "default";
+    in property <image> icon;
+    in property <bool> has-icon: false;
+    in property <bool> trailing-chevron: false;
+    in property <bool> enabled: true;
+    in property <bool> active: false;
+    in property <color> text-color: root.variant == "primary" ? Theme.primary-foreground : root.variant == "accent" ? Theme.on-accent : root.variant == "destructive" ? Theme.destructive : root.variant == "warning" ? Theme.warning : root.variant == "ghost" ? Theme.foreground-subtle : Theme.foreground;
+    callback clicked;
+    out property <bool> hovered: ta.has-hover;
+    property <bool> hot: ta.has-hover && root.enabled;
+    property <length> h: root.size == "xs" ? Theme.control-xs : root.size == "sm" ? Theme.control-sm : root.size == "lg" ? Theme.control-lg : Theme.control;
+    property <length> pad: root.size == "lg" ? 14px : root.size == "xs" ? 8px : 12px;
+    property <length> icon-px: root.size == "xs" ? 12px : root.size == "sm" ? 14px : root.size == "lg" ? 18px : 15px;
+    height: self.h;
+    min-width: self.h;
+    preferred-width: row.preferred-width;
+    horizontal-stretch: 0;
+    border-radius: root.size == "xs" || root.size == "sm" ? Theme.radius-sm : Theme.radius-md;
+    property <bool> glassy: root.variant == "outline" || root.variant == "secondary" || root.variant == "destructive" || root.variant == "warning" || root.variant == "ghost";
+    border-width: root.glassy ? 1px : 0px;
+    border-color: root.variant == "destructive" ? Theme.destructive.with-alpha(root.hot ? 0.7 : 0.35) : root.variant == "warning" ? Theme.warning.with-alpha(root.hot ? 0.7 : 0.35) : root.variant == "ghost" ? transparent : root.variant == "secondary" ? Theme.border-hover : root.hot ? Theme.border-hover : Theme.glass-border;
+    background: root.variant == "primary" ? (root.hot ? Theme.primary-hover : Theme.primary) : root.variant == "accent" ? Theme.brand-gradient : root.variant == "secondary" ? (root.active || root.hot ? Theme.surface-hover : Theme.raised) : root.variant == "destructive" ? (root.hot ? Theme.destructive.with-alpha(0.16) : Theme.destructive.with-alpha(0.08)) : root.variant == "warning" ? (root.hot ? Theme.warning.with-alpha(0.16) : Theme.warning.with-alpha(0.08)) : root.variant == "outline" ? (root.active ? Theme.raised : root.hot ? Theme.raised : Theme.surface) : (root.active ? Theme.raised : root.hot ? Theme.hover : transparent);
+    drop-shadow-blur: root.variant == "primary" || root.variant == "accent" ? 8px : 0px;
+    drop-shadow-offset-y: root.variant == "primary" || root.variant == "accent" ? 2px : 0px;
+    drop-shadow-color: (root.variant == "primary" || root.variant == "accent") && root.enabled ? Theme.primary-shadow : transparent;
+    opacity: root.enabled ? 1 : 0.45;
+    transform-scale: ta.pressed && root.enabled ? 0.97 : 1;
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-enabled: root.enabled;
+    accessible-action-default => {
+        if root.enabled {
+            root.clicked();
+        }
+    }
+    animate background, border-color, drop-shadow-blur { duration: Theme.dur-hover; easing: ease-out-quint; }
+    animate transform-scale { duration: Theme.dur-press; easing: ease-out-quint; }
+    if root.glassy && Theme.dark && root.variant == "outline": Rectangle {
+        x: root.border-radius;
+        y: 1px;
+        width: max(0px, root.width - root.border-radius * 2);
+        height: 1px;
+        background: @linear-gradient(90deg, Theme.glass-highlight.with-alpha(0) 0%, Theme.glass-highlight 50%, Theme.glass-highlight.with-alpha(0) 100%);
+        accessible-role: none;
+    }
+    row := HorizontalLayout {
+        padding-left: root.has-icon && root.text == "" ? 0px : root.pad;
+        padding-right: root.has-icon && root.text == "" ? 0px : (root.trailing-chevron ? root.pad - 2px : root.pad);
+        spacing: 6px;
+        alignment: center;
+        if root.has-icon: Icon {
+            source: root.icon;
+            size: root.icon-px;
+            tint: root.text-color;
+        }
+        if root.text != "": Text {
+            text: root.text;
+            color: root.text-color;
+            font-size: Theme.ui-base;
+            // 13 semibold — the design's single button label weight.
+            font-weight: Theme.weight-semibold;
+            vertical-alignment: center;
+            accessible-role: none;
+        }
+        if root.trailing-chevron: Icon {
+            source: Icons.chevron-down;
+            size: 14px;
+            tint: Theme.icon-subtle;
+        }
+    }
+    ta := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+export component IconButton inherits Rectangle {
+    in property <image> icon;
+    in property <string> label;
+    in property <length> size: Theme.control;
+    in property <length> icon-size: Theme.icon-size;
+    in property <bool> enabled: true;
+    in property <bool> active: false;
+    in property <color> tint: Theme.icon-subtle;
+    out property <bool> hovered: ta.has-hover;
+    callback clicked;
+    width: root.size;
+    height: root.size;
+    border-radius: root.size >= Theme.control-lg ? Theme.radius-md : Theme.radius-sm;
+    background: root.active ? Theme.raised : (ta.has-hover && root.enabled ? Theme.hover : Theme.hover.with-alpha(0));
+    opacity: root.enabled ? 1 : 0.45;
+    transform-scale: ta.pressed && root.enabled ? 0.92 : 1;
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-enabled: root.enabled;
+    accessible-action-default => {
+        if root.enabled {
+            root.clicked();
+        }
+    }
+    animate background { duration: Theme.dur-hover; easing: ease-out-quint; }
+    animate transform-scale { duration: Theme.dur-press; easing: ease-out-quint; }
+    Icon {
+        source: root.icon;
+        size: root.icon-size;
+        tint: root.active ? Theme.foreground : ta.has-hover ? Theme.icon : root.tint;
+    }
+    ta := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+// Pill / chip (design: text in the colour, bg = colour + 1F, radius 999, 11 semibold).
+export component Tag inherits Rectangle {
+    in property <string> text;
+    in property <string> tone: "neutral";
+    in property <image> icon;
+    in property <bool> has-icon: false;
+    in property <length> font-size: Theme.ui-xs;
+    property <color> fg: root.tone == "confirm" ? Theme.confirm-foreground : root.tone == "warning" ? Theme.warning-surface-foreground : root.tone == "destructive" ? Theme.destructive-surface-foreground : root.tone == "success" ? Theme.success-surface-foreground : root.tone == "progress" ? Theme.progress-surface-foreground : root.tone == "info" ? Theme.info : root.tone == "idle" ? Theme.idle-task : root.tone == "accent" ? Theme.accent-fg : Theme.foreground-subtle;
+    height: root.font-size <= Theme.ui-xs ? 20px : 22px;
+    preferred-width: row.preferred-width;
+    horizontal-stretch: 0;
+    border-radius: Theme.radius-sm;
+    background: root.tone == "neutral" ? Theme.tag : root.fg.with-alpha(0.12);
+    accessible-role: AccessibleRole.text;
+    accessible-label: root.text;
+    row := HorizontalLayout {
+        padding-left: root.has-icon ? 7px : 9px;
+        padding-right: 9px;
+        spacing: 4px;
+        alignment: center;
+        if root.has-icon: Icon {
+            source: root.icon;
+            size: 12px;
+            tint: root.fg;
+        }
+        Text {
+            text: root.text;
+            font-size: root.font-size;
+            font-weight: Theme.weight-semibold;
+            color: root.fg;
+            vertical-alignment: center;
+            accessible-role: none;
+        }
+    }
+}

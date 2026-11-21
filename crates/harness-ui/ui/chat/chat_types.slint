@@ -1,0 +1,163 @@
+
+// One result row of the command center or of a composer popup.
+// kind: "action" | "session" | "file" | "agent" | "command" | "header".
+export struct PaletteRow {
+    kind: string,
+    id: string,
+    title: string,
+    detail: string,
+    shortcut: string,
+    icon: int,
+}
+
+// Composer attachment chip. kind: "file" (dropped or attached path) | "paste" (long paste kept out of the input).
+export struct ChipRow {
+    kind: string,
+    label: string,
+    detail: string,
+}
+
+// Small preview of an image in the transcript (attached to a user message, or a file a tool read).
+export struct ChatImage {
+    path: string,
+    image: image,
+}
+
+// One line of an expanded tool card (core Event::ToolDetail, R8).
+// kind: 0 text, 1 diff file header, 2 added line, 3 removed line, 4 location, 5 section label, 6 raw (mono),
+// 7 terminal reference.
+export struct ToolPart {
+    kind: int,
+    text: string,
+}
+
+// One file of a turn's change summary (R14, hub plan_file_changes). action: 0 restore, 1 delete.
+export struct UsagePart {
+    label: string,
+    tone: int,
+    amount: string,
+    share: float,
+    start: float,
+}
+
+export struct PlanBar {
+    label: string,
+    value: float,
+    reset: string,
+}
+
+export struct PlanLimit {
+    id: string,
+    label: string,
+    plan: string,
+    error: string,
+    known: bool,
+    five: float,
+    five-reset: string,
+    week: float,
+    week-reset: string,
+    has-opus: bool,
+    opus: float,
+    opus-reset: string,
+    five-label: string,
+    week-label: string,
+    opus-label: string,
+    summary: string,
+    bars: [PlanBar],
+}
+
+export struct OutputRow {
+    name: string,
+    path: string,
+}
+
+export struct ChangeRow {
+    path: string,
+    action: int,
+    safe: bool,
+    reason: string,
+}
+
+// One todo / plan entry of the status panel. status: 0 pending, 1 in progress, 2 completed.
+export struct PlanRow {
+    text: string,
+    status: int,
+    priority: string,
+}
+
+// One subagent of the open session (phase-9-parity.md §9.8). status: 0 running, 1 needs approval, 2 done, 3 failed,
+// 4 cancelled, 5 interrupted. started-s / finished-s: unix seconds (finished-s 0 = still active).
+export struct SubagentRow {
+    id: string,
+    agent: string,
+    title: string,
+    status: int,
+    activity: string,
+    preview: string,
+    started-s: int,
+    finished-s: int,
+    // Display name of `agent` ("DeepSeek"), for the Orchestra live view.
+    agent-name: string,
+    // What it did just before `activity`, newest first (at most three), and how many steps so far.
+    trail: [string],
+    steps: int,
+    // Its narrowed permissions (phase-9-parity.md 9.8.2); empty means unrestricted.
+    scope: string,
+}
+
+export struct FleetGroup {
+    id: string,
+    title: string,
+    prompt: string,
+    agent: string,
+    agent-name: string,
+    running: bool,
+    open: bool,
+    y: int,
+    height: int,
+    total: int,
+    active: int,
+    subagents: [SubagentRow],
+}
+
+// One background task of the open session (§9.17). running: the process lives; started-s / finished-s are unix
+// seconds (finished-s 0 = still running).
+export struct BackgroundTaskRow {
+    id: string,
+    agent: string,
+    name: string,
+    description: string,
+    summary: string,
+    state: string,
+    running: bool,
+    can-stop: bool,
+    started-s: int,
+    finished-s: int,
+}
+
+// One session group of the sidebar (R11). color: GroupColor id ("gray", "red", …).
+export struct GroupRow {
+    id: string,
+    name: string,
+    color: string,
+}
+
+// One scheduled prompt (R18). kind: "interval" (every-min) | "daily" (at = "HH:MM"); next-in: minutes until the next
+// run (-1 = not scheduled); last: the hub's last result text.
+export struct ScheduleRow {
+    id: string,
+    title: string,
+    prompt: string,
+    enabled: bool,
+    kind: string,
+    every-min: int,
+    at: string,
+    next-in: int,
+    last: string,
+}
+
+export struct MdLink {
+    start: int,
+    end: int,
+    url: string,
+}

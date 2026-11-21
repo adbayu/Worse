@@ -1,0 +1,170 @@
+import { Theme } from "../theme/tokens.slint";
+import { Icons, IconsFill, Tiles } from "icons.slint";
+import { GlyphAnim, AsciiArt } from "ascii.slint";
+import { Look } from "../theme/look.slint";
+import { Frost } from "../theme/backdrop.slint";
+import { Icon, IconButton, Glass } from "./controls_basic.slint";
+
+export component MenuShell inherits Rectangle {
+    property <bool> shown: false;
+    background: Theme.menu;
+    border-radius: Theme.radius-xl;
+    border-width: 1px;
+    border-color: Theme.glass-rim;
+    inner-shadow-blur: Theme.glass-inner-blur;
+    inner-shadow-offset-y: 1px;
+    inner-shadow-color: Theme.glass-inner.with-alpha(0.06);
+    drop-shadow-blur: Theme.shadow-md-blur;
+    drop-shadow-offset-y: Theme.shadow-md-y;
+    drop-shadow-color: Theme.shadow-md-color;
+    opacity: root.shown ? 1 : 0;
+    transform-scale: root.shown ? 1 : 0.96;
+    animate opacity, transform-scale { duration: Theme.dur-menu; easing: ease-out-quint; }
+    Timer {
+        interval: 16ms;
+        running: !root.shown;
+        triggered => {
+            root.shown = true;
+        }
+    }
+    Rectangle {
+        x: root.border-radius;
+        y: 0px;
+        width: max(0px, root.width - root.border-radius * 2);
+        height: 1px;
+        background: @linear-gradient(90deg, Theme.glass-highlight.with-alpha(0) 0%, Theme.glass-highlight 50%, Theme.glass-highlight.with-alpha(0) 100%);
+        accessible-role: none;
+    }
+    VerticalLayout {
+        padding: 6px;
+        spacing: 2px;
+        @children
+    }
+}
+
+export component MenuItem inherits Rectangle {
+    in property <string> text;
+    in property <string> detail;
+    in property <color> detail-color: Theme.foreground-subtle;
+    in property <string> label: self.text;
+    in property <string> description;
+    in property <bool> enabled: true;
+    in property <bool> checked: false;
+    in property <bool> show-check: true;
+    in property <image> icon;
+    in property <bool> has-icon: false;
+    callback clicked;
+    height: 34px;
+    border-radius: Theme.radius-md;
+    background: ta.has-hover && root.enabled ? Theme.menu-hover : Theme.menu-hover.with-alpha(0);
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-description: root.description;
+    accessible-enabled: root.enabled;
+    accessible-checked: root.checked;
+    accessible-action-default => {
+        if root.enabled {
+            root.clicked();
+        }
+    }
+    animate background { duration: Theme.dur-hover; easing: ease-out-quint; }
+    HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 10px;
+        spacing: 10px;
+        if root.has-icon: Icon {
+            source: root.icon;
+            size: Theme.icon-sm;
+            tint: !root.enabled ? Theme.icon-subtlest : root.checked ? Theme.foreground : Theme.icon-subtle;
+        }
+        Text {
+            text: root.text;
+            font-size: Theme.ui-base;
+            color: root.enabled ? Theme.foreground : Theme.foreground-subtlest;
+            vertical-alignment: center;
+            overflow: elide;
+            horizontal-stretch: 1;
+            accessible-role: none;
+        }
+        if root.detail != "": Text {
+            text: root.detail;
+            font-size: Theme.ui-sm;
+            color: root.detail-color;
+            vertical-alignment: center;
+            accessible-role: none;
+        }
+        if root.show-check: Rectangle {
+            width: 16px;
+            if root.checked: Icon {
+                source: IconsFill.check;
+                size: 14px;
+                tint: Theme.accent-fg;
+            }
+        }
+    }
+    ta := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+export component Dialog inherits Rectangle {
+    in property <length> dialog-width: 440px;
+    in property <string> title;
+    in property <string> close-label;
+    callback close();
+    property <bool> shown: false;
+    background: root.shown ? Theme.scrim : Theme.scrim.with-alpha(0);
+    animate background { duration: Theme.dur-dialog; easing: ease-out-quint; }
+    Timer {
+        interval: 16ms;
+        running: !root.shown;
+        triggered => {
+            root.shown = true;
+        }
+    }
+    TouchArea { }
+    Glass {
+        level: "strong";
+        radius: Theme.radius-2xl;
+        width: min(root.dialog-width, root.width - 32px);
+        height: min(body.preferred-height, root.height - 32px);
+        x: (root.width - self.width) / 2;
+        y: (root.height - self.height) / 2 + (root.shown ? 0px : 10px);
+        drop-shadow-blur: Theme.shadow-lg-blur;
+        drop-shadow-offset-y: Theme.shadow-lg-y;
+        drop-shadow-color: Theme.shadow-lg-color;
+        opacity: root.shown ? 1 : 0;
+        transform-scale: root.shown ? 1 : 0.96;
+        clip: true;
+        animate opacity, transform-scale, y { duration: Theme.dur-dialog; easing: ease-out-quint; }
+        body := VerticalLayout {
+            padding: 22px;
+            spacing: 14px;
+            if root.title != "" || root.close-label != "": HorizontalLayout {
+                spacing: 8px;
+                Text {
+                    text: root.title;
+                    font-size: Theme.ui-lg;
+                    font-weight: Theme.weight-semibold;
+                    color: Theme.foreground;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    wrap: word-wrap;
+                }
+                if root.close-label != "": IconButton {
+                    icon: Icons.x;
+                    label: root.close-label;
+                    size: Theme.control;
+                    clicked => {
+                        root.close();
+                    }
+                }
+            }
+            @children
+        }
+    }
+}

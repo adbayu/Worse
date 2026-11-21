@@ -1,0 +1,357 @@
+import { Theme } from "../theme/tokens.slint";
+import { Icon, Icons, Spinner, Button, IconButton, Tag, Dialog, MenuShell, MenuItem } from "../components/controls.slint";
+import { TextField, TextArea } from "../settings/parts.slint";
+import { AgentTint, Pill } from "../panels/common.slint";
+import { CardItem, CardDialog } from "./board_card.slint";
+export { CardItem, CardDialog }
+import { BoardCard, BoardColumn, BoardUi } from "./board_ui.slint";
+export { BoardCard, BoardColumn, BoardUi }
+
+export component BoardPage inherits Rectangle {
+    callback close();
+    callback window-action(string);
+    property <length> pad: 16px;
+    property <length> gap: 12px;
+    property <length> head-h: 36px;
+    property <length> card-h: 104px;
+    property <length> card-gap: 8px;
+    property <length> col-w: max(180px, (root.width - root.pad * 2 - root.gap * 4) / 5);
+    property <string> drag-id: "";
+    property <length> drag-dx: 0px;
+    property <length> drag-dy: 0px;
+    property <length> drag-dist: 0px;
+    property <string> menu-id: "";
+    property <bool> menu-session: false;
+    property <length> menu-x: 0px;
+    property <length> menu-y: 0px;
+    property <int> hover-lane: -1;
+    pure function lane-x(lane: int) -> length {
+        return root.pad + lane * (root.col-w + root.gap);
+    }
+    pure function card-y(index: int) -> length {
+        return root.head-h + 8px + index * (root.card-h + root.card-gap);
+    }
+    pure function lane-at(x: length) -> int {
+        return clamp(floor((x - root.pad + root.gap / 2) / (root.col-w + root.gap)), 0, 4);
+    }
+    pure function index-at(y: length) -> int {
+        return max(0, round((y - root.head-h - 8px) / (root.card-h + root.card-gap)));
+    }
+    pure function lane-tint(label: string) -> color {
+        if label.to-lowercase() == "in progress" || label.to-lowercase() == "doing" || label.to-lowercase() == "running" { return Theme.accent-fg; }
+        if label.to-lowercase() == "review" || label.to-lowercase() == "in review" { return Theme.warning-surface-foreground; }
+        if label.to-lowercase() == "done" { return Theme.success-surface-foreground; }
+        if label.to-lowercase() == "todo" || label.to-lowercase() == "to do" { return Theme.info; }
+        return Theme.muted;
+    }
+    background: Theme.background;
+    accessible-role: AccessibleRole.text;
+    accessible-label: "Board";
+    TouchArea { }
+    VerticalLayout {
+        HorizontalLayout {
+            height: 52px;
+            padding-left: 12px;
+            padding-right: 16px;
+            spacing: 10px;
+            IconButton {
+                y: (parent.height - self.height) / 2;
+                icon: Icons.chevron-left;
+                label: "Back to chat";
+                clicked => {
+                    root.close();
+                }
+            }
+            Icon {
+                y: (parent.height - self.height) / 2;
+                source: Icons.square-kanban;
+                size: 16px;
+                tint: Theme.icon-subtle;
+            }
+            Text {
+                text: BoardUi.project == "" ? "Board" : BoardUi.project;
+                font-family: Theme.display-font;
+                font-size: 17px;
+                font-weight: 700;
+                color: Theme.foreground;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+            Tag {
+                y: (parent.height - self.height) / 2;
+                text: BoardUi.mode;
+            }
+            if BoardUi.sync-text != "": Rectangle {
+                y: (parent.height - self.height) / 2;
+                height: 20px;
+                width: min(sync-t.preferred-width + 16px, 360px);
+                border-radius: 10px;
+                background: BoardUi.sync-error ? Theme.destructive-surface : BoardUi.linked ? Theme.success-surface : Theme.tag;
+                sync-t := Text {
+                    x: 8px;
+                    width: parent.width - 16px;
+                    text: BoardUi.sync-text;
+                    font-size: 11px;
+                    font-weight: Theme.weight-medium;
+                    color: BoardUi.sync-error ? Theme.destructive-surface-foreground : BoardUi.linked ? Theme.success-surface-foreground : Theme.muted;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
+            }
+            Rectangle {
+                horizontal-stretch: 1;
+                TouchArea {
+                    pointer-event(event) => {
+                        if event.button == PointerEventButton.left && event.kind == PointerEventKind.down {
+                            root.window-action("drag");
+                        }
+                    }
+                }
+            }
+            if BoardUi.can-link && !BoardUi.linked: Button {
+                y: (parent.height - self.height) / 2;
+                text: BoardUi.busy ? "Linking..." : "Link GitHub project";
+                enabled: !BoardUi.busy;
+                clicked => {
+                    BoardUi.action("link", "");
+                }
+            }
+            if BoardUi.linked: Button {
+                y: (parent.height - self.height) / 2;
+                text: BoardUi.busy ? "Syncing..." : "Sync now";
+                enabled: !BoardUi.busy;
+                clicked => {
+                    BoardUi.action("sync", "");
+                }
+            }
+            if BoardUi.linked: Button {
+                y: (parent.height - self.height) / 2;
+                text: "Unlink";
+                variant: "ghost";
+                enabled: !BoardUi.busy;
+                clicked => {
+                    BoardUi.action("unlink", "");
+                }
+            }
+            Button {
+                y: (parent.height - self.height) / 2;
+                text: "New card";
+                variant: "primary";
+                icon: Icons.plus;
+                has-icon: true;
+                clicked => {
+                    BoardUi.action("new", "");
+                }
+            }
+            Rectangle {
+                width: 4px;
+            }
+            for w in [
+                { id: "minimize", icon: Icons.minus, label: "Minimize" },
+                { id: "maximize", icon: Icons.square, label: "Maximize" },
+                { id: "close", icon: Icons.x, label: "Close" },
+            ]: Rectangle {
+                y: (parent.height - self.height) / 2;
+                width: 40px;
+                height: 30px;
+                border-radius: Theme.radius-lg;
+                background: wta.has-hover ? (w.id == "close" ? #e5484d : Theme.surface-hover) : transparent;
+                accessible-role: button;
+                accessible-label: w.label;
+                accessible-action-default => {
+                    root.window-action(w.id);
+                }
+                Icon {
+                    source: w.icon;
+                    size: w.id == "maximize" ? Theme.icon-xs : Theme.icon-sm;
+                    tint: wta.has-hover && w.id == "close" ? #ffffff : Theme.icon;
+                }
+                wta := TouchArea {
+                    clicked => {
+                        root.window-action(w.id);
+                    }
+                }
+            }
+        }
+        if BoardUi.error != "" && !BoardUi.dialog-open: Rectangle {
+            height: 30px;
+            Text {
+                x: 16px;
+                text: BoardUi.error;
+                font-size: 12px;
+                color: Theme.destructive-surface-foreground;
+                vertical-alignment: center;
+            }
+        }
+        Rectangle {
+            height: 1px;
+            background: Theme.border;
+        }
+        Rectangle {
+            height: 12px;
+        }
+        flick := Flickable {
+            vertical-stretch: 1;
+            interactive: false;
+            content-width: max(self.width, root.pad * 2 + root.col-w * 5 + root.gap * 4);
+            content-height: max(self.height, root.card-y(BoardUi.max-count + 1) + 16px);
+            for col[li] in BoardUi.columns: Rectangle {
+                x: root.lane-x(li);
+                y: 0px;
+                width: root.col-w;
+                height: max(flick.height, flick.content-height) - 8px;
+                border-radius: 12px;
+                background: root.drag-id != "" && root.hover-lane == li ? Theme.raised : Theme.card;
+                border-width: 1px;
+                border-color: root.drag-id != "" && root.hover-lane == li ? Theme.accent-line : Theme.border;
+                HorizontalLayout {
+                    y: 0px;
+                    height: root.head-h;
+                    padding-left: 12px;
+                    padding-right: 8px;
+                    spacing: 8px;
+                    Text {
+                        text: col.label.to-uppercase();
+                        font-size: 10px;
+                        font-weight: Theme.weight-semibold;
+                        letter-spacing: 0.8px;
+                        color: root.lane-tint(col.label);
+                        vertical-alignment: center;
+                    }
+                    Rectangle {
+                        y: (parent.height - self.height) / 2;
+                        height: 16px;
+                        width: max(18px, cnt.preferred-width + 10px);
+                        border-radius: 8px;
+                        background: Theme.raised;
+                        cnt := Text {
+                            text: col.count;
+                            font-size: 10px;
+                            font-weight: Theme.weight-semibold;
+                            color: Theme.muted;
+                        }
+                    }
+                    Rectangle {
+                        horizontal-stretch: 1;
+                    }
+                    if li == 0: IconButton {
+                        y: (parent.height - self.height) / 2;
+                        size: Theme.control-sm;
+                        icon-size: Theme.icon-xs;
+                        icon: Icons.plus;
+                        label: "Add card";
+                        clicked => {
+                            BoardUi.action("new", "");
+                        }
+                    }
+                }
+            }
+            for c in BoardUi.cards: CardItem {
+                card: c;
+                dragging: root.drag-id == c.id;
+                x: root.lane-x(c.lane) + 8px + (root.drag-id == c.id ? root.drag-dx : 0px);
+                y: root.card-y(c.index) + (root.drag-id == c.id ? root.drag-dy : 0px);
+                z: root.drag-id == c.id ? 10 : 1;
+                width: root.col-w - 16px;
+                height: root.card-h;
+                ta := TouchArea {
+                    mouse-cursor: root.drag-id == c.id && root.drag-dist > 5px ? MouseCursor.grabbing : MouseCursor.pointer;
+                    pointer-event(event) => {
+                        if event.button == PointerEventButton.left && event.kind == PointerEventKind.down {
+                            root.drag-id = c.id;
+                            root.drag-dx = 0px;
+                            root.drag-dy = 0px;
+                            root.drag-dist = 0px;
+                            root.hover-lane = c.lane;
+                        }
+                        if event.button == PointerEventButton.left && event.kind == PointerEventKind.up && root.drag-id == c.id {
+                            if root.drag-dist > 5px {
+                                BoardUi.move(c.id, root.lane-at(root.lane-x(c.lane) + root.drag-dx + root.col-w / 2), root.index-at(root.card-y(c.index) + root.drag-dy));
+                            } else {
+                                BoardUi.action("click", c.id);
+                            }
+                            root.drag-id = "";
+                            root.drag-dx = 0px;
+                            root.drag-dy = 0px;
+                            root.hover-lane = -1;
+                        }
+                        if event.button == PointerEventButton.right && event.kind == PointerEventKind.up {
+                            root.menu-id = c.id;
+                            root.menu-session = c.has-session;
+                            root.menu-x = self.absolute-position.x - root.absolute-position.x + self.mouse-x;
+                            root.menu-y = self.absolute-position.y - root.absolute-position.y + self.mouse-y;
+                            menu.show();
+                        }
+                    }
+                    moved => {
+                        if self.pressed && root.drag-id == c.id {
+                            root.drag-dx = root.drag-dx + (self.mouse-x - self.pressed-x);
+                            root.drag-dy = root.drag-dy + (self.mouse-y - self.pressed-y);
+                            root.drag-dist = max(abs(root.drag-dx), abs(root.drag-dy));
+                            root.hover-lane = root.lane-at(root.lane-x(c.lane) + root.drag-dx + root.col-w / 2);
+                        }
+                    }
+                }
+            }
+            if BoardUi.cards.length == 0: Text {
+                x: root.lane-x(0) + 12px;
+                y: root.card-y(0) + 4px;
+                width: root.col-w - 24px;
+                text: "No cards yet. Add one with New card, then drag it to Todo to start an agent on it.";
+                font-size: 12px;
+                color: Theme.muted;
+                wrap: word-wrap;
+            }
+        }
+    }
+    menu := PopupWindow {
+        x: min(root.menu-x, root.width - 200px);
+        y: min(root.menu-y, root.height - 170px);
+        width: 190px;
+        MenuShell {
+            MenuItem {
+                text: "Start";
+                icon: Icons.play;
+                has-icon: true;
+                show-check: false;
+                enabled: !root.menu-session;
+                clicked => {
+                    BoardUi.action("start", root.menu-id);
+                    menu.close();
+                }
+            }
+            MenuItem {
+                text: "Open session";
+                icon: Icons.message-square;
+                has-icon: true;
+                show-check: false;
+                enabled: root.menu-session;
+                clicked => {
+                    BoardUi.action("open", root.menu-id);
+                    menu.close();
+                }
+            }
+            MenuItem {
+                text: "Edit";
+                icon: Icons.pencil;
+                has-icon: true;
+                show-check: false;
+                clicked => {
+                    BoardUi.action("edit", root.menu-id);
+                    menu.close();
+                }
+            }
+            MenuItem {
+                text: "Delete";
+                icon: Icons.trash-2;
+                has-icon: true;
+                show-check: false;
+                clicked => {
+                    BoardUi.action("delete", root.menu-id);
+                    menu.close();
+                }
+            }
+        }
+    }
+    if BoardUi.dialog-open: CardDialog { }
+}

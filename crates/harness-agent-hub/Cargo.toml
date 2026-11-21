@@ -11,6 +11,7 @@ name = "harness-memory-mcp"
 path = "src/bin/harness-memory-mcp.rs"
 
 [dependencies]
+harness-config = { path = "../harness-config" }
 harness-core = { path = "../harness-core" }
 harness-core-api = { path = "../harness-core-api" }
 # Phase 9.1: the Harness MCP overlay (`<home>/mcp.json`) passed on session/new and session/load.

@@ -1,0 +1,236 @@
+import { RichSelect } from "../components/rich_select.slint";
+import { MdBlock, FileIcon } from "../models.slint";
+import { ChatUi } from "./globals.slint";
+import { Button, Divider, IconButton, Icons } from "../components/controls.slint";
+import { ListView } from "std-widgets.slint";
+import { Theme } from "../theme/tokens.slint";
+
+export component MarkdownView inherits VerticalLayout {
+    in property <[MdBlock]> blocks;
+    callback link(string);
+    spacing: 12px;
+    min-width: 0px;
+    max-width: 100000px;
+    // 修复：表格单元格若用 preferred-width: 0 求等宽列，StyledText 会按 0 宽度换行计算首选高度，行高暴涨、后续行被裁掉。
+    // 改为按实际宽度给出固定列宽；宽度经 changed 回调写入普通属性，避免 width -> 子项 -> width 的绑定环。
+    property <length> content-width: 400px;
+    changed width => {
+        root.content-width = root.width;
+    }
+    init => {
+        root.content-width = root.width;
+    }
+    for b in root.blocks: VerticalLayout {
+        // 修复（8.2 遗留：长回复与下一条消息重叠）：段落 StyledText 位于 for/if 重复项内，布局的宽度约束传不到它的
+        // 高度测量，首选高度按未换行的单行宽度计算（实测行高 60px，实际需 114px）；ListView 按该高度摆放下一行，
+        // 于是下一条消息压在换行后的文字上。显式给出内容宽度，高度即按实际换行宽度计算（gate 断言相邻行不重叠）。
+        if b.kind == 0 || b.kind == 1: RichSelect {
+            width: root.content-width;
+            text: Theme.dark ? b.text-dark : b.text;
+            plain: b.plain;
+            links: b.links;
+            font-weight: b.kind == 1 ? 700 : 400;
+            font-size: b.kind == 1 ? (b.level == 1 ? Theme.ui-xl : (b.level == 2 ? Theme.ui-lg : Theme.ui-base)) : Theme.ui-base;
+            link(url) => {
+                root.link(url);
+            }
+        }
+        if b.kind == 5: Rectangle {
+            height: 9px;
+            accessible-role: none;
+            Rectangle {
+                y: 4px;
+                height: 1px;
+                background: Theme.border;
+            }
+        }
+        // Code block: ZCode card with a language header (file-type icon + language) above the code.
+        if b.kind == 2: cb := Rectangle {
+            // Wrap toggle per block (ZCode code block "Wrap"); unwrapped code scrolls horizontally.
+            property <bool> wrap: true;
+            background: Theme.card;
+            border-radius: Theme.radius-lg;
+            border-width: 1px;
+            border-color: Theme.border;
+            clip: true;
+            // Gate/screen-reader hook: language and whether Rust produced syntax colors.
+            accessible-role: AccessibleRole.text;
+            accessible-label: "code " + b.lang;
+            accessible-description: b.highlighted ? "highlighted" : "plain";
+            VerticalLayout {
+                Rectangle {
+                    height: 32px;
+                    HorizontalLayout {
+                        padding-left: 12px;
+                        padding-right: 6px;
+                        spacing: 6px;
+                        if b.lang != "": FileIcon {
+                            index: b.lang-icon;
+                            size: 14px;
+                        }
+                        Text {
+                            text: b.lang != "" ? b.lang : @tr("Code");
+                            font-size: Theme.ui-sm;
+                            color: Theme.foreground-subtle;
+                            vertical-alignment: center;
+                            horizontal-stretch: 1;
+                        }
+                        IconButton {
+                            y: (parent.height - self.height) / 2;
+                            icon: Icons.arrow-left-right;
+                            label: cb.wrap ? @tr("Disable wrap") : @tr("Enable wrap");
+                            size: Theme.control-sm;
+                            icon-size: Theme.icon-xs;
+                            active: !cb.wrap;
+                            clicked => {
+                                cb.wrap = !cb.wrap;
+                            }
+                        }
+                        IconButton {
+                            y: (parent.height - self.height) / 2;
+                            icon: Icons.copy;
+                            label: @tr("Copy code");
+                            size: Theme.control-sm;
+                            icon-size: Theme.icon-xs;
+                            clicked => {
+                                ChatUi.copy(b.code);
+                            }
+                        }
+                    }
+                }
+                HorizontalLayout {
+                    padding: 12px;
+                    padding-top: 0px;
+                    // 同上：代码块文字也显式给宽度，换行后的高度才会计入行高。
+                    if b.highlighted && cb.wrap: RichSelect {
+                        width: root.content-width - 24px;
+                        text: Theme.dark ? b.code-dark : b.code-light;
+                        plain: b.plain;
+                        font-family: Theme.mono-font;
+                        font-size: Theme.code-size;
+                    }
+                    if !b.highlighted && cb.wrap: TextInput {
+                        width: root.content-width - 24px;
+                        text: b.plain;
+                        read-only: true;
+                        single-line: false;
+                        font-family: Theme.mono-font;
+                        font-size: Theme.code-size;
+                        color: Theme.foreground;
+                        selection-background-color: Theme.text-selection;
+                        wrap: word-wrap;
+                    }
+                    // 不换行：长行在块内横向滚动，块高按行数计算。
+                    if !cb.wrap: Flickable {
+                        width: root.content-width - 24px;
+                        height: nw.preferred-height;
+                        content-width: max(self.width, nw.preferred-width);
+                        nw := Text {
+                            text: b.plain;
+                            font-family: Theme.mono-font;
+                            font-size: Theme.code-size;
+                            color: Theme.foreground;
+                            wrap: no-wrap;
+                        }
+                    }
+                }
+            }
+        }
+        // Table: bordered rounded-lg frame, subtle header row, hairlines between rows.
+        // List (ZCode markdown-list: items space-y-1.5, subtle markers, pl-5): one row per top-level item.
+        if b.kind == 4: VerticalLayout {
+            spacing: 6px;
+            accessible-role: AccessibleRole.list;
+            accessible-label: "list " + b.rows.length;
+            for r[ri] in b.rows: HorizontalLayout {
+                if b.lang == "ol": Text {
+                    width: 24px;
+                    text: (b.level + ri) + ".";
+                    color: Theme.accent-fg;
+                    font-size: Theme.ui-base;
+                    font-weight: Theme.weight-medium;
+                    accessible-role: none;
+                }
+                if b.lang != "ol": Rectangle {
+                    width: 20px;
+                    Rectangle {
+                        x: 6px;
+                        y: 8px;
+                        width: 5px;
+                        height: 5px;
+                        border-radius: 2.5px;
+                        background: Theme.accent-fg.with-alpha(0.7);
+                    }
+                }
+                RichSelect {
+                    width: root.content-width - (b.lang == "ol" ? 24px : 20px);
+                    text: Theme.dark ? r.cells-dark[0] : r.cells[0];
+                    plain: r.plain;
+                    links: r.links;
+                    link(url) => {
+                        root.link(url);
+                    }
+                }
+            }
+        }
+        // Table copy (ZCode table toolbar): Markdown source or CSV.
+        if b.kind == 3: HorizontalLayout {
+            alignment: end;
+            spacing: 2px;
+            height: Theme.control-sm;
+            Button {
+                text: @tr("Copy as Markdown");
+                size: "xs";
+                variant: "ghost";
+                has-icon: true;
+                icon: Icons.copy;
+                text-color: Theme.foreground-subtle;
+                clicked => {
+                    ChatUi.copy(b.code);
+                }
+            }
+            Button {
+                text: @tr("Copy as CSV");
+                size: "xs";
+                variant: "ghost";
+                has-icon: true;
+                icon: Icons.table;
+                text-color: Theme.foreground-subtle;
+                clicked => {
+                    ChatUi.copy(b.csv);
+                }
+            }
+        }
+        if b.kind == 3: Rectangle {
+            border-radius: Theme.radius-lg;
+            border-width: 1px;
+            border-color: Theme.border;
+            clip: true;
+            accessible-role: table;
+            accessible-label: "table " + b.rows.length + "x" + b.level;
+            VerticalLayout {
+                for r[ri] in b.rows: VerticalLayout {
+                    if ri > 0: Divider { }
+                    Rectangle {
+                        background: ri == 0 ? Theme.surface : transparent;
+                        HorizontalLayout {
+                            padding-left: 12px;
+                            padding-right: 12px;
+                            padding-top: 7px;
+                            padding-bottom: 7px;
+                            spacing: 12px;
+                            // 等宽列：各行独立布局，按内容分配宽度会导致列无法对齐，因此使用统一的固定列宽。
+                            for c[ci] in r.cells: StyledText {
+                                width: max(24px, (root.content-width - 24px - 12px * max(0, b.level - 1)) / max(1, b.level));
+                                text: Theme.dark ? r.cells-dark[ci] : c;
+                                default-color: ri == 0 ? Theme.foreground-subtle : Theme.foreground;
+                                link-color: Theme.link;
+                                default-font-size: Theme.ui-base;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

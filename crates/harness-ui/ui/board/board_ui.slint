@@ -1,0 +1,45 @@
+import { Theme } from "../theme/tokens.slint";
+import { Icon, Icons, Spinner, Button, IconButton, Tag, Dialog, MenuShell, MenuItem } from "../components/controls.slint";
+import { TextField, TextArea } from "../settings/parts.slint";
+import { AgentTint, Pill } from "../panels/common.slint";
+
+export struct BoardCard {
+    id: string,
+    lane: int,
+    index: int,
+    title: string,
+    preview: string,
+    state: string,
+    agent: string,
+    branch: string,
+    cost: string,
+    has-session: bool,
+}
+
+export struct BoardColumn {
+    label: string,
+    count: int,
+}
+
+export global BoardUi {
+    in-out property <bool> open;
+    in property <string> project;
+    in property <string> mode: "Local";
+    in property <string> sync-text;
+    in property <bool> sync-error;
+    in property <bool> linked;
+    in property <bool> can-link;
+    in property <bool> busy;
+    in property <[BoardColumn]> columns;
+    in property <[BoardCard]> cards;
+    in property <int> max-count;
+    in property <string> error;
+    in-out property <bool> dialog-open;
+    in-out property <string> dialog-id;
+    in-out property <string> dialog-title;
+    in-out property <string> dialog-body;
+    in-out property <int> dialog-lane;
+    callback action(string, string);
+    callback move(string, int, int);
+    callback save();
+}

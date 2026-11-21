@@ -1,0 +1,193 @@
+import { Theme } from "../theme/tokens.slint";
+import { Icon, Icons, Button, IconButton, MenuShell, MenuItem, SectionLabel } from "../components/controls.slint";
+import { ProgressTrack } from "../panels/common.slint";
+import { DockUi } from "./dock_ui.slint";
+
+// Typed error banner (frame 13): tinted card with a round "!" badge, title 13 semibold + message 12 muted,
+// Retry (secondary) / Details / Copy / Dismiss on the right. Rate-limit / network errors use the warning tint.
+export component FailureBanner inherits Rectangle {
+    property <bool> soft: DockUi.failure-kind == "transient";
+    property <color> tone: self.soft ? Theme.warning-surface-foreground : Theme.destructive-surface-foreground;
+    vertical-stretch: 0;
+    background: Theme.dark ? root.tone.with-alpha(0.07) : root.tone.with-alpha(0.08);
+    border-radius: Theme.radius-lg;
+    border-width: 1px;
+    border-color: root.tone.with-alpha(0.35);
+    accessible-role: AccessibleRole.groupbox;
+    accessible-label: "failure " + DockUi.failure-kind + " " + DockUi.failure-message;
+    VerticalLayout {
+        padding: 12px;
+        padding-left: 14px;
+        spacing: 10px;
+        HorizontalLayout {
+            spacing: 12px;
+            Rectangle {
+                y: 1px;
+                width: 22px;
+                height: 22px;
+                border-radius: 11px;
+                background: root.tone;
+                Text {
+                    text: "!";
+                    font-size: 13px;
+                    font-weight: 700;
+                    color: Theme.dark ? Theme.canvas : #ffffff;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    accessible-role: none;
+                }
+            }
+            VerticalLayout {
+                horizontal-stretch: 1;
+                spacing: 3px;
+                Text {
+                    text: DockUi.failure-title(DockUi.failure-kind);
+                    font-size: 13px;
+                    font-weight: Theme.weight-semibold;
+                    color: Theme.foreground;
+                    accessible-role: none;
+                }
+                Text {
+                    text: DockUi.failure-message;
+                    wrap: word-wrap;
+                    font-size: 12px;
+                    color: Theme.muted;
+                    accessible-role: none;
+                }
+                if DockUi.failure-retry == "login": Text {
+                    text: @tr("Sign in to the agent's CLI in a terminal, then retry.");
+                    wrap: word-wrap;
+                    font-size: 11px;
+                    color: root.tone;
+                    accessible-role: AccessibleRole.text;
+                }
+            }
+            if DockUi.failure-retry != "no": Button {
+                y: 0;
+                variant: "outline";
+                size: "sm";
+                text: DockUi.failure-wait > 0 ? @tr("Retry in {0} s", DockUi.failure-wait) : @tr("Retry");
+                label: @tr("Retry");
+                enabled: DockUi.failure-wait <= 0;
+                clicked => {
+                    DockUi.failure-action("retry");
+                }
+            }
+            IconButton {
+                icon: Icons.x;
+                label: @tr("Dismiss error");
+                size: Theme.control-sm;
+                icon-size: Theme.icon-sm;
+                clicked => {
+                    DockUi.failure-action("dismiss");
+                }
+            }
+        }
+        if soft && DockUi.failure-wait > 0: ProgressTrack {
+            ratio: -1;
+            tint: root.tone;
+        }
+        HorizontalLayout {
+            padding-left: 34px;
+            spacing: 6px;
+            alignment: start;
+            if DockUi.failure-details != "": Button {
+                variant: "ghost";
+                size: "sm";
+                text: DockUi.failure-expanded ? @tr("Hide details") : @tr("Details");
+                trailing-chevron: true;
+                clicked => {
+                    DockUi.failure-expanded = !DockUi.failure-expanded;
+                }
+            }
+            Button {
+                variant: "ghost";
+                size: "sm";
+                text: @tr("Copy");
+                has-icon: true;
+                icon: Icons.copy;
+                label: @tr("Copy error");
+                clicked => {
+                    DockUi.failure-action("copy");
+                }
+            }
+        }
+        if DockUi.failure-expanded && DockUi.failure-details != "": Rectangle {
+            background: Theme.card;
+            border-radius: Theme.radius-md;
+            border-width: 1px;
+            border-color: Theme.border;
+            clip: true;
+            details := TextInput {
+                x: 10px;
+                y: 8px;
+                width: parent.width - 20px;
+                text: DockUi.failure-details;
+                read-only: true;
+                single-line: false;
+                wrap: word-wrap;
+                font-family: Theme.mono-font;
+                font-size: 11px;
+                color: Theme.foreground-subtle;
+                accessible-label: @tr("Error details");
+            }
+            height: min(180px, details.preferred-height + 16px);
+        }
+    }
+}
+
+// Resumable-run banner (docs/specs/harness/resumable-runs.md Â§6): the hub stopped before the turn
+// finished, so the finished tool calls are recorded. Resume starts a new turn that skips them;
+// Discard drops the offer. Mirrors the failure banner, in the warning tint.
+export component ResumeBanner inherits Rectangle {
+    vertical-stretch: 0;
+    background: Theme.dark ? Theme.warning-surface-foreground.with-alpha(0.07) : Theme.warning-surface-foreground.with-alpha(0.08);
+    border-radius: Theme.radius-lg;
+    border-width: 1px;
+    border-color: Theme.warning-surface-foreground.with-alpha(0.35);
+    accessible-role: AccessibleRole.groupbox;
+    accessible-label: "resumable run " + DockUi.resume-title;
+    HorizontalLayout {
+        padding: 12px;
+        padding-left: 14px;
+        spacing: 12px;
+        VerticalLayout {
+            horizontal-stretch: 1;
+            spacing: 3px;
+            Text {
+                text: @tr("Run interrupted");
+                font-size: 13px;
+                font-weight: Theme.weight-semibold;
+                color: Theme.foreground;
+                accessible-role: none;
+            }
+            Text {
+                text: DockUi.resume-title;
+                wrap: word-wrap;
+                font-size: 12px;
+                color: Theme.muted;
+                accessible-role: none;
+            }
+        }
+        Button {
+            y: 0;
+            variant: "primary";
+            size: "sm";
+            text: @tr("Resume run");
+            label: @tr("Resume run");
+            clicked => {
+                DockUi.resume-action("resume");
+            }
+        }
+        Button {
+            y: 0;
+            variant: "ghost";
+            size: "sm";
+            text: @tr("Discard");
+            label: @tr("Discard the interrupted run");
+            clicked => {
+                DockUi.resume-action("discard");
+            }
+        }
+    }
+}

@@ -1,0 +1,58 @@
+import { ArtClock } from "./ascii.slint";
+import { Icon } from "./controls.slint";
+import { Theme } from "../theme/tokens.slint";
+
+export component RoundButton inherits Rectangle {
+    in property <image> icon;
+    in property <string> label;
+    in property <bool> enabled: true;
+    in property <bool> filled: true;
+    in property <bool> pulse: false;
+    callback clicked;
+    property <bool> live: root.enabled && root.filled;
+    height: self.width;
+    border-radius: Theme.radius-md;
+    width: 30px;
+    background: root.live ? (rta.has-hover ? Theme.primary-brush-hover : Theme.primary-brush) : !root.enabled ? Theme.border-hover : (rta.has-hover ? Theme.raised : Theme.surface);
+    border-width: root.live || !root.enabled ? 0px : 1px;
+    border-color: Theme.border-hover;
+    drop-shadow-blur: root.live ? 3px : 0px;
+    drop-shadow-offset-y: root.live ? 1px : 0px;
+    drop-shadow-color: root.live ? Theme.primary-shadow : transparent;
+    transform-scale: rta.pressed && root.enabled ? 0.9 : 1;
+    animate background, drop-shadow-blur { duration: Theme.dur-hover; easing: ease-out-quint; }
+    animate transform-scale { duration: Theme.dur-press; easing: ease-out-quint; }
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-enabled: root.enabled;
+    accessible-action-default => {
+        if root.enabled {
+            root.clicked();
+        }
+    }
+    if root.pulse: Rectangle {
+        property <float> t: mod(ArtClock.busy-tick, 16) / 16;
+        width: parent.width * (1 + 0.55 * self.t);
+        height: self.width;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        border-radius: self.width / 2;
+        border-width: 1px;
+        border-color: Theme.foreground-subtle;
+        opacity: (1 - self.t) * 0.7;
+    }
+    Icon {
+        source: root.icon;
+        size: Theme.icon-sm;
+        tint: root.live ? Theme.primary-foreground : (root.enabled ? Theme.icon : Theme.icon-subtlest);
+    }
+    rta := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+// Starter card: hairline card with a mono index, the title and a muted hint; an arrow slides in on hover.

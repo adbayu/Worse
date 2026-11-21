@@ -1,0 +1,183 @@
+import { Theme } from "../../theme/tokens.slint";
+import { Look } from "../../theme/look.slint";
+import { ThinkGlyph, GlyphAnim, AsciiArt } from "../../components/ascii.slint";
+import { Button } from "../../components/controls.slint";
+import { SettingsUi } from "../globals.slint";
+import { PageHeader, Group, SettingRow, Switch, TextField, Stepper, RangeSlider, Select, SetButton, Pill, SegmentedControl, CapsLabel, Dot } from "../parts.slint";
+import { BoolRow, TextRow, SectionCaps, ThemeOption, Swatch, ThinkTile, FieldTile } from "./parts.slint";
+
+export component BasicsGroup inherits Group {
+    in property <bool> stacked;
+    in property <bool> update-ready;
+    in property <string> version;
+    callback restart-for-update();
+    title: @tr("Basics");
+    note: @tr("Applies immediately");
+    SettingRow {
+        first: true;
+        stacked: root.stacked;
+        title: @tr("Language");
+        description: @tr("Interface language for Harness itself.");
+        Select {
+            fit: true;
+            property <string> value: SettingsUi.get-string("general.language", SettingsUi.rev);
+            label: @tr("Language");
+            options: [
+                { id: "system", label: @tr("System default") },
+                { id: "en-US", label: "English" },
+                { id: "zh-CN", label: "简体中文" },
+            ];
+            current: self.value;
+            current-label: self.value == "en-US" ? "English" : self.value == "zh-CN" ? "简体中文" : @tr("System default");
+            select(id) => {
+                SettingsUi.set-string("general.language", id);
+            }
+        }
+    }
+    SettingRow {
+        stacked: root.stacked;
+        title: @tr("Send message");
+        description: @tr("Which key sends from the composer.");
+        SegmentedControl {
+            label: @tr("Send message");
+            options: [{ id: "enter", label: "Enter" }, { id: "modEnter", label: "Ctrl+Enter" }];
+            current: SettingsUi.get-string("general.composerSend", SettingsUi.rev);
+            select(id) => {
+                SettingsUi.set-string("general.composerSend", id);
+            }
+        }
+    }
+    BoolRow {
+        stacked: root.stacked;
+        key: "general.launchAtStartup";
+        title: @tr("Launch at startup");
+        description: @tr("Open Harness when you sign in.");
+    }
+    SettingRow {
+        stacked: root.stacked;
+        title: @tr("Live update channel");
+        description: @tr("Nightly gets new builds a week early.");
+        SegmentedControl {
+            label: @tr("Live update channel");
+            options: [{ id: "stable", label: @tr("Stable") }, { id: "nightly", label: @tr("Nightly") }];
+            current: SettingsUi.get-bool("updates.previewChannel", SettingsUi.rev) ? "nightly" : "stable";
+            select(id) => {
+                SettingsUi.set-bool("updates.previewChannel", id == "nightly");
+            }
+        }
+    }
+    SettingRow {
+        stacked: root.stacked;
+        title: root.update-ready ? @tr("New build ready · v{0}", root.version) : @tr("Up to date · v{0}", root.version);
+        description: root.update-ready ? @tr("Downloaded in the background. Restart to apply.") : @tr("New builds download in the background.");
+        HorizontalLayout {
+            spacing: 8px;
+            alignment: end;
+            if root.update-ready: VerticalLayout {
+                alignment: center;
+                Pill {
+                    text: @tr("update");
+                    tint: Theme.info;
+                }
+            }
+            if root.update-ready: SetButton {
+                text: @tr("Restart");
+                label: @tr("Restart to apply the new build");
+                variant: "accent";
+                clicked => {
+                    root.restart-for-update();
+                }
+            }
+            if !root.update-ready: Pill {
+                text: @tr("latest");
+                tint: Theme.muted;
+            }
+        }
+    }
+}
+
+export component StorageGroup inherits Group {
+    in property <bool> stacked;
+    in-out property <bool> moving;
+    in-out property <bool> confirm-move;
+    title: @tr("Storage");
+    note: @tr("Data directory");
+    SettingRow {
+        first: true;
+        stacked: root.stacked;
+        wide: true;
+        title: @tr("Data directory");
+        description: SettingsUi.pending-data-dir != "" ? @tr("Moves to {0} on the next start.", SettingsUi.pending-data-dir) : SettingsUi.data-dir;
+        HorizontalLayout {
+            spacing: 8px;
+            alignment: end;
+            if SettingsUi.pending-data-dir != "": SetButton {
+                text: @tr("Cancel move");
+                clicked => {
+                    SettingsUi.cancel-relocation();
+                }
+            }
+            if SettingsUi.pending-data-dir == "": SetButton {
+                text: @tr("Change…");
+                label: @tr("Change data directory");
+                clicked => {
+                    root.moving = !root.moving;
+                }
+            }
+        }
+    }
+    if root.moving: VerticalLayout {
+        padding: 16px;
+        padding-top: 0px;
+        spacing: 8px;
+        HorizontalLayout {
+            spacing: 8px;
+            target := TextField {
+                label: @tr("New data directory");
+                placeholder: @tr("Absolute path of an empty or new folder");
+                mono: true;
+            }
+            SetButton {
+                text: @tr("Move");
+                variant: "accent";
+                enabled: target.text != "";
+                clicked => {
+                    root.confirm-move = true;
+                }
+            }
+        }
+        Text {
+            text: @tr("Harness copies its data to the new folder on the next start, verifies it, then switches. The old folder is kept until the copy is verified.");
+            font-size: Theme.ui-sm;
+            color: Theme.muted;
+            wrap: word-wrap;
+        }
+        if root.confirm-move: HorizontalLayout {
+            spacing: 8px;
+            alignment: end;
+            Text {
+                text: @tr("Move the data directory to {0}?", target.text);
+                color: Theme.foreground;
+                font-size: Theme.ui-sm;
+                vertical-alignment: center;
+                wrap: word-wrap;
+                horizontal-stretch: 1;
+            }
+            SetButton {
+                text: @tr("Cancel");
+                clicked => {
+                    root.confirm-move = false;
+                }
+            }
+            SetButton {
+                text: @tr("Move on restart");
+                variant: "accent";
+                clicked => {
+                    SettingsUi.relocate-data-dir(target.text);
+                    root.confirm-move = false;
+                    root.moving = false;
+                }
+            }
+        }
+    }
+}

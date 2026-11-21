@@ -1,0 +1,207 @@
+import { Theme } from "../theme/tokens.slint";
+import { MidnightBackdrop } from "../theme/backdrop.slint";
+import { Button, Icon, Icons } from "../components/controls.slint";
+import { SettingsShell, FallbackRow } from "../settings/shell.slint";
+import { SettingsUi, GraphUi } from "../settings/globals.slint";
+import { ChatUi } from "./globals.slint";
+import { DockUi } from "./dock.slint";
+
+export component DropHint inherits Rectangle {
+    background: Theme.scrim;
+    Rectangle {
+        width: min(360px, parent.width - 48px);
+        height: 120px;
+        border-radius: Theme.radius-2xl;
+        border-width: 2px;
+        border-color: Theme.input-border-focused;
+        background: Theme.popover;
+        VerticalLayout {
+            alignment: center;
+            spacing: 8px;
+            HorizontalLayout {
+                alignment: center;
+                Icon {
+                    source: Icons.paperclip;
+                    tint: Theme.icon;
+                }
+            }
+            Text {
+                text: @tr("Drop files to attach");
+                horizontal-alignment: center;
+                color: Theme.foreground;
+            }
+        }
+    }
+}
+
+export component Toast inherits Rectangle {
+    width: tt.preferred-width + 24px;
+    height: 32px;
+    border-radius: Theme.radius-lg;
+    background: Theme.toast;
+    border-width: 1px;
+    border-color: Theme.popover-border;
+    drop-shadow-blur: Theme.shadow-md-blur;
+    drop-shadow-offset-y: Theme.shadow-md-y;
+    drop-shadow-color: Theme.shadow-md-color;
+    accessible-role: AccessibleRole.text;
+    accessible-label: "toast " + ChatUi.toast;
+    tt := Text {
+        text: ChatUi.toast;
+        color: Theme.foreground;
+        font-size: Theme.ui-sm;
+        accessible-role: none;
+    }
+}
+
+export component PickerScrim inherits Rectangle {
+    callback close();
+    TouchArea {
+        x: 0;
+        y: 0;
+        width: parent.width;
+        height: max(0px, DockUi.menu-y);
+        clicked => {
+            DockUi.picker-open = "";
+            root.close();
+        }
+    }
+    TouchArea {
+        x: 0;
+        y: DockUi.menu-y;
+        width: max(0px, DockUi.menu-x);
+        height: max(0px, parent.height - DockUi.menu-y);
+        clicked => {
+            DockUi.picker-open = "";
+            root.close();
+        }
+    }
+    TouchArea {
+        x: DockUi.menu-x + DockUi.menu-w;
+        y: DockUi.menu-y;
+        width: max(0px, parent.width - DockUi.menu-x - DockUi.menu-w);
+        height: max(0px, parent.height - DockUi.menu-y);
+        clicked => {
+            DockUi.picker-open = "";
+            root.close();
+        }
+    }
+}
+
+export component SettingsOverlay inherits Rectangle {
+    in property <bool> narrow;
+    in property <[FallbackRow]> fallback;
+    in property <bool> update-ready;
+    callback close();
+    callback restart-for-update();
+    callback open-folder();
+    callback move-fallback(int, int);
+    visible: !GraphUi.view-wide;
+    property <bool> modal: !root.narrow && root.width >= 760px && root.height >= 520px;
+    background: self.modal ? Theme.scrim : transparent;
+    TouchArea {
+        clicked => {
+            root.close();
+        }
+    }
+    Rectangle {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        width: parent.modal ? min(1120px, parent.width - 96px) : parent.width;
+        height: parent.modal ? min(780px, parent.height - 96px) : parent.height;
+        border-radius: parent.modal ? Theme.radius-3xl : 0px;
+        drop-shadow-blur: parent.modal ? 60px : 0px;
+        drop-shadow-offset-y: parent.modal ? 20px : 0px;
+        drop-shadow-color: Theme.shadow-lg-color;
+        background: Theme.canvas;
+        Rectangle {
+            border-radius: parent.border-radius;
+            clip: true;
+            MidnightBackdrop {
+                plain: true;
+            }
+            SettingsShell {
+    init => {
+        SettingsUi.open-page(SettingsUi.page);
+    }
+    fallback: root.fallback;
+    narrow: root.narrow;
+    version: SettingsUi.get-string("app.version", SettingsUi.rev);
+    update-ready: root.update-ready;
+    restart-for-update => {
+        root.restart-for-update();
+    }
+    add-folder => {
+        root.open-folder();
+    }
+    close => {
+        root.close();
+    }
+    move-fallback(index, delta) => {
+        root.move-fallback(index, delta);
+    }
+            }
+        }
+        Rectangle {
+            border-radius: parent.border-radius;
+            border-width: root.modal ? 1px : 0px;
+            border-color: Theme.glass-rim;
+        }
+    }
+}
+
+export component GraphEmpty inherits Rectangle {
+    callback open-settings();
+    width: 100%;
+    height: 100%;
+    background: Theme.canvas;
+    TouchArea { }
+    empty-keys := FocusScope {
+        init => {
+            self.focus();
+        }
+        key-pressed(event) => {
+            if event.text == Key.Escape {
+                GraphUi.view-wide = false;
+                return accept;
+            }
+            return reject;
+        }
+    }
+    VerticalLayout {
+        alignment: center;
+        spacing: 14px;
+        Text {
+            text: GraphUi.checked ? @tr("This project has no memory graph yet") : @tr("Loading the memory graph…");
+            font-size: Theme.ui-lg;
+            font-weight: Theme.weight-medium;
+            color: Theme.foreground;
+            horizontal-alignment: center;
+        }
+        if GraphUi.checked: Text {
+            text: @tr("Build it with Graphify in Settings › Memory › Graph.");
+            font-size: Theme.ui-sm;
+            color: Theme.muted;
+            horizontal-alignment: center;
+        }
+        HorizontalLayout {
+            alignment: center;
+            spacing: 8px;
+            if GraphUi.checked: Button {
+                text: @tr("Open settings");
+                variant: "primary";
+                clicked => {
+                    GraphUi.view-wide = false;
+                    root.open-settings();
+                    SettingsUi.open-page("memory");
+                }
+            }
+            Button {
+                text: @tr("Close");
+                clicked => {
+                    GraphUi.view-wide = false;
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,209 @@
+import { Theme } from "../theme/tokens.slint";
+import { Glass, Icon, IconButton, Icons } from "../components/controls.slint";
+import { SessionRow } from "../models.slint";
+import { SettingsUi } from "../settings/globals.slint";
+import { ChatUi } from "./globals.slint";
+import { Sidebar } from "./sidebar.slint";
+import { TitleDrag } from "./title_drag.slint";
+
+export component SidebarCard inherits VerticalLayout {
+    in property <bool> native-frame;
+    in property <length> window-width;
+    in property <bool> win-maximized;
+    in property <[SessionRow]> sessions;
+    in property <string> workspace-initial;
+    in property <string> workspace-name;
+    callback window-action(string);
+    callback hide-sidebar();
+    callback show-settings();
+    callback new-session();
+    callback new-worktree-session();
+    callback open-session(string);
+    callback archive-session(string);
+    callback open-new-menu(length, length);
+    callback open-menu(string, length, length);
+    callback open-group-menu(string, length, length);
+    Glass {
+        radius: Theme.radius-2xl;
+        clip: true;
+        VerticalLayout {
+    // Brand row: the bunny mark and the short name, then history / hide controls.
+    HorizontalLayout {
+        height: Theme.topbar-height - 4px;
+        padding-left: 14px;
+        padding-right: 10px;
+        spacing: 2px;
+        Image {
+            y: (parent.height - self.height) / 2;
+            width: 26px;
+            height: 26px;
+            source: @image-url("../brand/mascot-small.svg");
+            accessible-role: none;
+        }
+        Rectangle {
+            width: 6px;
+        }
+        Text {
+            text: "Harness";
+            font-family: Theme.display-font;
+            font-weight: 700;
+            font-size: Theme.ui-lg;
+            color: Theme.foreground;
+            vertical-alignment: center;
+            accessible-role: none;
+        }
+        Rectangle {
+            horizontal-stretch: 1;
+            TitleDrag {
+                enabled: !root.native-frame;
+                bar-width: root.window-width;
+                maximized: root.win-maximized;
+                action(a) => {
+                    root.window-action(a);
+                }
+            }
+        }
+        IconButton {
+            y: (parent.height - self.height) / 2;
+            size: Theme.control-sm;
+            icon-size: Theme.icon-sm;
+            icon: Icons.chevron-left;
+            label: @tr("Navigate Back");
+            enabled: ChatUi.can-back;
+            clicked => {
+                ChatUi.nav("back");
+            }
+        }
+        IconButton {
+            y: (parent.height - self.height) / 2;
+            size: Theme.control-sm;
+            icon-size: Theme.icon-sm;
+            icon: Icons.chevron-right;
+            label: @tr("Navigate Forward");
+            enabled: ChatUi.can-forward;
+            clicked => {
+                ChatUi.nav("forward");
+            }
+        }
+        IconButton {
+            y: (parent.height - self.height) / 2;
+            size: Theme.control-sm;
+            icon-size: Theme.icon-sm;
+            icon: Icons.panel-left;
+            label: @tr("Hide sidebar");
+            clicked => {
+                root.hide-sidebar();
+            }
+        }
+    }
+    // New session: white primary row; right click or the chevron opens the options menu.
+    HorizontalLayout {
+        height: 36px;
+        padding-left: 12px;
+        padding-right: 12px;
+        padding-bottom: 4px;
+        spacing: 6px;
+        new-btn := Rectangle {
+            horizontal-stretch: 1;
+            border-radius: Theme.radius-md;
+            background: nbta.has-hover ? Theme.primary-hover : Theme.primary;
+            drop-shadow-blur: 10px;
+            drop-shadow-offset-y: 3px;
+            drop-shadow-color: Theme.primary-shadow;
+            animate background { duration: Theme.dur-hover; easing: ease-out-quint; }
+            accessible-role: button;
+            accessible-label: @tr("New session");
+            accessible-action-default => {
+                root.new-session();
+            }
+            HorizontalLayout {
+                alignment: center;
+                spacing: 6px;
+                Icon {
+                    source: Icons.plus;
+                    size: Theme.icon-xs;
+                    tint: Theme.primary-foreground;
+                }
+                Text {
+                    text: @tr("New session");
+                    font-size: Theme.ui-caption;
+                    font-weight: Theme.weight-semibold;
+                    color: Theme.primary-foreground;
+                    vertical-alignment: center;
+                    accessible-role: none;
+                }
+            }
+            nbta := TouchArea {
+                mouse-cursor: pointer;
+                clicked => {
+                    root.new-session();
+                }
+                pointer-event(event) => {
+                    if event.button == PointerEventButton.right && event.kind == PointerEventKind.up {
+                        root.open-new-menu(self.absolute-position.x, self.absolute-position.y + self.height + 4px);
+                    }
+                }
+            }
+        }
+        Rectangle {
+            width: 32px;
+            border-radius: Theme.radius-md;
+            background: nmta.has-hover ? Theme.surface-hover : Theme.surface;
+            border-width: 1px;
+            border-color: Theme.border;
+            animate background { duration: Theme.dur-hover; easing: ease-out-quint; }
+            accessible-role: button;
+            accessible-label: "New session options";
+            accessible-action-default => {
+                root.open-new-menu(new-btn.absolute-position.x, new-btn.absolute-position.y + new-btn.height + 4px);
+            }
+            Icon {
+                source: Icons.chevron-down;
+                size: Theme.icon-xs;
+                tint: Theme.icon-subtle;
+            }
+            nmta := TouchArea {
+                mouse-cursor: pointer;
+                clicked => {
+                    root.open-new-menu(new-btn.absolute-position.x, new-btn.absolute-position.y + new-btn.height + 4px);
+                }
+            }
+        }
+    }
+    Sidebar {
+        vertical-stretch: 1;
+        sessions: root.sessions;
+    initial: root.workspace-initial;
+    workspace: root.workspace-name;
+    new-session => {
+        root.new-session();
+    }
+    new-worktree-session => {
+        root.new-worktree-session();
+    }
+    open-session(id) => {
+        root.open-session(id);
+    }
+    archive-session(id) => {
+        root.archive-session(id);
+    }
+    menu(id, x, y) => {
+        root.open-menu(id, x, y);
+    }
+    new-menu(x, y) => {
+        root.open-new-menu(x, y);
+    }
+    group-menu(id, x, y) => {
+        root.open-group-menu(id, x, y);
+    }
+    open-page(id) => {
+        root.show-settings();
+        SettingsUi.open-page(id);
+    }
+    open-settings => {
+        root.show-settings();
+    }
+    }
+        }
+    }
+}

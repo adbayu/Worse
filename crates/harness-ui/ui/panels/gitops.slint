@@ -1,0 +1,27 @@
+// Git operations of 9.2B round 3 (spec docs/specs/harness/phase-9-parity.md §7.4 "Git"; inventory GIT-007..GIT-011):
+// branch switcher (search, switch, create, blocked switch), commit dialog (include unstaged, commit & push), push
+// dialog (upstream, ahead / behind, result, error copy) and the commit graph dialog (lanes, inspect, load more).
+// The panels worker owns the repository (`panels::GitCall`); Rust (src/gitui.rs) is the only writer of GitUi and
+// mirrors each reply. UI-local state: which dialog is open, the branch filter, the selected graph row.
+
+import { ListView } from "std-widgets.slint";
+import { Theme } from "../theme/tokens.slint";
+import { Icon, Icons, Button, IconButton, Tag, Dialog, MenuItem } from "../components/controls.slint";
+import { TextField, TextArea, Switch } from "../settings/parts.slint";
+import { BranchDialog, CommitDialog, PushDialog } from "./git_dialogs.slint";
+export { BranchDialog, CommitDialog, PushDialog }
+import { BranchRow, GraphRow, GitUi, ResultLine } from "./git_ui.slint";
+export { BranchRow, GraphRow, GitUi, ResultLine }
+import { GraphLine, GraphDialog } from "./git_graph.slint";
+export { GraphLine, GraphDialog }
+
+// Mounted at the window root (covers the whole window like the other dialogs).
+export component GitDialogs inherits Rectangle {
+    in-out property <string> message;
+    if GitUi.dialog == "branches": BranchDialog { }
+    if GitUi.dialog == "commit": CommitDialog {
+        message <=> root.message;
+    }
+    if GitUi.dialog == "push": PushDialog { }
+    if GitUi.dialog == "graph": GraphDialog { }
+}

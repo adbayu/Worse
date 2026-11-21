@@ -1,0 +1,196 @@
+import { ScrollView } from "std-widgets.slint";
+import { Theme } from "../../theme/tokens.slint";
+import { ConfigUi, DocUi, ResRow, FormField, SettingsUi, RecallUi, RecallRow, GraphUi } from "../globals.slint";
+import { GraphCanvas } from "../graph_canvas.slint";
+import { PageHeader, Group, SettingRow, Switch, TextField, TextArea, Select, SearchField, UnsupportedNotice, StatusLine } from "../parts.slint";
+import { Labels } from "../labels.slint";
+import { SkillBrowse } from "../skills.slint";
+import { Icons, IconButton, Segmented, MenuShell, MenuItem } from "../../components/controls.slint";
+import { ConfigCopy, AgentDot } from "./types.slint";
+import { Pill, Btn, Dot, Hairline, DCard, CardHead, Th, Muted, AgentChip, ChipBar } from "./parts.slint";
+import { TargetBar } from "./card.slint";
+
+import { CodeEditor, ScopeTab } from "./doc_editor.slint";
+
+export component InstructionsBody inherits VerticalLayout {
+    spacing: 20px;
+    // Scope tabs + underline.
+    HorizontalLayout {
+        spacing: 18px;
+        alignment: start;
+        ScopeTab {
+            text: DocUi.scope == "user" && DocUi.file-name != "" ? "Global · " + DocUi.file-name : "Global";
+            active: DocUi.scope == "user";
+            picked => {
+                DocUi.select-scope("user");
+            }
+        }
+        ScopeTab {
+            text: DocUi.scope == "workspace" && DocUi.file-name != "" ? "Project · " + DocUi.file-name : "Project";
+            active: DocUi.scope == "workspace";
+            picked => {
+                DocUi.select-scope("workspace");
+            }
+        }
+    }
+    Hairline { }
+    if !DocUi.supported: UnsupportedNotice {
+        title: @tr("{0} has no instructions file for this scope", Labels.agent-name(DocUi.agent));
+        reason: DocUi.error;
+    }
+    if DocUi.supported: DCard {
+        VerticalLayout {
+            // Editor bar: file + unsaved chip | Discard + Write changes.
+            HorizontalLayout {
+                height: 42px;
+                padding-left: 14px;
+                padding-right: 14px;
+                spacing: 10px;
+                HorizontalLayout {
+                    spacing: 8px;
+                    alignment: start;
+                    horizontal-stretch: 1;
+                    Text {
+                        text: DocUi.file-name != "" ? DocUi.file-name : DocUi.path;
+                        font-size: 12px;
+                        color: Theme.foreground-subtle;
+                        vertical-alignment: center;
+                        overflow: elide;
+                    }
+                    if !DocUi.exists: VerticalLayout {
+                        alignment: center;
+                        Pill {
+                            text: "new file";
+                            tint: Theme.info;
+                        }
+                    }
+                    if DocUi.dirty: VerticalLayout {
+                        alignment: center;
+                        Pill {
+                            text: (DocUi.added + DocUi.removed) + " unsaved";
+                            tint: Theme.warning;
+                        }
+                    }
+                    Text {
+                        text: DocUi.path;
+                        font-size: 11px;
+                        color: Theme.icon-subtlest;
+                        vertical-alignment: center;
+                        overflow: elide;
+                        horizontal-stretch: 1;
+                    }
+                }
+                Btn {
+                    compact: true;
+                    text: "Discard";
+                    enabled: DocUi.dirty;
+                    y: (parent.height - self.height) / 2;
+                    clicked => {
+                        DocUi.revert();
+                    }
+                }
+                Btn {
+                    compact: true;
+                    primary: true;
+                    text: "Write changes";
+                    y: (parent.height - self.height) / 2;
+                    label: @tr("Save instructions");
+                    enabled: DocUi.dirty && DocUi.bytes <= DocUi.limit;
+                    clicked => {
+                        DocUi.save();
+                    }
+                }
+            }
+            Hairline { }
+            CodeEditor {
+                height: 240px;
+                label: @tr("Instructions content");
+                lines: DocUi.line-count;
+                text <=> DocUi.text;
+                edited(v) => {
+                    DocUi.edited(v);
+                }
+            }
+        }
+    }
+    if DocUi.supported && DocUi.dirty: DCard {
+        VerticalLayout {
+            HorizontalLayout {
+                height: 40px;
+                padding-left: 14px;
+                padding-right: 14px;
+                spacing: 10px;
+                HorizontalLayout {
+                    spacing: 8px;
+                    alignment: start;
+                    horizontal-stretch: 1;
+                    Text {
+                        text: "Changes";
+                        font-size: 12px;
+                        color: Theme.foreground-subtle;
+                        vertical-alignment: center;
+                    }
+                    Text {
+                        text: "+" + DocUi.added + " −" + DocUi.removed;
+                        font-size: 11px;
+                        color: Theme.foreground-subtlest;
+                        vertical-alignment: center;
+                    }
+                }
+                Text {
+                    text: "against saved version";
+                    font-size: 11px;
+                    color: Theme.icon-subtlest;
+                    vertical-alignment: center;
+                }
+            }
+            Hairline { }
+            VerticalLayout {
+                padding-top: 6px;
+                padding-bottom: 8px;
+                spacing: 1px;
+                for d in DocUi.changes: Rectangle {
+                    height: 22px;
+                    background: (d.kind == 1 ? Theme.success : Theme.destructive).with-alpha(0.12);
+                    HorizontalLayout {
+                        padding-left: 14px;
+                        padding-right: 14px;
+                        spacing: 8px;
+                        Text {
+                            width: 8px;
+                            text: d.kind == 1 ? "+" : "-";
+                            font-size: 12px;
+                            font-family: Theme.mono-font;
+                            color: d.kind == 1 ? Theme.success : Theme.destructive;
+                            vertical-alignment: center;
+                        }
+                        Text {
+                            text: d.text;
+                            font-size: 12px;
+                            font-family: Theme.mono-font;
+                            color: d.kind == 1 ? Theme.success : Theme.destructive;
+                            vertical-alignment: center;
+                            overflow: elide;
+                            horizontal-stretch: 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if DocUi.supported && (DocUi.error != "" || DocUi.saved != ""): StatusLine {
+        text: DocUi.error != "" ? DocUi.error : DocUi.saved;
+        error: DocUi.error != "";
+    }
+    if DocUi.supported && DocUi.bytes > DocUi.limit: StatusLine {
+        text: @tr("{0} / {1} KB — over the size budget", round(DocUi.bytes / 102.4) / 10, DocUi.limit / 1024);
+        error: true;
+    }
+    Text {
+        text: "Instructions are injected at the top of the system prompt for every session in this project.";
+        font-size: 11px;
+        color: Theme.icon-subtlest;
+        wrap: word-wrap;
+    }
+}
+

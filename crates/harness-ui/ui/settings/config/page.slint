@@ -1,0 +1,145 @@
+import { Theme } from "../../theme/tokens.slint";
+import { ConfigUi, SettingsUi } from "../globals.slint";
+import { PageHeader, UnsupportedNotice, SearchField } from "../parts.slint";
+import { Labels } from "../labels.slint";
+import { SkillBrowse } from "../skills.slint";
+import { ConfigCopy } from "./types.slint";
+import { Pill, Btn } from "./parts.slint";
+import { TargetBar, ImportButton, DetailCard } from "./card.slint";
+import { McpTable, SubagentTable, CommandTable } from "./tables.slint";
+import { SkillGrid } from "./skills.slint";
+import { HookCards } from "./hooks.slint";
+
+export component ConfigPage inherits VerticalLayout {
+    in property <bool> stacked;
+    property <string> concept: ConfigUi.concept;
+    spacing: 20px;
+    PageHeader {
+        title: ConfigCopy.title(root.concept);
+        description: ConfigCopy.subtitle(root.concept);
+    }
+    TargetBar {
+        agent: ConfigUi.agent;
+        scope: ConfigUi.scope;
+        with-harness: root.concept == "mcp" || root.concept == "skill";
+        with-scope: ConfigUi.agent != "harness";
+        select-agent(id) => {
+            ConfigUi.select-agent(id);
+        }
+        select-scope(id) => {
+            ConfigUi.select-scope(id);
+        }
+    }
+    if !ConfigUi.supported || !ConfigUi.scope-supported: UnsupportedNotice {
+        title: !ConfigUi.supported ? @tr("{0} does not support {1}", Labels.agent-name(ConfigUi.agent), Labels.concept-title(ConfigUi.concept)) : @tr("{0} has no workspace {1}", Labels.agent-name(ConfigUi.agent), Labels.concept-title(ConfigUi.concept));
+        reason: ConfigUi.reason;
+    }
+    if ConfigUi.supported && ConfigUi.scope-supported: VerticalLayout {
+        spacing: 20px;
+        // Toolbar (design: 34 tall; count + pills on the left, actions right; Skills: search + New).
+        HorizontalLayout {
+            height: 34px;
+            spacing: 8px;
+            if root.concept == "skill": SearchField {
+                height: 34px;
+                placeholder: "Search " + ConfigUi.total + " installed…";
+                text <=> ConfigUi.query;
+                edited(q) => {
+                    ConfigUi.search(q);
+                }
+            }
+            if root.concept != "skill": HorizontalLayout {
+                spacing: 8px;
+                alignment: start;
+                horizontal-stretch: 1;
+                Text {
+                    text: root.concept == "mcp" ? ConfigUi.rows.length + " servers" : root.concept == "subagent" ? ConfigUi.rows.length + " definitions" : root.concept == "command" ? ConfigUi.rows.length + " commands" : ConfigUi.groups.length + " events";
+                    font-size: 12px;
+                    color: Theme.foreground-subtlest;
+                    vertical-alignment: center;
+                }
+                if root.concept == "hook": Text {
+                    text: "·";
+                    font-size: 12px;
+                    color: Theme.icon-subtlest;
+                    vertical-alignment: center;
+                }
+                if root.concept == "hook": Text {
+                    text: ConfigUi.rows.length + " hooks";
+                    font-size: 12px;
+                    color: Theme.foreground-subtlest;
+                    vertical-alignment: center;
+                }
+                if root.concept == "subagent": VerticalLayout {
+                    alignment: center;
+                    Pill {
+                        text: "max " + SettingsUi.get-int("orchestra.maxConcurrent", SettingsUi.rev) + " concurrent";
+                        tint: Theme.warning;
+                    }
+                }
+                if root.concept == "mcp" || root.concept == "command": VerticalLayout {
+                    alignment: center;
+                    Pill {
+                        text: ConfigUi.agent == "harness" ? "built-in + configured" : ConfigCopy.scope-name(ConfigUi.scope) + " scope";
+                        tint: Theme.info;
+                    }
+                }
+            }
+            if ConfigUi.agent == "harness" && root.concept == "mcp": VerticalLayout {
+                alignment: center;
+                ImportButton { }
+            }
+            VerticalLayout {
+                alignment: center;
+                Btn {
+                    text: ConfigCopy.new-label(root.concept);
+                    label: Labels.new-label(root.concept);
+                    primary: true;
+                    clicked => {
+                        ConfigUi.create();
+                    }
+                }
+            }
+        }
+        // A new entry opens its card right under the toolbar so it is visible on long lists.
+        if ConfigUi.editing && ConfigUi.is-new: DetailCard { }
+        if root.concept == "mcp": McpTable { }
+        if root.concept == "subagent": SubagentTable { }
+        if root.concept == "command": CommandTable { }
+        if root.concept == "skill": VerticalLayout {
+            spacing: 10px;
+            Text {
+                text: @tr("Browse catalog");
+                font-size: Theme.ui-sm;
+                font-weight: Theme.weight-semibold;
+                color: Theme.foreground-subtle;
+            }
+            SkillBrowse { }
+            Text {
+                text: @tr("Installed");
+                font-size: Theme.ui-sm;
+                font-weight: Theme.weight-semibold;
+                color: Theme.foreground-subtle;
+            }
+        }
+        if root.concept == "skill": SkillGrid { }
+        if root.concept == "hook": HookCards { }
+        if ConfigUi.hidden > 0: Rectangle {
+            height: 32px;
+            more-ta := TouchArea {
+                mouse-cursor: pointer;
+                clicked => {
+                    ConfigUi.show-more();
+                }
+            }
+            Text {
+                text: @tr("Show more ({0} left)", ConfigUi.hidden);
+                font-size: Theme.ui-sm;
+                color: more-ta.has-hover ? Theme.foreground : Theme.foreground-subtle;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+        if ConfigUi.editing && !ConfigUi.is-new: DetailCard { }
+    }
+}

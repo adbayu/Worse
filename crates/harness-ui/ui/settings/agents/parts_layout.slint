@@ -1,0 +1,330 @@
+import { Theme } from "../../theme/tokens.slint";
+import { Icon, Icons, Button, IconButton, Divider, Dialog, Spinner } from "../../components/controls.slint";
+import { AgentsUi, AgentCard, ProviderPreset } from "../globals.slint";
+import { Select, TextField, TextArea, Switch } from "../parts.slint";
+import { SetupUi } from "../../setup.slint";
+import { AgentLogo, AgentMark } from "../../components/agent_logo.slint";
+
+import { AgentsLook, Pill, DButton } from "./parts_base.slint";
+
+export component Tile inherits Rectangle {
+    in property <string> logo;
+    in property <bool> dim;
+    in property <string> initial;
+    in property <color> tone;
+    in property <color> ink: #FFFFFF;
+    in property <length> size: 30px;
+    in property <length> font: 12.6px;
+    width: root.size;
+    height: root.size;
+    border-radius: 8px;
+    background: root.logo != "" ? transparent : root.tone;
+    accessible-role: none;
+    if root.logo != "": AgentMark {
+        name: root.logo;
+        size: root.size;
+        opacity: root.dim ? 0.4 : 1;
+    }
+    if root.logo == "": Text {
+        text: root.initial;
+        font-size: root.font;
+        font-weight: Theme.weight-semibold;
+        color: root.ink;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        accessible-role: none;
+    }
+}
+
+export component AccountChip inherits Rectangle {
+    in property <string> text;
+    in property <color> dot;
+    in property <bool> active;
+    in property <string> hint;
+    callback clicked;
+    height: 24px;
+    horizontal-stretch: 0;
+    border-radius: 7px;
+    background: ta.has-hover ? Theme.raised : Theme.panel;
+    border-width: 1px;
+    border-color: Theme.border;
+    accessible-role: button;
+    accessible-label: root.hint != "" ? root.hint : root.text;
+    accessible-action-default => {
+        root.clicked();
+    }
+    HorizontalLayout {
+        padding-left: 8px;
+        padding-right: 8px;
+        spacing: 6px;
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 6px;
+                height: 6px;
+                border-radius: 3px;
+                background: root.dot;
+            }
+        }
+        Text {
+            text: root.text;
+            font-size: 11px;
+            color: Theme.foreground-subtle;
+            vertical-alignment: center;
+            accessible-role: none;
+        }
+        if root.active: VerticalLayout {
+            alignment: center;
+            Pill {
+                text: "active";
+                tone: Theme.agent-agy;
+                size: 9px;
+                pad-v: 1px;
+                pad-h: 5px;
+            }
+        }
+    }
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+export component Hint inherits Text {
+    font-size: 11px;
+    color: Theme.icon-subtlest;
+    wrap: word-wrap;
+}
+
+export component DefaultSelect inherits Select {
+    in property <AgentCard> card;
+    in property <string> kind;
+    height: 26px;
+    label: root.kind == "model" ? @tr("{0} default model", root.card.name) : @tr("{0} default effort", root.card.name);
+    options: root.kind == "model" ? root.card.models : root.card.efforts;
+    current: root.kind == "model" ? root.card.model : root.card.effort;
+    current-label: root.kind == "model" ? root.card.model-label : root.card.effort-label;
+    placeholder: @tr("Agent default");
+    reset-label: @tr("Agent default");
+    empty-text: @tr("{0} reports its options after it starts. Make sure it is installed and signed in.", root.card.name);
+    select(id) => {
+        AgentsUi.set-default(root.card.id, root.kind == "model" ? "defaultModel" : "defaultEffort", id);
+    }
+}
+
+export component SectionHead inherits HorizontalLayout {
+    in property <string> title;
+    in property <string> pill;
+    in property <string> action;
+    callback act();
+    height: 25px;
+    spacing: 7px;
+    Text {
+        text: root.title;
+        font-size: 12.5px;
+        font-weight: Theme.weight-semibold;
+        color: Theme.foreground;
+        vertical-alignment: center;
+    }
+    if root.pill != "": VerticalLayout {
+        alignment: center;
+        Pill {
+            text: root.pill;
+            size: 9.5px;
+            pad-v: 2px;
+            pad-h: 6px;
+        }
+    }
+    Rectangle {
+        horizontal-stretch: 1;
+    }
+    if root.action != "": DButton {
+        text: root.action;
+        glyph: "+";
+        h: 25px;
+        pad: 9px;
+        size: 11.5px;
+        clicked => {
+            root.act();
+        }
+    }
+}
+
+export component SectionCard inherits Rectangle {
+    in property <string> title;
+    in property <string> note;
+    background: Theme.surface;
+    border-radius: 12px;
+    border-width: 1px;
+    border-color: Theme.border;
+    clip: true;
+    VerticalLayout {
+        HorizontalLayout {
+            height: 46px;
+            padding-left: 16px;
+            padding-right: 16px;
+            Text {
+                text: root.title;
+                font-size: 13px;
+                font-weight: Theme.weight-semibold;
+                color: Theme.foreground;
+                vertical-alignment: center;
+                horizontal-stretch: 1;
+            }
+            Text {
+                text: root.note;
+                font-size: 11px;
+                color: Theme.icon-subtlest;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+        }
+        Divider { }
+        @children
+    }
+}
+
+export component ManageRow inherits HorizontalLayout {
+    in property <string> name;
+    in property <string> sub;
+    in property <color> dot;
+    in property <string> state;
+    padding-left: 16px;
+    padding-right: 12px;
+    padding-top: 10px;
+    padding-bottom: 10px;
+    spacing: 10px;
+    VerticalLayout {
+        alignment: center;
+        spacing: 3px;
+        horizontal-stretch: 1;
+        Text {
+            text: root.name;
+            font-size: 13px;
+            color: Theme.foreground;
+            overflow: elide;
+        }
+        HorizontalLayout {
+            spacing: 6px;
+            alignment: start;
+            Text {
+                text: root.sub;
+                font-family: Theme.mono-font;
+                font-size: 11px;
+                color: Theme.icon-subtlest;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+            VerticalLayout {
+                alignment: center;
+                Rectangle {
+                    width: 6px;
+                    height: 6px;
+                    border-radius: 3px;
+                    background: root.dot;
+                }
+            }
+            Text {
+                text: root.state;
+                font-size: 11px;
+                color: Theme.muted;
+                vertical-alignment: center;
+            }
+        }
+    }
+    @children
+}
+
+export component LabeledField inherits VerticalLayout {
+    in property <string> title;
+    in property <string> hint;
+    spacing: 6px;
+    HorizontalLayout {
+        spacing: 6px;
+        alignment: start;
+        Text {
+            text: root.title;
+            font-size: 11px;
+            font-weight: Theme.weight-medium;
+            color: Theme.foreground-subtle;
+            vertical-alignment: center;
+        }
+        if root.hint != "": Text {
+            text: root.hint;
+            font-size: 10px;
+            color: Theme.icon-subtlest;
+            vertical-alignment: center;
+        }
+    }
+    @children
+}
+
+export component PresetTile inherits Rectangle {
+    in property <string> name;
+    in property <string> tag;
+    in property <string> letter;
+    callback clicked;
+    border-radius: 9px;
+    background: ta.has-hover ? Theme.border-hover : Theme.raised;
+    border-width: 1px;
+    border-color: ta.has-hover ? Theme.border-hover : AgentsLook.rule;
+    animate background { duration: Theme.dur-hover; }
+    accessible-role: button;
+    accessible-label: root.name;
+    accessible-action-default => {
+        root.clicked();
+    }
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.clicked();
+        }
+    }
+    HorizontalLayout {
+        padding-left: 9px;
+        padding-right: 8px;
+        spacing: 8px;
+        AgentMark {
+            y: (parent.height - self.height) / 2;
+            name: root.name;
+            letter: root.letter;
+            size: 20px;
+        }
+        VerticalLayout {
+            alignment: center;
+            spacing: 1px;
+            Text {
+                text: root.name;
+                font-size: 11.5px;
+                font-weight: Theme.weight-medium;
+                color: Theme.foreground;
+                overflow: elide;
+            }
+            Text {
+                text: root.tag;
+                font-size: 9.5px;
+                color: Theme.icon-subtlest;
+                overflow: elide;
+            }
+        }
+    }
+}
+
+export component LinkText inherits Text {
+    callback clicked;
+    font-size: 11px;
+    color: lta.has-hover ? Theme.foreground : Theme.primary;
+    vertical-alignment: center;
+    accessible-role: button;
+    accessible-action-default => {
+        root.clicked();
+    }
+    lta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.clicked();
+        }
+    }
+}

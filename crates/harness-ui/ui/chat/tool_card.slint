@@ -1,0 +1,333 @@
+import { Theme } from "../theme/tokens.slint";
+import { Icon, Icons, IconsFill, Spinner, Button, IconButton, Tag, Divider, Dialog } from "../components/controls.slint";
+import { TextField, TextArea, Switch } from "../settings/parts.slint";
+import { AgentTint, Pill, ProgressTrack, CapsHeader } from "../panels/common.slint";
+import { ChatUi, ChatImage, ToolPart, ChangeRow, PlanRow, ScheduleRow, SubagentRow } from "globals.slint";
+import { LiveUi } from "../panels/live.slint";
+import { ArtClock } from "../components/ascii.slint";
+
+// Row of small image previews; a click opens the file in the OS viewer.
+export component ImageStrip inherits HorizontalLayout {
+    in property <[ChatImage]> images;
+    in property <int> more;
+    in property <bool> at-end;
+    alignment: root.at-end ? end : start;
+    spacing: 6px;
+    for img in root.images: Rectangle {
+        height: 72px;
+        width: max(48px, min(112px, 72px * img.image.width / max(1, img.image.height)));
+        border-radius: 8px;
+        border-width: 1px;
+        border-color: ita.has-hover ? Theme.border-hover : Theme.border;
+        background: Theme.surface;
+        clip: true;
+        accessible-role: AccessibleRole.button;
+        accessible-label: img.path;
+        Image {
+            width: parent.width;
+            height: parent.height;
+            source: img.image;
+            image-fit: cover;
+            accessible-role: none;
+        }
+        ita := TouchArea {
+            mouse-cursor: pointer;
+            clicked => {
+                ChatUi.open-path(img.path);
+            }
+        }
+    }
+    if root.more > 0: Text {
+        text: "+" + root.more;
+        font-size: Theme.ui-sm;
+        color: Theme.foreground-subtle;
+        vertical-alignment: center;
+    }
+}
+
+// Tool call row (ZCode inline tool row) that expands into its content: diffs, text, locations, raw input/output.
+export component ToolCard inherits VerticalLayout {
+    in property <int> id;
+    in property <string> title;
+    in property <int> status;
+    in property <string> tool-kind;
+    in property <[ToolPart]> parts;
+    in property <bool> expanded;
+    in property <bool> hit;
+    in property <[ChatImage]> images;
+    in property <int> images-more;
+    // First changed lines of an edit (shown while collapsed), and the file / line range the tool touched.
+    in property <[ToolPart]> peek;
+    in property <string> file;
+    in property <int> file-line;
+    in property <string> range;
+    in property <int> added;
+    in property <int> removed;
+    in property <bool> member;
+    property <string> status-text: root.status == 0 ? @tr("Running") : root.status == 1 ? @tr("Awaiting permission") : root.status == 2 ? @tr("Done") : root.status == 3 ? @tr("Denied") : @tr("Failed");
+    property <string> tone: root.status == 2 ? "success" : root.status == 1 ? "progress" : root.status == 0 ? "neutral" : root.status == 3 ? "warning" : "destructive";
+    property <length> content-width: 400px;
+    changed width => {
+        root.content-width = root.width;
+    }
+    init => {
+        root.content-width = root.width;
+    }
+    // Output of commands and file tools is terminal text (tables, listings, code): fixed-width, so columns
+    // line up. Other tools (web pages, thoughts, MCP answers) return prose and keep the interface font.
+    property <bool> raw-output: root.tool-kind == "execute" || root.tool-kind == "read" || root.tool-kind == "search" || root.tool-kind == "edit" || root.tool-kind == "delete" || root.tool-kind == "move";
+    property <image> kind-icon: root.tool-kind == "read" ? Icons.file-text : root.tool-kind == "fetch" ? Icons.globe : root.tool-kind == "edit" || root.tool-kind == "move" ? Icons.square-pen : root.tool-kind == "delete" ? Icons.trash-2 : root.tool-kind == "search" ? Icons.search : root.tool-kind == "think" ? Icons.brain : root.tool-kind == "execute" ? Icons.square-terminal : Icons.wrench;
+    spacing: 4px;
+    // Flat row (no box): a fill appears only on hover or while its detail is open.
+    Rectangle {
+        height: 30px;
+        clip: true;
+        border-radius: Theme.radius-md;
+        background: root.expanded ? Theme.surface : tta.has-hover && root.parts.length > 0 ? Theme.hover : Theme.hover.with-alpha(0);
+        border-width: root.hit ? 2px : 0px;
+        border-color: root.hit ? Theme.find-highlight-active : transparent;
+        animate background, border-color { duration: Theme.dur-hover; easing: ease-out-quint; }
+        accessible-item-selected: root.hit;
+        accessible-role: AccessibleRole.button;
+        accessible-label: root.title + " · " + root.status-text;
+        accessible-description: root.parts.length > 0 ? (root.expanded ? "expanded" : "collapsed") : "";
+        accessible-action-default => {
+            if root.parts.length > 0 {
+                ChatUi.toggle-detail(root.id);
+            }
+        }
+        tta := TouchArea {
+            mouse-cursor: root.parts.length > 0 ? pointer : default;
+            clicked => {
+                if root.parts.length > 0 {
+                    ChatUi.toggle-detail(root.id);
+                }
+            }
+        }
+        HorizontalLayout {
+            padding-left: root.member ? 20px : 8px;
+            padding-right: 8px;
+            spacing: 8px;
+            Text {
+                text: root.title;
+                font-family: Theme.art-font;
+                font-size: 12px;
+                color: tta.has-hover ? Theme.foreground : Theme.foreground-subtle;
+                vertical-alignment: center;
+                overflow: elide;
+                horizontal-stretch: 0;
+                accessible-role: none;
+                animate color { duration: Theme.dur-hover; easing: ease-out-quint; }
+            }
+            if root.added > 0: Text {
+                text: "+" + root.added;
+                font-size: 12px;
+                color: Theme.success-surface-foreground;
+                vertical-alignment: center;
+            }
+            if root.removed > 0: Text {
+                text: "−" + root.removed;
+                font-size: 12px;
+                color: Theme.destructive-surface-foreground;
+                vertical-alignment: center;
+            }
+            if root.parts.length > 0: Image {
+                y: (parent.height - self.height) / 2;
+                width: 12px;
+                height: 12px;
+                source: Icons.chevron-right;
+                colorize: Theme.icon-subtle;
+                transform-rotation: root.expanded ? 90deg : 0deg;
+                animate transform-rotation { duration: Theme.dur-move; easing: ease-out-quint; }
+                accessible-role: none;
+            }
+            Rectangle {
+                horizontal-stretch: 1;
+            }
+            if root.images-more > 0: Text {
+                text: "+" + root.images-more;
+                font-size: Theme.ui-sm;
+                color: Theme.foreground-subtle;
+                vertical-alignment: center;
+            }
+            for img in root.images: Rectangle {
+                y: (parent.height - self.height) / 2;
+                height: 18px;
+                width: max(12px, min(32px, 18px * img.image.width / max(1, img.image.height)));
+                border-radius: 3px;
+                border-width: 1px;
+                border-color: ita.has-hover ? Theme.border-hover : Theme.border;
+                clip: true;
+                Image {
+                    width: parent.width;
+                    height: parent.height;
+                    source: img.image;
+                    image-fit: cover;
+                    accessible-role: none;
+                }
+                ita := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => {
+                        ChatUi.open-path(img.path);
+                    }
+                }
+            }
+            // Line range chip: opens the file in the Live view at that line.
+            if root.file != "" && root.range != "": Rectangle {
+                y: (parent.height - self.height) / 2;
+                height: 20px;
+                width: range-t.preferred-width + 12px;
+                border-radius: Theme.radius-sm;
+                background: rta.has-hover ? Theme.surface-hover : Theme.tag;
+                accessible-role: button;
+                accessible-label: @tr("Show {0} in Live", root.range);
+                accessible-action-default => {
+                    LiveUi.open(root.file, root.file-line);
+                }
+                range-t := Text {
+                    text: root.range;
+                    font-family: Theme.art-font;
+                    font-size: 10px;
+                    color: rta.has-hover ? Theme.foreground : Theme.foreground-subtle;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+                rta := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => {
+                        LiveUi.open(root.file, root.file-line);
+                    }
+                }
+            }
+            if root.status == 1 || root.status == 3: Tag {
+                y: (parent.height - self.height) / 2;
+                text: root.status-text;
+                tone: root.tone;
+                accessible-role: none;
+            }
+            if root.status == 0: Spinner {
+                y: (parent.height - self.height) / 2;
+                size: 14px;
+                tint: Theme.accent-fg;
+                clocked: true;
+            }
+            if root.status == 4: Icon {
+                y: (parent.height - self.height) / 2;
+                source: Icons.circle-x;
+                size: 14px;
+                tint: Theme.destructive-surface-foreground;
+            }
+        }
+    }
+    // Collapsed edit: the first changed lines, so a change can be seen without opening the row. Click opens it in
+    // the Live view.
+    if false && !root.expanded && root.peek.length > 0: Rectangle {
+        property <length> line-h: Theme.code-size * 1.5;
+        height: root.peek.length * self.line-h + 12px;
+        border-radius: Theme.radius-md;
+        background: pka.has-hover ? Theme.surface-hover : Theme.surface;
+        border-width: 1px;
+        border-color: Theme.border;
+        clip: true;
+        accessible-role: AccessibleRole.button;
+        accessible-label: @tr("Show the change in Live");
+        accessible-action-default => {
+            LiveUi.open(root.file, root.file-line);
+        }
+        animate background { duration: Theme.dur-hover; easing: ease-out-quint; }
+        for p[i] in root.peek: Rectangle {
+            x: 0;
+            y: 6px + i * parent.line-h;
+            height: parent.line-h;
+            background: p.kind == 2 ? Theme.diff-added-surface : p.kind == 3 ? Theme.diff-removed-surface : transparent;
+            Text {
+                x: 10px;
+                width: 12px;
+                text: p.kind == 2 ? "+" : p.kind == 3 ? "−" : "…";
+                font-family: Theme.mono-font;
+                font-size: Theme.code-size;
+                color: p.kind == 2 ? Theme.diff-added : p.kind == 3 ? Theme.diff-removed : Theme.foreground-subtlest;
+                vertical-alignment: center;
+            }
+            Text {
+                x: 26px;
+                width: parent.width - 34px;
+                text: p.text;
+                font-family: Theme.mono-font;
+                font-size: Theme.code-size;
+                color: p.kind == 6 ? Theme.foreground-subtlest : Theme.foreground;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+        }
+        pka := TouchArea {
+            mouse-cursor: pointer;
+            clicked => {
+                LiveUi.open(root.file, root.file-line);
+            }
+        }
+    }
+    if root.expanded && root.parts.length > 0: Rectangle {
+        property <bool> shown: false;
+        border-radius: Theme.radius-lg;
+        border-width: 1px;
+        border-color: Theme.border;
+        background: Theme.card;
+        clip: true;
+        opacity: self.shown ? 1 : 0;
+        animate opacity { duration: Theme.dur-enter; easing: ease-out-quint; }
+        Timer {
+            interval: 16ms;
+            running: !parent.shown;
+            triggered => {
+                parent.shown = true;
+            }
+        }
+        accessible-role: AccessibleRole.groupbox;
+        accessible-label: "tool detail " + root.title;
+        VerticalLayout {
+            padding-top: 8px;
+            padding-bottom: 8px;
+            for p in root.parts: row := Rectangle {
+                background: p.kind == 2 ? Theme.diff-added-surface : p.kind == 3 ? Theme.diff-removed-surface : transparent;
+                // Diff header and location: open the file in the editor (OS default app).
+                accessible-role: AccessibleRole.text;
+                accessible-label: (p.kind == 2 ? "+ " : p.kind == 3 ? "- " : "") + p.text;
+                if p.kind == 1 || p.kind == 4: TouchArea {
+                    mouse-cursor: pointer;
+                    accessible-role: AccessibleRole.button;
+                    accessible-label: "open " + p.text;
+                    accessible-action-default => {
+                        ChatUi.open-path(p.text);
+                    }
+                    clicked => {
+                        ChatUi.open-path(p.text);
+                    }
+                }
+                property <bool> has-icon: p.kind == 1 || p.kind == 4;
+                property <length> pad-top: p.kind == 1 || p.kind == 5 ? 6px : 1px;
+                property <length> text-x: 12px + (self.has-icon ? Theme.icon-xs + 6px : 0px);
+                height: self.pad-top + txt.preferred-height + 1px;
+                if row.has-icon: Icon {
+                    x: 12px;
+                    y: row.pad-top + 2px;
+                    source: p.kind == 1 ? Icons.file-diff : Icons.file;
+                    size: Theme.icon-xs;
+                    tint: Theme.icon-subtle;
+                }
+                txt := Text {
+                    x: row.text-x;
+                    y: row.pad-top;
+                    width: max(40px, root.content-width - row.text-x - 12px);
+                    text: p.kind == 5 ? (p.text == "input" ? @tr("Input") : @tr("Output")) : p.kind == 2 ? "+ " + p.text : p.kind == 3 ? "- " + p.text : p.text;
+                    wrap: word-wrap;
+                    font-family: (p.kind == 0 && !root.raw-output) || p.kind == 5 ? "" : Theme.mono-font;
+                    font-size: (p.kind == 0 && !root.raw-output) || p.kind == 5 ? Theme.ui-sm : Theme.code-size;
+                    font-weight: p.kind == 1 || p.kind == 5 ? Theme.weight-medium : 400;
+                    color: p.kind == 5 ? Theme.foreground-subtle : p.kind == 2 ? Theme.diff-added : p.kind == 3 ? Theme.diff-removed : Theme.foreground;
+                    accessible-role: none;
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,85 @@
+import { ResizeEdge } from "./resize_edge.slint";
+
+export component ResizeFrame inherits Rectangle {
+    callback action(string);
+    ResizeEdge {
+        x: 0;
+        y: 0;
+        width: parent.width;
+        height: 4px;
+        mouse-cursor: ns-resize;
+        start => {
+            root.action("resize-n");
+        }
+    }
+    ResizeEdge {
+        x: 0;
+        y: parent.height - 4px;
+        width: parent.width;
+        height: 4px;
+        mouse-cursor: ns-resize;
+        start => {
+            root.action("resize-s");
+        }
+    }
+    ResizeEdge {
+        x: 0;
+        y: 0;
+        width: 4px;
+        height: parent.height;
+        mouse-cursor: ew-resize;
+        start => {
+            root.action("resize-w");
+        }
+    }
+    ResizeEdge {
+        x: parent.width - 4px;
+        y: 0;
+        width: 4px;
+        height: parent.height;
+        mouse-cursor: ew-resize;
+        start => {
+            root.action("resize-e");
+        }
+    }
+    ResizeEdge {
+        x: 0;
+        y: 0;
+        width: 8px;
+        height: 8px;
+        mouse-cursor: nwse-resize;
+        start => {
+            root.action("resize-nw");
+        }
+    }
+    ResizeEdge {
+        x: parent.width - 8px;
+        y: parent.height - 8px;
+        width: 8px;
+        height: 8px;
+        mouse-cursor: nwse-resize;
+        start => {
+            root.action("resize-se");
+        }
+    }
+    ResizeEdge {
+        x: parent.width - 8px;
+        y: 0;
+        width: 8px;
+        height: 8px;
+        mouse-cursor: nesw-resize;
+        start => {
+            root.action("resize-ne");
+        }
+    }
+    ResizeEdge {
+        x: 0;
+        y: parent.height - 8px;
+        width: 8px;
+        height: 8px;
+        mouse-cursor: nesw-resize;
+        start => {
+            root.action("resize-sw");
+        }
+    }
+}

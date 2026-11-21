@@ -1,0 +1,230 @@
+import { ScrollView } from "std-widgets.slint";
+import { Theme } from "../theme/tokens.slint";
+import { Icon, Icons, Button, IconButton, Divider, Card, MenuShell, MenuItem, Dialog, SegmentOption } from "../components/controls.slint";
+
+// Key cap (design S6: raised #1C1F24 bg, #2A2D33 border, radius 6, 11 semibold text, 3/7 padding).
+export component Kbd inherits Rectangle {
+    in property <string> text;
+    in property <bool> muted: false;
+    height: 21px;
+    min-width: 21px;
+    preferred-width: kt.preferred-width + 14px;
+    horizontal-stretch: 0;
+    border-radius: Theme.radius-sm;
+    border-width: 1px;
+    border-color: Theme.border-hover;
+    background: Theme.raised;
+    // The key cap is read as one text (screen readers, gate): "Ctrl+Alt+K".
+    accessible-role: AccessibleRole.text;
+    accessible-label: root.text;
+    kt := Text {
+        text: root.text;
+        font-size: Theme.ui-xs;
+        font-weight: Theme.weight-semibold;
+        color: root.muted ? Theme.muted : Theme.foreground;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        accessible-role: none;
+    }
+}
+
+// Badge → pill (design: colour text on colour+1F bg, radius full, 11 semibold).
+export component Badge inherits Rectangle {
+    in property <string> text;
+    in property <color> tint: Theme.muted;
+    height: 20px;
+    preferred-width: bt.preferred-width + 16px;
+    horizontal-stretch: 0;
+    border-radius: Theme.radius-full;
+    background: root.tint.with-alpha(0.12);
+    accessible-role: AccessibleRole.text;
+    accessible-label: root.text;
+    bt := Text {
+        text: root.text;
+        font-size: Theme.ui-xs;
+        font-weight: Theme.weight-semibold;
+        color: root.tint;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        accessible-role: none;
+    }
+}
+
+// Greyed "not supported by this CLI" card (spec §6.2: shown instead of hiding the page).
+export component UnsupportedNotice inherits Rectangle {
+    in property <string> title;
+    in property <string> reason;
+    border-radius: 12px;
+    border-width: 1px;
+    border-color: Theme.card-border;
+    background: Theme.card;
+    accessible-role: AccessibleRole.text;
+    accessible-label: root.title;
+    accessible-description: root.reason;
+    HorizontalLayout {
+        padding: 16px;
+        spacing: 10px;
+        Icon {
+            source: Icons.info;
+            size: 16px;
+            tint: Theme.icon-subtle;
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            spacing: 4px;
+            Text {
+                text: root.title;
+                font-size: Theme.ui-base;
+                font-weight: Theme.weight-medium;
+                color: Theme.foreground-subtle;
+                wrap: word-wrap;
+                accessible-role: none;
+            }
+            if root.reason != "": Text {
+                text: root.reason;
+                font-size: Theme.ui-sm;
+                color: Theme.muted;
+                wrap: word-wrap;
+                accessible-role: none;
+            }
+        }
+    }
+}
+
+// Inline status line under a form (saved / error).
+export component StatusLine inherits HorizontalLayout {
+    in property <string> text;
+    in property <bool> error: false;
+    spacing: 6px;
+    if root.text != "": Icon {
+        source: root.error ? Icons.circle-alert : Icons.circle-check;
+        size: Theme.icon-sm;
+        tint: root.error ? Theme.destructive : Theme.success;
+    }
+    if root.text != "": Text {
+        text: root.text;
+        font-size: Theme.ui-sm;
+        color: root.error ? Theme.destructive : Theme.foreground-subtle;
+        wrap: word-wrap;
+        horizontal-stretch: 1;
+        accessible-role: AccessibleRole.text;
+        accessible-label: root.text;
+    }
+}
+
+// Confirmation dialog (destructive actions, reset all, data dir move).
+export component ConfirmDialog inherits Dialog {
+    in property <string> message;
+    in property <string> confirm-text;
+    in property <bool> destructive: true;
+    callback confirm();
+    dialog-width: 420px;
+    Text {
+        text: root.message;
+        color: Theme.foreground-subtle;
+        wrap: word-wrap;
+    }
+    HorizontalLayout {
+        alignment: end;
+        spacing: 8px;
+        Button {
+            text: @tr("Cancel");
+            variant: "outline";
+            size: "lg";
+            clicked => {
+                root.close();
+            }
+        }
+        Button {
+            text: root.confirm-text;
+            variant: root.destructive ? "destructive" : "primary";
+            size: "lg";
+            clicked => {
+                root.confirm();
+            }
+        }
+    }
+}
+
+// Pill (design "pill · X": pad [3,8], 11px text in `tint`, fill tint+1F, radius 999). Default tint = accent #7C8CFF.
+export component Pill inherits Rectangle {
+    in property <string> text;
+    in property <color> tint: Theme.accent-fg;
+    height: 19px;
+    preferred-width: pt.preferred-width + 16px;
+    min-width: self.preferred-width;
+    max-width: self.preferred-width;
+    horizontal-stretch: 0;
+    border-radius: Theme.radius-full;
+    background: root.tint.with-alpha(0.12);
+    accessible-role: AccessibleRole.text;
+    accessible-label: root.text;
+    pt := Text {
+        text: root.text;
+        font-size: Theme.ui-font-size - 3px;
+        font-weight: Theme.weight-medium;
+        color: root.tint;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        accessible-role: none;
+    }
+}
+
+// Settings button (design "btn · X": pad [6..7,12], 12px label, radius 8, 29px tall, natural width).
+// variant: "secondary" (default; #1C1F24 + #2A2D33 border), "primary" (#EDEEF0, dark text), "accent" (brand
+// gradient, white text), "destructive" (#F2555A text + border, 1F fill), "ghost".
+export component SetButton inherits Rectangle {
+    in property <string> text;
+    in property <string> label: self.text;
+    in property <string> variant: "secondary";
+    in property <bool> enabled: true;
+    callback clicked;
+    property <bool> hot: ta.has-hover && root.enabled;
+    property <color> fg: root.variant == "primary" ? Theme.primary-foreground : root.variant == "accent" ? Theme.on-accent : root.variant == "destructive" ? Theme.destructive : root.variant == "ghost" ? Theme.foreground-subtle : Theme.foreground;
+    height: 29px;
+    preferred-width: bt.preferred-width + 24px;
+    min-width: self.preferred-width;
+    max-width: self.preferred-width;
+    horizontal-stretch: 0;
+    border-radius: Theme.radius-md;
+    border-width: root.variant == "secondary" || root.variant == "destructive" ? 1px : 0px;
+    border-color: root.variant == "destructive" ? Theme.destructive.with-alpha(root.hot ? 0.8 : 0.5) : (root.hot ? #34383f : Theme.border-hover);
+    background: root.variant == "primary" ? (root.hot ? Theme.primary-hover : Theme.primary) : root.variant == "accent" ? Theme.brand-gradient : root.variant == "destructive" ? Theme.destructive.with-alpha(root.hot ? 0.18 : 0.12) : root.variant == "ghost" ? (root.hot ? Theme.hover : transparent) : (root.hot ? Theme.surface-hover : Theme.raised);
+    opacity: root.enabled ? 1 : 0.45;
+    transform-scale: ta.pressed && root.enabled ? 0.97 : 1;
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-enabled: root.enabled;
+    accessible-action-default => {
+        if root.enabled {
+            root.clicked();
+        }
+    }
+    animate background, border-color { duration: Theme.dur-hover; }
+    animate transform-scale { duration: Theme.dur-press; }
+    bt := Text {
+        text: root.text;
+        font-size: Theme.ui-sm;
+        font-weight: Theme.weight-medium;
+        color: root.fg;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        accessible-role: none;
+    }
+    ta := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+// Caps label (design 10px #5D636D, letter-spacing 8%).
+export component CapsLabel inherits Text {
+    font-size: Theme.ui-xs;
+    font-weight: Theme.weight-semibold;
+    color: Theme.caps-label;
+    letter-spacing: 0.8px;
+    vertical-alignment: center;
+}

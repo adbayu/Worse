@@ -1,0 +1,154 @@
+import { Theme } from "../theme/tokens.slint";
+import { Icon, Icons, IconButton } from "../components/controls.slint";
+import { ChatUi, SubagentRow, FleetGroup } from "../chat/globals.slint";
+import { AgentTint } from "../panels/common.slint";
+import { AgentLogo, AgentMark } from "../components/agent_logo.slint";
+import { SettingsUi } from "../settings/globals.slint";
+import { ArtClock } from "../components/ascii.slint";
+
+// Status helpers (SubagentRow.status: 0 running, 1 needs approval, 2 done, 3 failed, 4 cancelled, 5 interrupted).
+export global LiveStatus {
+    public pure function label(s: int) -> string {
+        if s == 0 { return @tr("Running"); }
+        if s == 1 { return @tr("Needs approval"); }
+        if s == 2 { return @tr("Done"); }
+        if s == 3 { return @tr("Failed"); }
+        if s == 4 { return @tr("Cancelled"); }
+        return @tr("Interrupted");
+    }
+    public pure function tint(s: int) -> color {
+        if s == 0 { return Theme.success; }
+        if s == 1 { return Theme.warning; }
+        if s == 2 { return Theme.info; }
+        if s == 3 { return Theme.destructive; }
+        return Theme.muted;
+    }
+    public pure function initial(agent: string) -> string {
+        if agent == "claude-code" || agent == "claude" { return "C"; }
+        if agent == "codex" { return "C"; }
+        if agent.to-lowercase() == "deepseek" || agent.to-lowercase() == "deepseek-api" { return "D"; }
+        if agent == "agy" || agent == "antigravity" { return "A"; }
+        if agent == "gemini" { return "G"; }
+        if agent == "harness" { return "H"; }
+        return "•";
+    }
+}
+
+export component StatusPill inherits Rectangle {
+    in property <int> status;
+    height: 18px;
+    width: st.preferred-width + 16px;
+    border-radius: 9px;
+    background: LiveStatus.tint(root.status).with-alpha(0.14);
+    st := Text {
+        text: LiveStatus.label(root.status);
+        font-size: 10px;
+        font-weight: Theme.weight-semibold;
+        color: LiveStatus.tint(root.status);
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}
+
+// Avatar (design: 28px circle, agent tint 18% fill + 1px tint ring, initial 12 semibold).
+export component Avatar inherits Rectangle {
+    in property <string> agent;
+    in property <length> size: 28px;
+    width: root.size;
+    height: root.size;
+    border-radius: root.size / 2;
+    background: AgentLogo.key(root.agent) != "" ? transparent : AgentTint.of(root.agent).with-alpha(0.18);
+    border-width: AgentLogo.key(root.agent) != "" ? 0px : 1px;
+    border-color: AgentTint.of(root.agent).with-alpha(0.55);
+    if AgentLogo.key(root.agent) != "": AgentMark {
+        name: root.agent;
+        size: root.size;
+    }
+    if AgentLogo.key(root.agent) == "": Text {
+        text: LiveStatus.initial(root.agent);
+        font-size: root.size * 0.42;
+        font-weight: Theme.weight-semibold;
+        color: AgentTint.of(root.agent);
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}
+
+// Progress track (design: 4px, #24272D track, agent tint fill). Running = indeterminate sweep, done = full.
+export component Progress inherits Rectangle {
+    in property <int> status;
+    in property <color> tint;
+    in property <float> estimate;
+    height: 4px;
+    border-radius: 2px;
+    background: Theme.border;
+    clip: true;
+    property <float> phase: mod(ArtClock.busy-tick, 20) / 20;
+    if (root.status == 0 || root.status == 1) && Theme.reduce-motion: Rectangle {
+        x: 0;
+        width: parent.width * clamp(root.estimate, 0, 1);
+        height: parent.height;
+        border-radius: 2px;
+        background: root.status == 1 ? Theme.warning : root.tint;
+    }
+    if (root.status == 0 || root.status == 1) && !Theme.reduce-motion: Rectangle {
+        width: parent.width * 0.35;
+        x: (parent.width * 1.35) * root.phase - parent.width * 0.35;
+        height: parent.height;
+        border-radius: 2px;
+        background: root.status == 1 ? Theme.warning : root.tint;
+    }
+    if root.status >= 2: Rectangle {
+        x: 0;
+        width: parent.width;
+        height: parent.height;
+        border-radius: 2px;
+        background: root.status == 2 ? root.tint : LiveStatus.tint(root.status).with-alpha(0.6);
+    }
+}
+
+// Header / panel button (design: 30px, radius 8; "secondary" #1C1F24 + #2A2D33, "accent" brand gradient,
+// "danger" red outline).
+export component LiveButton inherits Rectangle {
+    in property <string> text;
+    in property <string> variant: "secondary";
+    in property <bool> enabled: true;
+    callback clicked();
+    height: 30px;
+    min-width: bt.preferred-width + 26px;
+    border-radius: 8px;
+    opacity: root.enabled ? 1 : 0.45;
+    background: root.variant == "accent" ? Theme.brand-gradient : root.variant == "danger" ? Theme.destructive.with-alpha(ta.has-hover ? 0.18 : 0.1) : (ta.has-hover && root.enabled ? Theme.surface-hover : Theme.raised);
+    border-width: root.variant == "accent" ? 0px : 1px;
+    border-color: root.variant == "danger" ? Theme.destructive.with-alpha(0.5) : Theme.border-hover;
+    accessible-role: button;
+    accessible-label: root.text;
+    accessible-enabled: root.enabled;
+    accessible-action-default => {
+        if root.enabled {
+            root.clicked();
+        }
+    }
+    bt := Text {
+        text: root.text;
+        font-size: 12px;
+        font-weight: Theme.weight-medium;
+        color: root.variant == "accent" ? Theme.on-accent : root.variant == "danger" ? Theme.destructive : Theme.foreground;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+    ta := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+export component Caps inherits Text {
+    font-size: 10px;
+    font-weight: Theme.weight-semibold;
+    letter-spacing: 0.8px;
+    color: Theme.caps-label;
+}

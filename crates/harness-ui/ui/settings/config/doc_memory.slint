@@ -1,0 +1,244 @@
+import { ScrollView } from "std-widgets.slint";
+import { Theme } from "../../theme/tokens.slint";
+import { ConfigUi, DocUi, ResRow, FormField, SettingsUi, RecallUi, RecallRow, GraphUi } from "../globals.slint";
+import { GraphCanvas } from "../graph_canvas.slint";
+import { PageHeader, Group, SettingRow, Switch, TextField, TextArea, Select, SearchField, UnsupportedNotice, StatusLine } from "../parts.slint";
+import { Labels } from "../labels.slint";
+import { SkillBrowse } from "../skills.slint";
+import { Icons, IconButton, Segmented, MenuShell, MenuItem } from "../../components/controls.slint";
+import { ConfigCopy, AgentDot } from "./types.slint";
+import { Pill, Btn, Dot, Hairline, DCard, CardHead, Th, Muted, AgentChip, ChipBar } from "./parts.slint";
+import { TargetBar } from "./card.slint";
+
+
+// Memory entry row (design S8 "mem n": pad [10,12], gap 5, radius 8; selected = raised fill, title #EDEEF0).
+export component MemoryRow inherits Rectangle {
+    in property <string> title;
+    in property <string> detail;
+    in property <bool> selected;
+    callback picked;
+    height: 54px;
+    border-radius: 8px;
+    background: root.selected ? Theme.surface-hover : (ta.has-hover ? Theme.hover : Theme.hover.with-alpha(0));
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.picked();
+        }
+    }
+    VerticalLayout {
+        padding-top: 10px;
+        padding-bottom: 10px;
+        padding-left: 12px;
+        padding-right: 12px;
+        spacing: 5px;
+        HorizontalLayout {
+            spacing: 8px;
+            height: 16px;
+            Text {
+                text: root.title;
+                font-size: 12px;
+                color: root.selected ? Theme.foreground : Theme.foreground-subtle;
+                vertical-alignment: center;
+                overflow: elide;
+                horizontal-stretch: 1;
+            }
+            Pill {
+                small: true;
+                text: DocUi.scope == "workspace" ? "Project" : "Global";
+                tint: DocUi.scope == "workspace" ? Theme.accent-fg : Theme.info;
+            }
+        }
+        Text {
+            text: root.detail;
+            font-size: 11px;
+            color: Theme.foreground-subtlest;
+            overflow: elide;
+        }
+    }
+}
+
+export component MemoryBody inherits VerticalLayout {
+    in property <bool> memory-enabled;
+    callback set-memory-enabled(bool);
+    spacing: 20px;
+    // Toolbar: search + New memory.
+    HorizontalLayout {
+        height: 34px;
+        spacing: 8px;
+        SearchField {
+            height: 34px;
+            placeholder: "Search memory…";
+            text <=> DocUi.query;
+            edited(q) => {
+                DocUi.search(q);
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Btn {
+                text: "+ New memory";
+                primary: true;
+                clicked => {
+                    DocUi.new-entry();
+                }
+            }
+        }
+    }
+    if !DocUi.supported: UnsupportedNotice {
+        title: @tr("Memory is not available for this scope");
+        reason: DocUi.error;
+    }
+    if DocUi.supported: HorizontalLayout {
+        spacing: 16px;
+        // Entries list.
+        DCard {
+            width: 336px;
+            height: 390px;
+            VerticalLayout {
+                CardHead {
+                    title: "Entries";
+                    sub: DocUi.entry-count == 1 ? "1 memory" : DocUi.entry-count + " memories";
+                }
+                Hairline { }
+                ScrollView {
+                    vertical-stretch: 1;
+                    VerticalLayout {
+                        padding-top: 6px;
+                        padding-bottom: 8px;
+                        spacing: 1px;
+                        alignment: start;
+                        for e in DocUi.entries: MemoryRow {
+                            title: e.title;
+                            detail: e.detail;
+                            selected: e.index == DocUi.selected;
+                            picked => {
+                                root.selected-title = e.title;
+                                DocUi.select-entry(e.index);
+                            }
+                        }
+                        if DocUi.entries.length == 0: Text {
+                            height: 54px;
+                            text: DocUi.query != "" ? @tr("No matches") : @tr("No memories yet");
+                            font-size: 12px;
+                            color: Theme.icon-subtlest;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+            }
+        }
+        // Selected entry.
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: start;
+        DCard {
+            horizontal-stretch: 1;
+            VerticalLayout {
+                CardHead {
+                    title: DocUi.selected >= 0 && DocUi.entry-text != "" ? (DocUi.entries.length > 0 ? root.selected-title : "Memory") : "No entry selected";
+                    sub: (DocUi.scope == "workspace" ? "Project" : "Global") + " · " + (DocUi.exists ? (DocUi.dirty ? "unsaved changes" : "saved") : "new file");
+                    VerticalLayout {
+                        alignment: center;
+                        Pill {
+                            text: DocUi.scope == "workspace" ? "Project" : "Global";
+                            tint: DocUi.scope == "workspace" ? Theme.accent-fg : Theme.info;
+                        }
+                    }
+                }
+                Hairline { }
+                VerticalLayout {
+                    padding-top: 14px;
+                    padding-left: 16px;
+                    padding-right: 16px;
+                    padding-bottom: 16px;
+                    spacing: 12px;
+                    TextArea {
+                        height: 94px;
+                        label: @tr("Memory content");
+                        mono: false;
+                        read-only: DocUi.selected < 0;
+                        text <=> DocUi.entry-text;
+                        edited(v) => {
+                            DocUi.entry-edited(v);
+                        }
+                    }
+                    VerticalLayout {
+                        spacing: 8px;
+                        HorizontalLayout {
+                            spacing: 10px;
+                            Muted { width: 70px; text: "Scope"; color: Theme.icon-subtlest; }
+                            Muted { text: DocUi.scope == "workspace" ? "Project" : "Global"; color: Theme.foreground-subtle; horizontal-stretch: 1; }
+                        }
+                        HorizontalLayout {
+                            spacing: 10px;
+                            Muted { width: 70px; text: "Source"; color: Theme.icon-subtlest; }
+                            Muted { text: DocUi.path; color: Theme.foreground-subtle; horizontal-stretch: 1; }
+                        }
+                        HorizontalLayout {
+                            spacing: 10px;
+                            Muted { width: 70px; text: "Size"; color: Theme.icon-subtlest; }
+                            Muted {
+                                text: (round(DocUi.bytes / 102.4) / 10) + " / " + (DocUi.limit / 1024) + " KB";
+                                color: DocUi.bytes > DocUi.limit ? Theme.destructive : Theme.foreground-subtle;
+                                horizontal-stretch: 1;
+                            }
+                        }
+                    }
+                    if DocUi.error != "" || DocUi.saved != "": StatusLine {
+                        text: DocUi.error != "" ? DocUi.error : DocUi.saved;
+                        error: DocUi.error != "";
+                    }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        alignment: start;
+                        Btn {
+                            text: "Save";
+                            label: @tr("Save memory");
+                            primary: true;
+                            enabled: DocUi.dirty && DocUi.bytes <= DocUi.limit;
+                            clicked => {
+                                DocUi.save();
+                            }
+                        }
+                        Btn {
+                            text: "Discard";
+                            enabled: DocUi.dirty;
+                            clicked => {
+                                DocUi.revert();
+                                DocUi.select-entry(DocUi.selected);
+                            }
+                        }
+                        Btn {
+                            text: "Delete";
+                            enabled: DocUi.selected >= 0;
+                            clicked => {
+                                DocUi.delete-entry();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        }
+    }
+    // Not in the design: the existing "Use memory" switch stays, below the designed content.
+    Group {
+        SettingRow {
+            first: true;
+            title: @tr("Use memory");
+            description: @tr("Give agents the Harness memory MCP server in new sessions.");
+            Switch {
+                label: @tr("Use memory");
+                checked: root.memory-enabled;
+                toggled(on) => {
+                    root.set-memory-enabled(on);
+                }
+            }
+        }
+    }
+    // Title of the picked section (set when a row is picked; entries can be filtered so index ≠ position).
+    property <string> selected-title: "Memory";
+}
+

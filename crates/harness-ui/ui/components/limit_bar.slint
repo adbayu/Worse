@@ -1,0 +1,43 @@
+import { Theme } from "../theme/tokens.slint";
+
+export component LimitBar inherits VerticalLayout {
+    in property <string> label;
+    in property <string> reset;
+    in property <float> value;
+    spacing: 6px;
+    HorizontalLayout {
+        spacing: 8px;
+        Text {
+            text: root.label;
+            font-size: Theme.ui-sm;
+            font-weight: Theme.weight-medium;
+            color: Theme.foreground;
+            horizontal-stretch: 1;
+        }
+        Text {
+            text: root.reset;
+            font-size: Theme.ui-sm;
+            color: Theme.foreground-subtle;
+            vertical-alignment: center;
+        }
+        Text {
+            text: round(root.value * 100) + "%";
+            font-size: Theme.ui-sm;
+            color: Theme.foreground-subtle;
+            min-width: 32px;
+            horizontal-alignment: right;
+        }
+    }
+    Rectangle {
+        height: 4px;
+        border-radius: 2px;
+        background: Theme.border-hover;
+        Rectangle {
+            x: 0;
+            width: parent.width * clamp(root.value, 0, 1);
+            height: parent.height;
+            border-radius: 2px;
+            background: root.value > 0.9 ? Theme.destructive : root.value > 0.7 ? Theme.warning-surface-foreground : Theme.link;
+        }
+    }
+}

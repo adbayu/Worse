@@ -1,0 +1,183 @@
+import { ListView } from "std-widgets.slint";
+import { Theme } from "../theme/tokens.slint";
+import { Icon, Icons, Segmented, SegmentOption } from "../components/controls.slint";
+import { FileIcons } from "../components/icons.slint";
+import { ChatUi, PaletteRow } from "globals.slint";
+
+// Row icon: file-type icon for files, lucide glyph for the other kinds.
+export component RowIcon inherits Rectangle {
+    in property <PaletteRow> entry;
+    width: 16px;
+    accessible-role: none;
+    pure function action-icon(id: string) -> image {
+        if id == "newTask" { return Icons.square-pen; }
+        if id == "findInTask" { return Icons.search; }
+        if id == "attachFiles" { return Icons.paperclip; }
+        if id == "whiteboard" { return Icons.brush; }
+        if id == "renameSession" { return Icons.pencil; }
+        if id == "forkSession" { return Icons.git-fork; }
+        if id == "pinSession" { return Icons.pin; }
+        if id == "scheduledPrompts" { return Icons.calendar-clock; }
+        if id == "exportMarkdown" { return Icons.download; }
+        if id == "exportHtml" { return Icons.file-code; }
+        if id == "copySessionId" { return Icons.copy; }
+        if id == "archiveSession" { return Icons.archive; }
+        if id == "toggleSidePane" { return Icons.panel-right; }
+        if id == "switchTheme" { return Theme.dark ? Icons.sun : Icons.moon; }
+        if id == "previousConversation" { return Icons.arrow-up; }
+        if id == "nextConversation" { return Icons.arrow-down; }
+        if id == "navigateBack" { return Icons.arrow-left; }
+        if id == "navigateForward" { return Icons.arrow-right; }
+        if id == "zoomIn" { return Icons.plus; }
+        if id == "zoomOut" { return Icons.minus; }
+        if id == "resetZoom" { return Icons.scan; }
+        if id == "openSettings" { return Icons.settings; }
+        if id == "revealWorkspace" { return Icons.folder-open; }
+        if id == "compactSession" || id == "toggleAutoCompact" { return Icons.layers; }
+        return Icons.command;
+    }
+    if root.entry.kind == "file": Image {
+        x: 0;
+        y: (parent.height - self.height) / 2;
+        width: 16px;
+        height: 16px;
+        source: FileIcons.all[root.entry.icon];
+        image-fit: contain;
+        accessible-role: none;
+    }
+    if root.entry.kind != "file": Icon {
+        source: root.entry.kind == "session" ? Icons.message-square : root.entry.kind == "agent" ? Icons.bot : root.entry.kind == "command" ? Icons.code : root.entry.kind == "action" ? root.action-icon(root.entry.id) : Icons.wand-sparkles;
+        size: Theme.icon-sm;
+        tint: Theme.icon-subtle;
+    }
+}
+
+// Result list shared by the command center and the composer popups (fixed 36px rows, keyboard-selected row).
+export component ResultList inherits Rectangle {
+    in property <[PaletteRow]> rows;
+    in property <int> current;
+    in property <string> list-label;
+    in property <bool> show-kind: false;
+    callback run(int);
+    property <length> row-h: 36px;
+    // 选中行跟随键盘移动时保持在可视区域内（固定行高，可直接换算偏移）。
+    changed current => {
+        if root.current * root.row-h < -lv.content-y {
+            lv.content-y = -root.current * root.row-h;
+        } else if (root.current + 1) * root.row-h > -lv.content-y + lv.visible-height {
+            lv.content-y = -((root.current + 1) * root.row-h - lv.visible-height);
+        }
+    }
+    accessible-role: list;
+    accessible-label: root.list-label;
+    lv := ListView {
+        for r[i] in root.rows: Rectangle {
+            height: root.row-h;
+            // Section label (command center with an empty query: Recent / Suggested / Panels / Configure / Sessions).
+            if r.kind == "header": Text {
+                x: 12px;
+                y: parent.height - self.height - 6px;
+                text: ChatUi.section-label(r.title).to-uppercase();
+                font-size: 10px;
+                font-weight: Theme.weight-semibold;
+                letter-spacing: 0.8px;
+                color: Theme.caps-label;
+                accessible-role: AccessibleRole.text;
+                accessible-label: "section " + self.text;
+            }
+            if r.kind != "header": HorizontalLayout {
+                padding-left: 4px;
+                padding-right: 4px;
+                padding-top: 1px;
+                padding-bottom: 1px;
+                Rectangle {
+                    border-radius: Theme.radius-md;
+                    background: i == root.current ? Theme.raised : (rta.has-hover ? Theme.hover : transparent);
+                    border-width: i == root.current ? 1px : 0px;
+                    border-color: Theme.border-hover;
+                    accessible-role: list-item;
+                    accessible-label: r.title;
+                    accessible-description: r.kind + (r.detail != "" ? " · " + r.detail : "");
+                    accessible-item-selected: i == root.current;
+                    accessible-action-default => {
+                        root.run(i);
+                    }
+                    HorizontalLayout {
+                        padding-left: 10px;
+                        padding-right: 8px;
+                        spacing: 10px;
+                        RowIcon {
+                            entry: r;
+                        }
+                        Text {
+                            text: r.title;
+                            font-size: 13px;
+                            color: i == root.current ? Theme.foreground : Theme.foreground-subtle;
+                            vertical-alignment: center;
+                            overflow: elide;
+                            horizontal-stretch: 1;
+                            accessible-role: none;
+                        }
+                        if r.detail != "": Text {
+                            text: r.detail;
+                            font-size: 11px;
+                            color: Theme.foreground-subtlest;
+                            vertical-alignment: center;
+                            overflow: elide;
+                            max-width: 220px;
+                            accessible-role: none;
+                        }
+                        if r.shortcut != "": Rectangle {
+                            width: kt.preferred-width + 12px;
+                            height: 20px;
+                            y: (parent.height - self.height) / 2;
+                            border-radius: Theme.radius-sm;
+                            background: Theme.raised;
+                            border-width: 1px;
+                            border-color: Theme.border-hover;
+                            kt := Text {
+                                text: r.shortcut;
+                                font-size: 10px;
+                                color: Theme.muted;
+                                accessible-role: none;
+                            }
+                        }
+                    }
+                    rta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => {
+                            root.run(i);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+export component HintKey inherits HorizontalLayout {
+    in property <string> label;
+    in property <string> key;
+    spacing: 6px;
+    alignment: start;
+    Rectangle {
+        y: (parent.height - self.height) / 2;
+        width: kt.preferred-width + 10px;
+        height: 18px;
+        border-radius: Theme.radius-sm;
+        background: Theme.raised;
+        border-width: 1px;
+        border-color: Theme.border-hover;
+        kt := Text {
+            text: root.key;
+            font-size: 10px;
+            color: Theme.muted;
+        }
+    }
+    Text {
+        text: root.label;
+        font-size: 11px;
+        color: Theme.foreground-subtlest;
+        vertical-alignment: center;
+    }
+}

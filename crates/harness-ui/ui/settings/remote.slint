@@ -1,0 +1,62 @@
+// Remote page (design frame S5 "Remote"): Tunnel card (status, public URL + Copy / Restart, enable + pairing rows),
+// Pair a device (QR + code), Paired devices. The tunnel helper fields and raw output stay in an extra card below.
+import { Theme } from "../theme/tokens.slint";
+import { Divider } from "../components/controls.slint";
+import { SettingRow, Switch, TextField } from "parts.slint";
+import { SettingsUi } from "globals.slint";
+import { RemoteDevice, RemoteUi } from "./remote_ui.slint";
+export { RemoteDevice, RemoteUi }
+import { RemoteLook, RCard, Sep, RButton, ToggleRow, FieldRow } from "./remote_parts.slint";
+import { TunnelCard, HelperCard } from "./remote_tunnel.slint";
+import { PairCard, DevicesCard } from "./remote_devices.slint";
+export { RemoteLook, RCard, Sep, RButton, ToggleRow, FieldRow }
+
+export component RemotePage inherits VerticalLayout {
+    in property <bool> stacked;
+    property <bool> running: RemoteUi.server-state == 1 || RemoteUi.server-state == 2;
+    property <bool> tunnel-running: RemoteUi.tunnel-state == 1 || RemoteUi.tunnel-state == 2;
+    property <string> bin: SettingsUi.get-string("remote.tunnelBin", SettingsUi.rev);
+    property <string> url: RemoteUi.has-url ? RemoteUi.public-url : RemoteUi.local-url;
+    property <color> tunnel-tone: RemoteUi.tunnel-state == 2 ? Theme.success : RemoteUi.tunnel-state == 1 ? Theme.warning : RemoteUi.tunnel-state == 3 ? RemoteLook.danger : Theme.icon-subtlest;
+    spacing: 16px;
+    // Title block (design: h1 22 + 13px subtitle, gap 6).
+    VerticalLayout {
+        spacing: 6px;
+        Text {
+            text: @tr("Remote");
+            font-family: Theme.display-font;
+            font-size: 22px;
+            font-weight: 700;
+            color: Theme.foreground;
+        }
+        Text {
+            text: "Reach Harness from your phone through a Cloudflare tunnel.";
+            font-size: 13px;
+            color: Theme.muted;
+            wrap: word-wrap;
+        }
+    }
+    if RemoteUi.note != "": Text {
+        text: RemoteUi.note;
+        font-size: 12px;
+        color: Theme.destructive-surface-foreground;
+        wrap: word-wrap;
+    }
+    // ---- Tunnel ----
+    TunnelCard {
+        running: root.running;
+        tunnel-running: root.tunnel-running;
+        bin: root.bin;
+        url: root.url;
+        tunnel-tone: root.tunnel-tone;
+    }
+    // ---- Pair a device ----
+    PairCard { }
+    // ---- Paired devices ----
+    DevicesCard { }
+    // ---- Tunnel helper (not in the design frame; keeps the server/tunnel configuration reachable) ----
+    HelperCard {
+        stacked: root.stacked;
+        tunnel-running: root.tunnel-running;
+    }
+}

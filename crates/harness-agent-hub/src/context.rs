@@ -190,6 +190,10 @@ async fn check_one(
             row.label = crate::research::LABEL.into();
             None
         }
+        ContextItem::CodeMode => {
+            row.label = "Code mode".into();
+            None
+        }
     }
 }
 
@@ -335,6 +339,7 @@ pub(crate) async fn blocks(
                     out.push(json!({"type": "text", "text": crate::factcheck::INSTRUCTIONS}));
                 }
             }
+            ContextItem::CodeMode => {}
         }
     }
     out

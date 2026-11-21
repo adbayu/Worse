@@ -1,0 +1,95 @@
+import { ScrollView } from "std-widgets.slint";
+import { Theme } from "../../theme/tokens.slint";
+import { ConfigUi, DocUi, ResRow, FormField, SettingsUi, RecallUi, RecallRow, GraphUi } from "../globals.slint";
+import { GraphCanvas } from "../graph_canvas.slint";
+import { PageHeader, Group, SettingRow, Switch, TextField, TextArea, Select, SearchField, UnsupportedNotice, StatusLine } from "../parts.slint";
+import { Labels } from "../labels.slint";
+import { SkillBrowse } from "../skills.slint";
+import { Icons, IconButton, Segmented, MenuShell, MenuItem } from "../../components/controls.slint";
+import { ConfigCopy, AgentDot } from "./types.slint";
+import { Pill, Btn, Dot, Hairline, DCard, CardHead, Th, Muted, AgentChip, ChipBar } from "./parts.slint";
+import { TargetBar } from "./card.slint";
+
+
+export component CodeEditor inherits Rectangle {
+    in-out property <string> text;
+    in property <int> lines: 1;
+    in property <string> label;
+    callback edited(string);
+    property <length> line-h: probe.preferred-height;
+    clip: true;
+    probe := Text {
+        visible: false;
+        text: "0";
+        font-size: 12px;
+        font-family: Theme.mono-font;
+    }
+    sv := ScrollView {
+        width: parent.width;
+        height: parent.height;
+        content-height: max(self.visible-height, ed.preferred-height + 30px);
+        content-width: max(self.visible-width, ed.preferred-width + 60px);
+        TouchArea {
+            mouse-cursor: MouseCursor.text;
+            clicked => {
+                ed.focus();
+            }
+        }
+        for i in root.lines: Text {
+            x: 0;
+            y: 14px + i * root.line-h;
+            width: 34px;
+            height: root.line-h;
+            text: i + 1;
+            font-size: 12px;
+            font-family: Theme.mono-font;
+            color: Theme.icon-subtlest;
+            horizontal-alignment: right;
+            accessible-role: none;
+        }
+        ed := TextInput {
+            x: 44px;
+            y: 14px;
+            width: max(sv.visible-width - 58px, self.preferred-width);
+            text <=> root.text;
+            single-line: false;
+            wrap: no-wrap;
+            color: Theme.foreground-subtle;
+            font-size: 12px;
+            font-family: Theme.mono-font;
+            selection-background-color: Theme.text-selection;
+            accessible-label: root.label;
+            edited => {
+                root.edited(self.text);
+            }
+        }
+    }
+}
+
+// Scope tab (design S7 "Scope tabs": 13px text, active #EDEEF0, inactive #8A909A, 30 tall).
+export component ScopeTab inherits Rectangle {
+    in property <string> text;
+    in property <bool> active;
+    callback picked;
+    height: 30px;
+    preferred-width: t.preferred-width;
+    horizontal-stretch: 0;
+    accessible-role: tab;
+    accessible-label: root.text;
+    accessible-action-default => {
+        root.picked();
+    }
+    t := Text {
+        text: root.text;
+        font-size: 13px;
+        color: root.active || ta.has-hover ? Theme.foreground : Theme.foreground-subtlest;
+        vertical-alignment: center;
+    }
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.picked();
+        }
+    }
+}
+

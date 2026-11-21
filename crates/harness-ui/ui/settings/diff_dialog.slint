@@ -1,0 +1,95 @@
+import { ScrollView } from "std-widgets.slint";
+import { Theme } from "../theme/tokens.slint";
+import { Icon, Icons, Button, IconButton, Divider, Dialog } from "../components/controls.slint";
+import { SettingsUi, DiffUi, ConfigUi, DocUi, ShortcutsUi, ProjectsUi, ArchiveUi } from "globals.slint";
+import { ConfirmDialog, StatusLine } from "parts.slint";
+import { GeneralPage, AppearancePage } from "general.slint";
+import { ShortcutsPage } from "shortcuts.slint";
+import { AgentsPage, FallbackRow } from "agents.slint";
+import { ConfigPage, DocPage } from "config.slint";
+import { Labels } from "labels.slint";
+import { ProjectsPage, ArchivePage } from "data.slint";
+import { OrchestraPage } from "orchestra.slint";
+import { InboxPage, SourceDialog, InboxUi } from "inbox.slint";
+import { ImportPage } from "import.slint";
+import { RemotePage } from "remote.slint";
+import { SecurityPage } from "security.slint";
+import { PerformancePage, PerformanceUi } from "performance.slint";
+
+// Diff confirmation (spec §1.3: every agent-config or document write shows the change first).
+export component DiffDialog inherits Dialog {
+    dialog-width: 720px;
+    title: Labels.diff-title(DiffUi.title);
+    close-label: @tr("Close");
+    Text {
+        text: DiffUi.path;
+        font-family: Theme.mono-font;
+        font-size: Theme.ui-sm;
+        color: Theme.foreground-subtle;
+        overflow: elide;
+    }
+    Rectangle {
+        height: clamp(lines.preferred-height + 16px, 60px, 420px);
+        background: Theme.background;
+        border-radius: Theme.radius-md;
+        border-width: 1px;
+        border-color: Theme.border;
+        clip: true;
+        accessible-role: AccessibleRole.text;
+        accessible-label: @tr("Changes");
+        ScrollView {
+            content-height: lines.preferred-height + 16px;
+            lines := VerticalLayout {
+                y: 8px;
+                width: parent.width;
+                if DiffUi.no-op: Text {
+                    x: 12px;
+                    text: @tr("No changes: the file already has this content.");
+                    color: Theme.foreground-subtle;
+                }
+                for l in DiffUi.lines: Rectangle {
+                    background: l.kind == 1 ? Theme.diff-added-surface : l.kind == 2 ? Theme.diff-removed-surface : transparent;
+                    HorizontalLayout {
+                        padding-left: 12px;
+                        padding-right: 12px;
+                        Text {
+                            text: l.text;
+                            font-family: Theme.mono-font;
+                            font-size: Theme.code-size;
+                            color: l.kind == 3 ? Theme.foreground-subtle : Theme.foreground;
+                            wrap: word-wrap;
+                            accessible-role: none;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if DiffUi.error != "": StatusLine {
+        text: DiffUi.error;
+        error: true;
+    }
+    HorizontalLayout {
+        alignment: end;
+        spacing: 8px;
+        Button {
+            text: @tr("Cancel");
+            size: "lg";
+            clicked => {
+                DiffUi.cancel();
+            }
+        }
+        Button {
+            text: DiffUi.no-op ? @tr("Close") : @tr("Write changes");
+            variant: "primary";
+            size: "lg";
+            clicked => {
+                if DiffUi.no-op {
+                    DiffUi.cancel();
+                } else {
+                    DiffUi.confirm();
+                }
+            }
+        }
+    }
+}

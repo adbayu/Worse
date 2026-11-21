@@ -1,0 +1,29 @@
+import { Theme } from "../theme/tokens.slint";
+
+// Sidebar resize handle (ZCode: drag the sidebar edge; 200-420px). Width is UI-local.
+export component SidebarResizer inherits Rectangle {
+    in-out property <length> sidebar-w;
+    width: 6px;
+    border-radius: 3px;
+    accessible-role: AccessibleRole.slider;
+    accessible-label: @tr("Resize sidebar");
+    accessible-value: round(root.sidebar-w / 1px);
+    accessible-value-minimum: 200;
+    accessible-value-maximum: 420;
+    accessible-value-step: 20;
+    accessible-action-increment => {
+        root.sidebar-w = min(420px, root.sidebar-w + 20px);
+    }
+    accessible-action-decrement => {
+        root.sidebar-w = max(200px, root.sidebar-w - 20px);
+    }
+    background: sra.has-hover || sra.pressed ? Theme.border : transparent;
+    sra := TouchArea {
+        mouse-cursor: ew-resize;
+        moved => {
+            if self.pressed {
+                root.sidebar-w = clamp(root.sidebar-w + self.mouse-x - self.pressed-x, 200px, 420px);
+            }
+        }
+    }
+}

@@ -1,0 +1,396 @@
+import { Theme } from "../theme/tokens.slint";
+import { Icon, Icons, Button, IconButton, MenuShell, MenuItem, SectionLabel } from "../components/controls.slint";
+import { ProgressTrack } from "../panels/common.slint";
+import { DockUi } from "./dock_ui.slint";
+
+export component OptionItem inherits Rectangle {
+    in property <string> text;
+    in property <string> description;
+    in property <string> hint;
+    in property <bool> checked;
+    in property <bool> submenu;
+    in property <bool> checkbox;
+    in property <string> label: self.text;
+    callback clicked;
+    height: root.description != "" ? 46px : 32px;
+    border-radius: Theme.radius-md;
+    background: ta.has-hover ? Theme.raised : transparent;
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-description: root.description;
+    accessible-checked: root.checked;
+    accessible-action-default => {
+        root.clicked();
+    }
+    HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 10px;
+        spacing: 8px;
+        VerticalLayout {
+            alignment: center;
+            spacing: 2px;
+            horizontal-stretch: 1;
+            Text {
+                text: root.text;
+                font-size: 13px;
+                font-weight: root.description != "" ? Theme.weight-medium : 400;
+                color: Theme.foreground;
+                overflow: elide;
+                accessible-role: none;
+            }
+            if root.description != "": Text {
+                text: root.description;
+                font-size: 11px;
+                color: Theme.muted;
+                overflow: elide;
+                accessible-role: none;
+            }
+        }
+        if root.checkbox: Rectangle {
+            y: (parent.height - self.height) / 2;
+            width: 16px;
+            height: 16px;
+            border-radius: 4px;
+            border-width: 1px;
+            border-color: root.checked ? Theme.accent-line : (ta.has-hover ? Theme.input-border-focused : Theme.input-border-hover);
+            background: root.checked ? Theme.accent-soft : transparent;
+            if root.checked: Icon {
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                source: Icons.check;
+                size: 12px;
+                tint: Theme.accent-fg;
+            }
+        }
+        if root.checked && !root.checkbox: Icon {
+            y: (parent.height - self.height) / 2;
+            source: Icons.check;
+            size: 14px;
+            tint: Theme.accent-fg;
+        }
+        if !root.checked && root.hint != "": Text {
+            text: root.hint;
+            font-size: Theme.ui-sm;
+            color: Theme.foreground-subtle;
+            vertical-alignment: center;
+            accessible-role: none;
+        }
+        if root.submenu: Icon {
+            y: (parent.height - self.height) / 2;
+            source: Icons.chevron-right;
+            size: Theme.icon-sm;
+            tint: Theme.icon-subtle;
+        }
+    }
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+export component MenuRule inherits Rectangle {
+    height: 9px;
+    Rectangle {
+        x: 6px;
+        y: 4px;
+        width: parent.width - 12px;
+        height: 1px;
+        background: Theme.popover-border;
+    }
+}
+
+// One section of the options popup: header + the choices of one picker.
+export component OptionSection inherits VerticalLayout {
+    in property <string> which;
+    spacing: 2px;
+    HorizontalLayout {
+        padding-left: 8px;
+        SectionLabel {
+            height: 24px;
+            text: DockUi.picker-label(root.which);
+            accessible-role: AccessibleRole.text;
+            accessible-label: "section " + self.text;
+        }
+    }
+    for o in (root.which == "mode" ? DockUi.modes : root.which == "model" ? DockUi.models : DockUi.efforts): MenuItem {
+        text: o.name;
+        label: root.which + "-option " + o.name;
+        checked: o.id == (root.which == "mode" ? DockUi.mode : root.which == "model" ? DockUi.model : DockUi.effort);
+        clicked => {
+            DockUi.pick-option(root.which, o.id);
+            DockUi.picker-open = "";
+        }
+    }
+    if root.which == "mode": OptionItem {
+        text: "Deep research";
+        description: "Search the web and write a sourced report";
+        label: "mode-option Deep research";
+        checked: DockUi.research;
+        clicked => {
+            DockUi.pick-option("mode", "harness:research");
+            DockUi.picker-open = "";
+        }
+    }
+    if root.which == "mode" && DockUi.code-mode-supported: MenuRule { }
+    if root.which == "mode" && DockUi.code-mode-supported: OptionItem {
+        text: "Code mode";
+        checkbox: true;
+        description: "Write one script that calls many tools";
+        label: "mode-option Code mode";
+        checked: DockUi.code-mode;
+        clicked => {
+            DockUi.pick-option("mode", "harness:codemode");
+            DockUi.picker-open = "";
+        }
+    }
+}
+
+export component MenuHeading inherits HorizontalLayout {
+    in property <string> text;
+    height: 26px;
+    padding-left: 10px;
+    Text {
+        text: root.text.to-uppercase();
+        font-size: 10px;
+        font-weight: Theme.weight-semibold;
+        letter-spacing: 0.8px;
+        color: Theme.caps-label;
+        vertical-alignment: center;
+        accessible-role: AccessibleRole.text;
+        accessible-label: "section " + self.text;
+    }
+}
+
+export component PickerMenu inherits HorizontalLayout {
+    // Above the button that opened it, kept inside the composer.
+    alignment: start;
+    // Set from `report` (a plain property: binding it to the position would be a layout loop).
+    property <length> pad;
+    property <length> anchor: DockUi.anchor-x;
+    padding-left: root.pad;
+    changed anchor => {
+        root.report();
+    }
+    function report() {
+        DockUi.menu-x = self.absolute-position.x;
+        DockUi.menu-y = self.absolute-position.y;
+        DockUi.menu-w = self.width;
+        root.pad = clamp(DockUi.anchor-x - self.absolute-position.x, 0px, max(0px, self.width - 312px));
+    }
+    init => {
+        root.report();
+    }
+    changed absolute-position => {
+        root.report();
+    }
+    changed width => {
+        root.report();
+    }
+    if DockUi.picker-open == "mode": MenuShell {
+        width: 304px;
+        MenuHeading {
+            text: @tr("Mode");
+        }
+        for o[i] in DockUi.modes: OptionItem {
+            text: o.name;
+            description: DockUi.mode-description(o.id);
+            hint: (i + 1) + "";
+            label: "mode-option " + o.name;
+            checked: !DockUi.machine && o.id == DockUi.mode;
+            clicked => {
+                DockUi.pick-option("mode", o.id);
+                DockUi.picker-open = "";
+            }
+        }
+        MenuRule { }
+        OptionItem {
+            text: @tr("Machine");
+            description: @tr("Full access: no prompts, controls this computer");
+            label: "mode-option Machine";
+            checked: DockUi.machine;
+            clicked => {
+                DockUi.pick-option("mode", "harness:machine");
+                DockUi.picker-open = "";
+            }
+        }
+        OptionItem {
+            text: "Deep research";
+            description: "Search the web and write a sourced report";
+            label: "mode-option Deep research";
+            checked: DockUi.research;
+            clicked => {
+                DockUi.pick-option("mode", "harness:research");
+                DockUi.picker-open = "";
+            }
+        }
+        if DockUi.code-mode-supported: MenuRule { }
+        if DockUi.code-mode-supported: OptionItem {
+            text: "Code mode";
+            checkbox: true;
+            description: "Write one script that calls many tools";
+            label: "mode-option Code mode";
+            checked: DockUi.code-mode;
+            clicked => {
+                DockUi.pick-option("mode", "harness:codemode");
+                DockUi.picker-open = "";
+            }
+        }
+    }
+    if DockUi.picker-open == "model": MenuShell {
+        // A long list (OpenRouter, Command Code: dozens of models) gets a search box that takes the keyboard
+        // as the menu opens: type to narrow, Enter picks the first match.
+        property <bool> searchable: DockUi.models.length > 8;
+        width: self.searchable ? 304px : 260px;
+        if self.searchable: Rectangle {
+            height: 30px;
+            border-radius: 8px;
+            background: Theme.surface;
+            border-width: 1px;
+            border-color: model-search.has-focus ? Theme.border-hover : Theme.border;
+            Icon {
+                x: 9px;
+                y: (parent.height - self.height) / 2;
+                source: Icons.search;
+                size: Theme.icon-xs;
+                tint: Theme.icon-subtlest;
+            }
+            if model-search.text == "": Text {
+                x: 30px;
+                width: parent.width - 40px;
+                text: "Search " + DockUi.models.length + " models";
+                font-size: Theme.ui-sm;
+                color: Theme.foreground-subtlest;
+                vertical-alignment: center;
+                accessible-role: none;
+            }
+            model-search := TextInput {
+                x: 30px;
+                y: (parent.height - self.height) / 2;
+                width: parent.width - 40px;
+                height: 18px;
+                text <=> DockUi.model-query;
+                single-line: true;
+                font-size: Theme.ui-sm;
+                color: Theme.foreground;
+                accessible-label: "Search models";
+                init => {
+                    self.focus();
+                }
+                edited => {
+                    DockUi.filter-models(self.text);
+                }
+                accepted => {
+                    if DockUi.models-shown.length > 0 {
+                        DockUi.pick-option("model", DockUi.models-shown[0].id);
+                        DockUi.picker-open = "";
+                    }
+                }
+                key-pressed(event) => {
+                    if event.text == Key.Escape {
+                        DockUi.picker-open = "";
+                        return accept;
+                    }
+                    reject
+                }
+            }
+        }
+        if DockUi.models-shown.length == 0: Text {
+            height: 34px;
+            text: "No model matches";
+            font-size: Theme.ui-sm;
+            color: Theme.foreground-subtlest;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+        Flickable {
+            height: min(DockUi.models-shown.length * 34px, 340px);
+            content-height: DockUi.models-shown.length * 34px;
+            VerticalLayout {
+                width: parent.width;
+                spacing: 2px;
+                for o[i] in DockUi.models-shown: OptionItem {
+                    text: o.name;
+                    // Number keys pick from a short list; a long one is searched instead.
+                    hint: DockUi.models.length > 8 ? "" : (i + 1) + "";
+                    label: "model-option " + o.name;
+                    checked: o.id == DockUi.model;
+                    clicked => {
+                        DockUi.pick-option("model", o.id);
+                        DockUi.picker-open = "";
+                    }
+                }
+            }
+        }
+        if DockUi.efforts.length > 0: MenuRule { }
+        if DockUi.efforts.length > 0: OptionItem {
+            text: @tr("Effort");
+            hint: DockUi.effort-name;
+            submenu: true;
+            label: @tr("Effort") + ": " + DockUi.effort-name;
+            clicked => {
+                DockUi.picker-open = "effort";
+            }
+        }
+    }
+    if DockUi.picker-open == "effort": MenuShell {
+        width: 260px;
+        HorizontalLayout {
+            height: 30px;
+            spacing: 4px;
+            Rectangle {
+                width: 28px;
+                border-radius: 8px;
+                background: back-ta.has-hover ? Theme.menu-hover : transparent;
+                accessible-role: button;
+                accessible-label: @tr("Back");
+                accessible-action-default => {
+                    DockUi.picker-open = DockUi.models.length > 0 ? "model" : "";
+                }
+                Icon {
+                    source: Icons.chevron-left;
+                    size: Theme.icon-sm;
+                    tint: Theme.icon-subtle;
+                }
+                back-ta := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => {
+                        DockUi.picker-open = DockUi.models.length > 0 ? "model" : "";
+                    }
+                }
+            }
+            Text {
+                text: @tr("Effort");
+                font-size: Theme.ui-sm;
+                font-weight: Theme.weight-medium;
+                color: Theme.foreground-subtle;
+                vertical-alignment: center;
+            }
+        }
+        for o[i] in DockUi.efforts: OptionItem {
+            text: o.name;
+            hint: (i + 1) + "";
+            label: "effort-option " + o.name;
+            checked: o.id == DockUi.effort;
+            clicked => {
+                DockUi.pick-option("effort", o.id);
+                DockUi.picker-open = "";
+            }
+        }
+    }
+    if DockUi.picker-open == "options": MenuShell {
+        width: 280px;
+        accessible-role: AccessibleRole.groupbox;
+        accessible-label: @tr("Mode & effort");
+        if DockUi.modes.length > 0: OptionSection {
+            which: "mode";
+        }
+        if DockUi.picker-layout == "compact" && DockUi.models.length > 0: OptionSection {
+            which: "model";
+        }
+        if DockUi.efforts.length > 0: OptionSection {
+            which: "effort";
+        }
+    }
+}

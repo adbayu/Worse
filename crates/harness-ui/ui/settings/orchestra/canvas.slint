@@ -1,0 +1,389 @@
+import { Theme } from "../../theme/tokens.slint";
+import { Icon, Icons, Button, IconButton, Divider, Card, SectionLabel, MenuShell, MenuItem } from "../../components/controls.slint";
+import { TextArea, Switch, SelectOption, Select, TextField } from "../parts.slint";
+import { SettingsUi, DecisionUi } from "../globals.slint";
+import { OrchestraUi } from "./ui.slint";
+import { ODiv, OCard, ORow, OStepper, OButton } from "./parts.slint";
+
+export component Canvas inherits Rectangle {
+    property <float> node-w: 176;
+    property <float> node-h: 52;
+    in-out property <float> zoom: 1;
+    in property <bool> snap: false;
+    pure function snapped(v: float) -> float {
+        return root.snap ? round(v / 16) * 16 : v;
+    }
+    public function zoom-to(next: float) {
+        root.set-zoom(next, root.width / 2, root.height / 2);
+    }
+    property <length> pan-x: 40px;
+    property <length> pan-y: 40px;
+    property <length> pan-sx;
+    property <length> pan-sy;
+    property <int> link-from: -1;
+    property <float> link-x;
+    property <float> link-y;
+    property <int> menu-index: -1;
+    property <int> menu-role;
+    property <length> menu-x;
+    property <length> menu-y;
+    function set-zoom(next: float, ax: length, ay: length) {
+        let z = clamp(next, 0.4, 2.0);
+        root.pan-x = ax - (ax - root.pan-x) * z / root.zoom;
+        root.pan-y = ay - (ay - root.pan-y) * z / root.zoom;
+        root.zoom = z;
+    }
+    public function fit() {
+        if OrchestraUi.nodes.length == 0 {
+            root.zoom = 1;
+            root.pan-x = 40px;
+            root.pan-y = 40px;
+            return;
+        }
+        let z = clamp(min((root.width / 1px - 80) / max(OrchestraUi.bw, 1), (root.height / 1px - 80) / max(OrchestraUi.bh, 1)), 0.4, 1.5);
+        root.zoom = z;
+        root.pan-x = (root.width - OrchestraUi.bw * z * 1px) / 2 - OrchestraUi.bx * z * 1px;
+        root.pan-y = (root.height - OrchestraUi.bh * z * 1px) / 2 - OrchestraUi.by * z * 1px;
+    }
+    public function center-x() -> float {
+        return (root.width / 2 - root.pan-x) / 1px / root.zoom - root.node-w / 2;
+    }
+    public function center-y() -> float {
+        return (root.height / 2 - root.pan-y) / 1px / root.zoom - root.node-h / 2;
+    }
+    background: Theme.background-win-alt;
+    border-radius: 12px;
+    border-width: 1px;
+    border-color: Theme.border;
+    clip: true;
+    pan := TouchArea {
+        mouse-cursor: self.pressed ? MouseCursor.grabbing : MouseCursor.default;
+        pointer-event(event) => {
+            if event.button == PointerEventButton.left && event.kind == PointerEventKind.down {
+                root.pan-sx = root.pan-x;
+                root.pan-sy = root.pan-y;
+                OrchestraUi.select("");
+            }
+        }
+        moved => {
+            if self.pressed {
+                root.pan-x = root.pan-sx + (self.mouse-x - self.pressed-x);
+                root.pan-y = root.pan-sy + (self.mouse-y - self.pressed-y);
+            }
+        }
+        scroll-event(event) => {
+            root.set-zoom(event.delta-y > 0 ? root.zoom * 1.1 : (event.delta-y < 0 ? root.zoom / 1.1 : root.zoom), self.mouse-x, self.mouse-y);
+            accept
+        }
+    }
+    for e in OrchestraUi.edges: Path {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+        viewbox-x: -root.pan-x / 1px / root.zoom;
+        viewbox-y: -root.pan-y / 1px / root.zoom;
+        viewbox-width: root.width / 1px / root.zoom;
+        viewbox-height: root.height / 1px / root.zoom;
+        commands: e.commands;
+        stroke: OrchestraUi.role-color(e.role);
+        stroke-width: 1.5px;
+        accessible-role: none;
+    }
+    if root.link-from >= 0 && root.link-from < OrchestraUi.nodes.length: Path {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+        viewbox-x: -root.pan-x / 1px / root.zoom;
+        viewbox-y: -root.pan-y / 1px / root.zoom;
+        viewbox-width: root.width / 1px / root.zoom;
+        viewbox-height: root.height / 1px / root.zoom;
+        commands: "M \{OrchestraUi.nodes[root.link-from].x + root.node-w / 2} \{OrchestraUi.nodes[root.link-from].y + root.node-h} L \{root.link-x} \{root.link-y}";
+        stroke: Theme.foreground-subtle;
+        stroke-width: 1.5px;
+        accessible-role: none;
+    }
+    for n[i] in OrchestraUi.nodes: Rectangle {
+        x: root.pan-x + n.x * root.zoom * 1px;
+        y: root.pan-y + n.y * root.zoom * 1px;
+        width: root.node-w * root.zoom * 1px;
+        height: root.node-h * root.zoom * 1px;
+        border-radius: 10px * root.zoom;
+        border-width: OrchestraUi.selected == n.id ? 2px : 1.5px;
+        border-color: OrchestraUi.role-color(n.role);
+        background: Theme.popover;
+        drop-shadow-blur: OrchestraUi.selected == n.id ? 12px : 0px;
+        drop-shadow-color: OrchestraUi.role-color(n.role).with-alpha(0.35);
+        opacity: n.muted ? 0.55 : 1;
+        accessible-role: button;
+        accessible-label: n.name + ", " + OrchestraUi.role-label(n.role);
+        node-ta := TouchArea {
+            mouse-cursor: self.pressed ? MouseCursor.grabbing : MouseCursor.grab;
+            pointer-event(event) => {
+                if event.button == PointerEventButton.left && event.kind == PointerEventKind.down {
+                    OrchestraUi.select(n.id);
+                }
+                if event.button == PointerEventButton.left && event.kind == PointerEventKind.up {
+                    OrchestraUi.drop-node();
+                }
+                if event.button == PointerEventButton.right && event.kind == PointerEventKind.up {
+                    OrchestraUi.select(n.id);
+                    root.menu-index = i;
+                    root.menu-role = n.role;
+                    root.menu-x = root.pan-x + n.x * root.zoom * 1px + self.mouse-x;
+                    root.menu-y = root.pan-y + n.y * root.zoom * 1px + self.mouse-y;
+                    menu.show();
+                }
+            }
+            moved => {
+                if self.pressed {
+                    OrchestraUi.move-node(i, root.snapped(n.x + (self.mouse-x - self.pressed-x) / 1px / root.zoom), root.snapped(n.y + (self.mouse-y - self.pressed-y) / 1px / root.zoom));
+                }
+            }
+        }
+        HorizontalLayout {
+            padding-left: 10px * root.zoom;
+            padding-right: 12px * root.zoom;
+            spacing: 8px * root.zoom;
+            VerticalLayout {
+                alignment: center;
+                Rectangle {
+                    width: 28px * root.zoom;
+                    height: 28px * root.zoom;
+                    border-radius: 7px * root.zoom;
+                    background: OrchestraUi.role-color(n.role).with-alpha(0.18);
+                    Text {
+                        text: n.initial;
+                        font-size: 13px * root.zoom;
+                        font-weight: Theme.weight-semibold;
+                        color: OrchestraUi.role-color(n.role);
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                spacing: 1px;
+                Text {
+                    text: n.name;
+                    font-size: 13px * root.zoom;
+                    font-weight: Theme.weight-semibold;
+                    color: Theme.foreground;
+                    overflow: elide;
+                }
+                Text {
+                    text: OrchestraUi.role-label(n.role);
+                    font-size: 11px * root.zoom;
+                    color: OrchestraUi.role-color(n.role);
+                    overflow: elide;
+                }
+            }
+        }
+        Rectangle {
+            x: 0;
+            y: parent.height - 10px * root.zoom;
+            width: parent.width;
+            height: 16px * root.zoom;
+            background: transparent;
+            accessible-role: none;
+            handle-ta := TouchArea {
+                mouse-cursor: MouseCursor.crosshair;
+                pointer-event(event) => {
+                    if event.button == PointerEventButton.left && event.kind == PointerEventKind.down {
+                        root.link-from = i;
+                        root.link-x = n.x + root.node-w / 2;
+                        root.link-y = n.y + root.node-h;
+                    }
+                    if event.button == PointerEventButton.left && event.kind == PointerEventKind.up && root.link-from == i {
+                        OrchestraUi.connect-at(i, root.link-x, root.link-y);
+                        root.link-from = -1;
+                    }
+                }
+                moved => {
+                    if self.pressed {
+                        root.link-x = n.x + root.node-w / 2 + (self.mouse-x - self.pressed-x) / 1px / root.zoom;
+                        root.link-y = n.y + root.node-h + (self.mouse-y - self.pressed-y) / 1px / root.zoom;
+                    }
+                }
+            }
+        }
+    }
+    if OrchestraUi.nodes.length == 0: Text {
+        x: (root.width - self.width) / 2;
+        y: (root.height - self.height) / 2;
+        text: "Add agents with \"Add agent\", then drag from the bottom edge of a box to another box to connect them.";
+        font-size: Theme.ui-sm;
+        color: Theme.foreground-subtle;
+    }
+    Rectangle {
+        x: 16px;
+        y: root.height - self.height - 16px;
+        width: 36px;
+        height: zoom-col.preferred-height;
+        background: Theme.popover;
+        border-radius: Theme.radius-lg;
+        border-width: 1px;
+        border-color: Theme.border;
+        zoom-col := VerticalLayout {
+            padding: 2px;
+            IconButton {
+                icon: Icons.plus;
+                label: "Zoom in";
+                clicked => {
+                    root.set-zoom(root.zoom * 1.2, root.width / 2, root.height / 2);
+                }
+            }
+            Divider { }
+            IconButton {
+                icon: Icons.minus;
+                label: "Zoom out";
+                clicked => {
+                    root.set-zoom(root.zoom / 1.2, root.width / 2, root.height / 2);
+                }
+            }
+            Divider { }
+            IconButton {
+                icon: Icons.scan;
+                label: "Fit to view";
+                clicked => {
+                    root.fit();
+                }
+            }
+        }
+    }
+    menu := PopupWindow {
+        x: root.menu-x;
+        y: root.menu-y;
+        width: 220px;
+        MenuShell {
+            MenuItem {
+                text: "Orchestrator";
+                checked: root.menu-role == 0;
+                clicked => {
+                    OrchestraUi.set-role(root.menu-index, 0);
+                    menu.close();
+                }
+            }
+            MenuItem {
+                text: "Subagent";
+                checked: root.menu-role == 1;
+                clicked => {
+                    OrchestraUi.set-role(root.menu-index, 1);
+                    menu.close();
+                }
+            }
+            MenuItem {
+                text: "QC / Reviewer";
+                checked: root.menu-role == 2;
+                clicked => {
+                    OrchestraUi.set-role(root.menu-index, 2);
+                    menu.close();
+                }
+            }
+            MenuItem {
+                text: "Planner / Researcher";
+                checked: root.menu-role == 3;
+                clicked => {
+                    OrchestraUi.set-role(root.menu-index, 3);
+                    menu.close();
+                }
+            }
+            Divider { }
+            MenuItem {
+                text: "Remove connections";
+                show-check: false;
+                clicked => {
+                    OrchestraUi.clear-links(root.menu-index);
+                    menu.close();
+                }
+            }
+            MenuItem {
+                text: "Remove from Orchestra";
+                show-check: false;
+                clicked => {
+                    OrchestraUi.remove-node(root.menu-index);
+                    menu.close();
+                }
+            }
+        }
+    }
+}
+
+export component AddAgentButton inherits Rectangle {
+    callback pick(string);
+    width: btn.preferred-width;
+    height: btn.preferred-height;
+    btn := Button {
+        x: 0;
+        y: 0;
+        text: "Add agent";
+        icon: Icons.plus;
+        has-icon: true;
+        trailing-chevron: true;
+        enabled: OrchestraUi.addable.length > 0;
+        clicked => {
+            menu.show();
+        }
+    }
+    menu := PopupWindow {
+        x: 0;
+        y: root.height + 4px;
+        width: 240px;
+        MenuShell {
+            for a in OrchestraUi.addable: MenuItem {
+                text: a.name;
+                show-check: false;
+                clicked => {
+                    root.pick(a.id);
+                    menu.close();
+                }
+            }
+        }
+    }
+}
+
+export component CanvasPrefs inherits OCard {
+    in property <float> zoom;
+    callback zoom-to(float);
+    callback fit();
+    title: @tr("Canvas");
+    note: @tr("Orchestra view");
+    ORow {
+        label: @tr("Zoom");
+        VerticalLayout {
+            alignment: center;
+            OStepper {
+                label: @tr("Zoom");
+                text: round(root.zoom * 100) + "%";
+                can-dec: root.zoom > 0.41;
+                can-inc: root.zoom < 1.99;
+                dec => { root.zoom-to(max(0.4, (round(root.zoom * 10) - 1) / 10)); }
+                inc => { root.zoom-to(min(2.0, (round(root.zoom * 10) + 1) / 10)); }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            OButton {
+                text: @tr("Fit to screen");
+                clicked => { root.fit(); }
+            }
+        }
+    }
+    ODiv { }
+    ORow {
+        label: @tr("Snap to grid");
+        VerticalLayout {
+            alignment: center;
+            Switch {
+                label: @tr("Snap to grid");
+                checked: SettingsUi.get-bool("orchestra.snapToGrid", SettingsUi.rev);
+                toggled(on) => { SettingsUi.set-bool("orchestra.snapToGrid", on); }
+            }
+        }
+    }
+    Rectangle {
+        vertical-stretch: 1;
+    }
+}

@@ -1,0 +1,68 @@
+import { FileRow, FileIcon } from "../models.slint";
+import { Icon, Icons } from "../components/controls.slint";
+import { PanelTabs } from "./panels.slint";
+import { ListView } from "std-widgets.slint";
+import { Theme } from "../theme/tokens.slint";
+
+export component FileTree inherits Rectangle {
+    in property <[FileRow]> files;
+    callback toggle(int);
+    ListView {
+        for f[i] in root.files: Rectangle {
+            height: 28px;
+            HorizontalLayout {
+                padding-left: 4px;
+                padding-right: 4px;
+                Rectangle {
+                    border-radius: Theme.radius-md;
+                    background: fta.has-hover ? Theme.surface-hover : transparent;
+                    animate background { duration: Theme.dur-hover; easing: ease-out-quint; }
+                    accessible-role: list-item;
+                    accessible-label: f.name;
+                    accessible-expandable: f.is-dir;
+                    accessible-expanded: f.expanded;
+                    accessible-action-default => {
+                        if f.is-dir {
+                            root.toggle(i);
+                        }
+                    }
+                    HorizontalLayout {
+                        padding-left: 6px + f.depth * 14px;
+                        padding-right: 6px;
+                        spacing: 4px;
+                        Rectangle {
+                            width: 14px;
+                            if f.is-dir: Icon {
+                                source: f.expanded ? Icons.chevron-down : Icons.chevron-right;
+                                size: Theme.icon-xs;
+                                tint: Theme.icon-subtle;
+                            }
+                        }
+                        FileIcon {
+                            index: f.icon;
+                        }
+                        Text {
+                            text: f.name;
+                            font-size: Theme.ui-base;
+                            color: Theme.foreground;
+                            vertical-alignment: center;
+                            overflow: elide;
+                            horizontal-stretch: 1;
+                            accessible-role: none;
+                        }
+                    }
+                    fta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => {
+                            if f.is-dir {
+                                root.toggle(i);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// Side Pane: framed like the main panel; tab bar = "Files" + agent A's panel tabs (PanelTabs.tabs).

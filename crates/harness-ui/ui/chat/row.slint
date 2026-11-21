@@ -1,0 +1,161 @@
+import { MarkdownView } from "./markdown_view.slint";
+import { MessageAction } from "../components/message_action.slint";
+import { ChatItem, AgentTile } from "../models.slint";
+import { ChatUi } from "./globals.slint";
+import { ChangesCard, ImageStrip, ThinkingRow, ToolCard } from "./turns.slint";
+import { Icon, Icons, Spinner } from "../components/controls.slint";
+import { Theme } from "../theme/tokens.slint";
+import { UserBubble, AssistantBubble, RowGroupHeader } from "./row_parts.slint";
+
+export component ChatRow inherits VerticalLayout {
+    in property <ChatItem> item;
+    in property <length> bubble-max: 600px;
+    // Current find match (ring around the row).
+    in property <bool> hit;
+    // The session runs (turn actions that rewrite history are disabled; the hub would answer Busy).
+    in property <bool> busy;
+    in property <bool> continued;
+    callback link(string);
+    // Tool and thinking rows are flat one-liners: they stack tight; messages keep their breathing room.
+    property <bool> hide: !root.hit && (root.item.folded || (root.item.group > 0 && !root.item.group-open));
+    padding-top: root.item.folded && !root.hit ? 0px : root.item.kind == 2 || root.item.kind == 5 ? 1px : root.continued ? 4px : 8px;
+    padding-bottom: root.item.folded && !root.hit ? 0px : root.item.kind == 2 || root.item.kind == 5 ? 1px : 8px;
+    // User message: right-aligned bubble (`bg-user-bubble rounded-xl`), at most 80% of the column.
+    if root.item.kind == 0: UserBubble {
+        item: root.item;
+        bubble-max: root.bubble-max;
+        busy: root.busy;
+        hit: root.hit;
+    }
+    // Assistant message: plain markdown on the panel (no bubble). A small agent line names who answered,
+    // since one Harness session mixes agents.
+    if root.item.kind == 1: AssistantBubble {
+        item: root.item;
+        busy: root.busy;
+        continued: root.continued;
+        hit: root.hit;
+        link(url) => {
+            root.link(url);
+        }
+    }
+    if (root.item.kind == 2 || root.item.kind == 5) && root.item.head: HorizontalLayout {
+        spacing: 8px;
+        alignment: start;
+        height: 24px;
+        padding-top: 6px;
+        AgentTile {
+            y: (parent.height - self.height) / 2;
+            name: root.item.agent;
+        }
+        Text {
+            text: root.item.agent;
+            font-size: Theme.ui-caption;
+            font-weight: Theme.weight-semibold;
+            color: Theme.foreground;
+            vertical-alignment: center;
+            accessible-role: none;
+        }
+    }
+    // Tool call: ZCode's inline tool row (icon + title + status) that expands into its content (R8).
+    if root.item.group > 0: RowGroupHeader {
+        item: root.item;
+    }
+    if root.item.kind == 2 && !root.hide: ToolCard {
+        id: root.item.id;
+        title: root.item.title;
+        status: root.item.status;
+        tool-kind: root.item.tool-kind;
+        parts: root.item.parts;
+        expanded: root.item.expanded;
+        hit: root.hit;
+        images: root.item.images;
+        images-more: root.item.images-more;
+        peek: root.item.peek;
+        file: root.item.file;
+        file-line: root.item.file-line;
+        range: root.item.range;
+        added: root.item.added;
+        removed: root.item.removed;
+        member: root.item.member;
+    }
+    // Thinking (live agent thought): collapsed line, expands to the text.
+    if root.item.kind == 5 && !root.hide: ThinkingRow {
+        id: root.item.id;
+        text: root.item.text;
+        preview: root.item.title;
+        active: root.item.status == 0;
+        expanded: root.item.expanded;
+    }
+    // Autonomous turn when a background task ended (§9.17): one muted line with a refresh icon.
+    if root.item.kind == 6: Rectangle {
+        height: line.preferred-height + 8px;
+        accessible-role: AccessibleRole.text;
+        accessible-label: root.item.text;
+        HorizontalLayout {
+            padding: 4px;
+            spacing: 6px;
+            Icon {
+                y: (parent.height - self.height) / 2;
+                source: Icons.refresh-cw;
+                size: Theme.icon-xs;
+                tint: Theme.foreground-subtlest;
+            }
+            line := Text {
+                text: root.item.text;
+                font-size: Theme.ui-sm;
+                color: Theme.foreground-subtle;
+                overflow: elide;
+                vertical-alignment: center;
+                horizontal-stretch: 1;
+                accessible-role: none;
+            }
+        }
+    }
+    if root.item.kind == 7: Rectangle {
+        height: earlier.preferred-height + 16px;
+        accessible-role: AccessibleRole.button;
+        accessible-label: earlier.text;
+        accessible-action-default => { ChatUi.show-earlier(); }
+        earlier := Text {
+            text: @tr("Show {0} earlier messages", root.item.text);
+            font-size: Theme.ui-sm;
+            color: earlier-touch.has-hover ? Theme.foreground : Theme.foreground-subtle;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            accessible-role: none;
+        }
+        earlier-touch := TouchArea {
+            mouse-cursor: pointer;
+            clicked => { ChatUi.show-earlier(); }
+        }
+    }
+    // Failover / paused notices: warning surface with an icon.
+    if root.item.kind == 3 || root.item.kind == 4: Rectangle {
+        property <string> message: root.item.kind == 3 ? (root.item.reset != "" ? @tr("Switched from {0} to {1}: limit reached (resets {2})", root.item.from, root.item.to, root.item.reset) : @tr("Switched from {0} to {1}: limit reached", root.item.from, root.item.to)) : (root.item.reset != "" ? @tr("All agents reached their limits. Paused (resets {0})", root.item.reset) : @tr("All agents reached their limits. Paused"));
+        background: Theme.warning-surface;
+        border-radius: Theme.radius-lg;
+        accessible-role: AccessibleRole.text;
+        accessible-label: self.message;
+        HorizontalLayout {
+            padding: 8px;
+            padding-left: 12px;
+            spacing: 8px;
+            Icon {
+                source: root.item.kind == 3 ? Icons.arrow-left-right : Icons.pause;
+                size: Theme.icon-sm;
+                tint: Theme.warning-surface-foreground;
+            }
+            Text {
+                text: message;
+                wrap: word-wrap;
+                font-size: Theme.ui-sm;
+                color: Theme.warning-surface-foreground;
+                vertical-alignment: center;
+                horizontal-stretch: 1;
+                accessible-role: none;
+            }
+        }
+    }
+}
+
+// ---- sidebar ---------------------------------------------------------------------------------------------

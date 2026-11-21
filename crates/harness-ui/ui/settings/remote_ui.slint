@@ -1,0 +1,39 @@
+import { Theme } from "../theme/tokens.slint";
+import { Divider } from "../components/controls.slint";
+import { SettingRow, Switch, TextField } from "parts.slint";
+import { SettingsUi } from "globals.slint";
+
+export struct RemoteDevice {
+    id: string,
+    name: string,
+    created: string,
+    last-seen: string,
+}
+
+export global RemoteUi {
+    in property <int> server-state;
+    in property <string> server-text;
+    in property <string> local-url;
+    in property <bool> has-url;
+    in property <string> public-url;
+    in property <int> tunnel-state;
+    in property <string> tunnel-text;
+    in property <string> tunnel-hint;
+    in property <[string]> tunnel-log;
+    in property <string> pair-url;
+    in property <string> pair-code;
+    in property <string> pair-expiry;
+    in property <bool> has-qr;
+    in property <image> qr;
+    in property <[RemoteDevice]> devices;
+    in property <string> note;
+    in-out property <bool> log-open;
+    callback set-enabled(bool);
+    callback start-tunnel();
+    callback stop-tunnel();
+    callback pair-new();
+    callback revoke(string);
+    callback refresh();
+    callback copy(string);
+    callback open-url(string);
+}

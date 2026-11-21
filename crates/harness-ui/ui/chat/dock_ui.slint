@@ -1,0 +1,104 @@
+import { Theme } from "../theme/tokens.slint";
+import { Icon, Icons, Button, IconButton, MenuShell, MenuItem, SectionLabel } from "../components/controls.slint";
+import { ProgressTrack } from "../panels/common.slint";
+
+// One choice of a picker: (id, display name) from Event::SessionOptions.
+export struct OptionRow {
+    id: string,
+    name: string,
+}
+
+export global DockUi {
+    // ---- queue (R12) ----
+    // Queued message being edited in the composer ("" = none); Send then sends EditQueued.
+    in property <string> editing-id;
+    // "steer" | "edit" | "remove" | "cancel-edit" on a queued id.
+    callback queue-action(string, string);
+    // Moves a queued message by delta rows (grip drag release, accessible increment / decrement).
+    callback queue-move(string, int);
+    // Composer Steer while a turn runs (Command::Steer).
+    callback steer();
+
+    // ---- pickers (R13) ----
+    in property <[OptionRow]> modes;
+    in property <[OptionRow]> models;
+    in property <[OptionRow]> efforts;
+    in property <string> mode;
+    in property <string> model;
+    in property <string> effort;
+    in property <string> mode-name;
+    in property <string> model-name;
+    in property <string> effort-name;
+    // A turn runs (choices apply from the next prompt; the pickers are disabled meanwhile).
+    in property <bool> options-locked;
+    // A Set* call is in flight.
+    in property <bool> options-pending;
+    // Open picker menu: "" | "mode" | "model" | "effort" | "options" (UI-local).
+    in-out property <string> picker-open;
+    in property <bool> machine;
+    in property <bool> research;
+    in property <bool> code-mode;
+    in property <bool> code-mode-supported;
+    in-out property <length> menu-x;
+    in-out property <length> menu-y;
+    in-out property <length> menu-w;
+    // Window x of the button that opened a picker menu: the menu opens above that button, not at the far end
+    // of the composer.
+    in-out property <length> anchor-x;
+    // Models the menu shows: `models` narrowed by `model-query` (kept by Rust; Slint cannot search text).
+    in property <[OptionRow]> models-shown;
+    in-out property <string> model-query;
+    callback filter-models(string);
+    // Footer width level (UI-local, computed by PickerBar from measured widths): "full" = three buttons,
+    // "medium" = Model + options button (Mode, Effort in the popup), "compact" = options button only.
+    in-out property <string> picker-layout: "full";
+    // "mode" | "model" | "effort", option id.
+    callback pick-option(string, string);
+
+    // ---- typed failure (R20) ----
+    in property <bool> failure-shown;
+    // "auth" | "processExited" | "initFailed" | "transient" | "other"
+    in property <string> failure-kind;
+    in property <string> failure-message;
+    // details and trace joined (empty = no Details toggle).
+    in property <string> failure-details;
+    // "retry" | "after" | "login" | "no"
+    in property <string> failure-retry;
+    // Seconds left of an After hint (0 = retry allowed now).
+    in property <int> failure-wait;
+    in-out property <bool> failure-expanded;
+    // "retry" | "copy" | "dismiss"
+    callback failure-action(string);
+
+    // ---- resumable run (docs/specs/harness/resumable-runs.md Â§6) ----
+    // The shown session has a run the hub left unfinished (offer from RPC resumable_run).
+    in property <bool> resume-shown;
+    // Title of the banner: what the run was doing, how many steps already ran.
+    in property <string> resume-title;
+    // "resume" | "discard"
+    callback resume-action(string);
+
+    pure public function failure-title(kind: string) -> string {
+        if kind == "auth" { return @tr("Sign-in required"); }
+        if kind == "processExited" { return @tr("The agent process exited"); }
+        if kind == "initFailed" { return @tr("The agent failed to start"); }
+        if kind == "transient" { return @tr("Rate limit or network error"); }
+        @tr("The turn failed")
+    }
+    pure public function mode-description(id: string) -> string {
+        if id == "default" { return "Ask before edits and commands"; }
+        if id == "acceptEdits" { return "Automatically accept all file edits"; }
+        if id == "plan" { return "Create a plan before making changes"; }
+        if id == "bypassPermissions" { return "Run everything without asking"; }
+        if id == "dontAsk" { return "Deny anything not already allowed"; }
+        if id == "auto" { return "Work in the project, ask outside it"; }
+        if id == "read-only" { return "Read files only, ask before changes"; }
+        if id == "full-access" { return "Edit files and run commands without asking"; }
+        ""
+    }
+    pure public function picker-label(which: string) -> string {
+        if which == "mode" { return @tr("Mode"); }
+        if which == "model" { return @tr("Model"); }
+        @tr("Effort")
+    }
+}

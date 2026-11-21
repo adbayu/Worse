@@ -70,7 +70,7 @@ pub use types::{
 };
 
 /// API version string; bumped (minor) on every additive change.
-pub const API_VERSION: &str = "0.23.0";
+pub const API_VERSION: &str = "0.24.0";
 
 /// Default body of the methods added in 0.4.0 and later.
 fn unsupported<T: Send + 'static>(name: &'static str) -> BoxFuture<'static, ApiResult<T>> {

@@ -44,6 +44,7 @@ tracing-subscriber = { version = "0.3", default-features = false, features = ["f
 rusqlite = { version = "0.37", features = ["bundled"] }
 # Phase 9.1: Codex config.toml edits that keep comments and unknown keys (spec phase-9-parity.md §9.1.3).
 toml_edit = "0.25"
+toml = "1"
 # Phase 9.2: local time of day for scheduled prompts (spec phase-9-parity.md §9.2.1; already in the lock file).
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 

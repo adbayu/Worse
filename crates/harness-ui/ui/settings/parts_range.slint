@@ -1,0 +1,196 @@
+import { ScrollView } from "std-widgets.slint";
+import { Theme } from "../theme/tokens.slint";
+import { Icon, Icons, Button, IconButton, Divider, Card, MenuShell, MenuItem, Dialog, SegmentOption } from "../components/controls.slint";
+
+// Number stepper (− value +), clamped by the caller's range. Role spinbox: Increment / Decrement actions.
+// Slider: a track with a thumb and the value beside it. `moved` fires while dragging (for a live preview);
+// `changed-value` fires once, when the drag ends, with the value to save.
+export component RangeSlider inherits Rectangle {
+    in property <int> value;
+    in property <int> minimum: 0;
+    in property <int> maximum: 100;
+    in property <string> suffix;
+    in property <string> label;
+    callback moved(int);
+    callback changed-value(int);
+    property <int> live: root.value;
+    property <int> shown: sta.pressed ? root.live : root.value;
+    property <length> track-w: 150px;
+    property <float> ratio: (root.shown - root.minimum) / max(1, root.maximum - root.minimum);
+    function at(x: length) -> int {
+        return max(root.minimum, min(root.maximum, round(root.minimum + (x - 8px) / root.track-w * (root.maximum - root.minimum))));
+    }
+    height: 30px;
+    width: root.track-w + 16px + 44px;
+    accessible-role: slider;
+    accessible-label: root.label;
+    accessible-value: root.value;
+    accessible-value-minimum: root.minimum;
+    accessible-value-maximum: root.maximum;
+    accessible-value-step: 1;
+    accessible-action-increment => {
+        root.changed-value(min(root.maximum, root.value + 1));
+    }
+    accessible-action-decrement => {
+        root.changed-value(max(root.minimum, root.value - 1));
+    }
+    accessible-action-set-value(v) => {
+        root.changed-value(max(root.minimum, min(root.maximum, v.to-float())));
+    }
+    Rectangle {
+        x: 8px;
+        y: (parent.height - self.height) / 2;
+        width: root.track-w;
+        height: 4px;
+        border-radius: 2px;
+        background: Theme.border-hover;
+        Rectangle {
+            x: 0;
+            width: parent.width * root.ratio;
+            border-radius: 2px;
+            background: Theme.accent-fg;
+        }
+    }
+    Rectangle {
+        x: 8px + root.track-w * root.ratio - self.width / 2;
+        y: (parent.height - self.height) / 2;
+        width: sta.pressed ? 16px : 14px;
+        height: self.width;
+        border-radius: self.width / 2;
+        background: Theme.foreground;
+        border-width: 1px;
+        border-color: Theme.canvas;
+        animate width { duration: Theme.dur-press; }
+    }
+    sta := TouchArea {
+        x: 0;
+        width: root.track-w + 16px;
+        mouse-cursor: pointer;
+        pointer-event(event) => {
+            if event.button == PointerEventButton.left && event.kind == PointerEventKind.down {
+                root.live = root.at(self.mouse-x);
+                root.moved(root.live);
+            } else if event.button == PointerEventButton.left && event.kind == PointerEventKind.up {
+                root.changed-value(root.live);
+            }
+        }
+        moved => {
+            if self.pressed {
+                root.live = root.at(self.mouse-x);
+                root.moved(root.live);
+            }
+        }
+    }
+    Text {
+        x: root.track-w + 16px + 6px;
+        width: 38px;
+        height: parent.height;
+        text: root.shown + root.suffix;
+        font-size: Theme.ui-caption;
+        color: Theme.foreground-subtle;
+        horizontal-alignment: right;
+        vertical-alignment: center;
+        accessible-role: none;
+    }
+}
+
+export component Stepper inherits Rectangle {
+    in property <int> value;
+    in property <int> minimum: 0;
+    in property <int> maximum: 100;
+    in property <int> step: 1;
+    in property <string> suffix;
+    in property <string> label;
+    // Optional text shown instead of value+suffix (e.g. "100%").
+    in property <string> display;
+    callback changed-value(int);
+    // Design "stepper": 98x30, cells 28 / 40 / 28, "–" "+" 13 #8A909A, value 13 #EDEEF0. Grows for long values.
+    height: 30px;
+    width: max(98px, vt.preferred-width + 64px);
+    border-radius: Theme.radius-md;
+    border-width: 1px;
+    border-color: Theme.border;
+    background: Theme.input;
+    accessible-role: spinbox;
+    accessible-label: root.label;
+    accessible-value: root.value;
+    accessible-value-minimum: root.minimum;
+    accessible-value-maximum: root.maximum;
+    accessible-value-step: root.step;
+    accessible-action-increment => {
+        root.changed-value(min(root.maximum, root.value + root.step));
+    }
+    accessible-action-decrement => {
+        root.changed-value(max(root.minimum, root.value - root.step));
+    }
+    accessible-action-set-value(v) => {
+        root.changed-value(max(root.minimum, min(root.maximum, v.to-float())));
+    }
+    Rectangle {
+        x: 1px;
+        y: 1px;
+        width: 28px;
+        height: 28px;
+        border-radius: 7px;
+        background: dta.has-hover && root.value > root.minimum ? Theme.hover : transparent;
+        accessible-role: button;
+        accessible-label: @tr("Decrease");
+        accessible-action-default => {
+            root.changed-value(max(root.minimum, root.value - root.step));
+        }
+        Text {
+            text: "–"; font-family: "Segoe UI Symbol";
+            font-size: Theme.ui-caption;
+            color: root.value > root.minimum ? Theme.muted : Theme.icon-subtlest;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            accessible-role: none;
+        }
+        dta := TouchArea {
+            enabled: root.value > root.minimum;
+            mouse-cursor: pointer;
+            clicked => {
+                root.changed-value(max(root.minimum, root.value - root.step));
+            }
+        }
+    }
+    vt := Text {
+        x: 29px;
+        width: root.width - 58px;
+        height: root.height;
+        text: root.display != "" ? root.display : root.value + root.suffix;
+        color: Theme.foreground;
+        font-size: Theme.ui-caption;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        accessible-role: none;
+    }
+    Rectangle {
+        x: root.width - 29px;
+        y: 1px;
+        width: 28px;
+        height: 28px;
+        border-radius: 7px;
+        background: ita.has-hover && root.value < root.maximum ? Theme.hover : transparent;
+        accessible-role: button;
+        accessible-label: @tr("Increase");
+        accessible-action-default => {
+            root.changed-value(min(root.maximum, root.value + root.step));
+        }
+        Text {
+            text: "+";
+            font-size: Theme.ui-caption;
+            color: root.value < root.maximum ? Theme.muted : Theme.icon-subtlest;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            accessible-role: none;
+        }
+        ita := TouchArea {
+            enabled: root.value < root.maximum;
+            mouse-cursor: pointer;
+            clicked => {
+                root.changed-value(min(root.maximum, root.value + root.step));
+            }
+        }
+    }
+}

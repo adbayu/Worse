@@ -1,0 +1,149 @@
+import { StarterRow } from "./starter_row.slint";
+import { AsciiArt, GlyphAnim } from "../components/ascii.slint";
+import { Theme } from "../theme/tokens.slint";
+
+export component EmptyState inherits VerticalLayout {
+    in property <string> place;
+    callback pick(string);
+    property <bool> shown: false;
+    property <length> list-w: 600px;
+    alignment: center;
+    padding: 24px;
+    min-width: 0px;
+    opacity: self.shown ? 1 : 0;
+    animate opacity { duration: Theme.dur-enter; easing: ease-out-quint; }
+    init => {
+        self.list-w = min(600px, self.width - 48px);
+    }
+    changed width => {
+        self.list-w = min(600px, self.width - 48px);
+    }
+    Timer {
+        interval: 16ms;
+        running: !root.shown;
+        triggered => {
+            root.shown = true;
+        }
+    }
+    // Hero: the unicode wordmark (one letter at a time lights up) with the ASCII bunny sitting on it.
+    // Needs room, so short or narrow windows skip straight to the heading.
+    if root.height >= 500px && root.width >= 520px: HorizontalLayout {
+        alignment: center;
+        hero := Rectangle {
+            // One text item per letter (a letter is only redrawn when its own cells change), placed on the
+            // character grid of a single block: letters 10 cells wide, 2 cells apart, one blank row between
+            // WORSE and HARNESS. Cell size is the 8px art face's metrics (JetBrains Mono: advance 600, line
+            // 1320 per 1000 units), so positions stay fractional like glyphs inside one text would.
+            property <length> cell: 8px * 0.6;
+            property <length> line: 8px * 1.32;
+            // HARNESS (7 letters) is the wider row: 7 * 10 + 6 * 2 cells; 7 + 1 + 7 rows.
+            width: 82 * self.cell;
+            height: 15 * self.line;
+            accessible-role: none;
+            for letter[i] in AsciiArt.wordmark-letters: GlyphAnim {
+                x: (i < 5 ? i : i - 5) * 12 * hero.cell;
+                y: (i < 5 ? 0 : 8) * hero.line;
+                frames: letter;
+                divider: 2;
+                font-size: 8px;
+                color: Theme.foreground;
+            }
+            // In the gap right of "WORSE", feet on the top edge of "HARNESS".
+            GlyphAnim {
+                x: parent.width - self.width + 2px;
+                y: parent.height * 0.5 - self.height + 4px;
+                frames: AsciiArt.bunny;
+                divider: 3;
+                font-size: 14px;
+                color: Theme.foreground;
+            }
+        }
+    }
+    if root.height >= 500px && root.width >= 520px: Rectangle {
+        height: 30px;
+    }
+    Text {
+        text: @tr("What should we build?");
+        font-family: Theme.display-font;
+        font-size: 30px;
+        font-weight: 700;
+        color: Theme.foreground;
+        horizontal-alignment: center;
+        wrap: word-wrap;
+    }
+    Rectangle {
+        height: 10px;
+    }
+    HorizontalLayout {
+        alignment: center;
+        Text {
+            width: min(root.list-w, 460px);
+            text: root.place != "" ? @tr("Working in {0}. Pick a starter or describe a task.", root.place) : @tr("Pick a starter or describe a task.");
+            font-family: Theme.serif-font;
+            font-italic: Theme.serif-font == "Instrument Serif";
+            font-size: Theme.serif-font == "Instrument Serif" ? 19px : Theme.ui-caption;
+            wrap: word-wrap;
+            horizontal-alignment: center;
+            color: Theme.foreground-subtle;
+        }
+    }
+    Rectangle {
+        height: 26px;
+    }
+    // 2×2 starter cards.
+    HorizontalLayout {
+        alignment: center;
+        VerticalLayout {
+            width: root.list-w;
+            spacing: 10px;
+            HorizontalLayout {
+                spacing: 10px;
+                StarterRow {
+                    width: (root.list-w - 10px) / 2;
+                    index: "01";
+                    text: @tr("Explain this repo");
+                    hint: @tr("map modules & entry points");
+                    tint: Theme.info;
+                    clicked => {
+                        root.pick("Explain how this codebase is organized: the main modules, how they connect, and where to start reading.");
+                    }
+                }
+                StarterRow {
+                    width: (root.list-w - 10px) / 2;
+                    index: "02";
+                    text: @tr("Review my changes");
+                    hint: @tr("uncommitted diff, bugs & risky edits");
+                    tint: Theme.agent-codex;
+                    clicked => {
+                        root.pick("Review the uncommitted changes in this repository and point out bugs or risky edits.");
+                    }
+                }
+            }
+            HorizontalLayout {
+                spacing: 10px;
+                StarterRow {
+                    width: (root.list-w - 10px) / 2;
+                    index: "03";
+                    text: @tr("Find and fix a bug");
+                    hint: @tr("describe the symptom");
+                    tint: Theme.warning-surface-foreground;
+                    clicked => {
+                        root.pick("Find and fix this bug: ");
+                    }
+                }
+                StarterRow {
+                    width: (root.list-w - 10px) / 2;
+                    last: true;
+                    index: "04";
+                    text: @tr("Plan a feature");
+                    hint: @tr("step by step before writing code");
+                    tint: Theme.agent-agy;
+                    clicked => {
+                        root.pick("Plan this feature step by step before writing code: ");
+                    }
+                }
+            }
+        }
+    }
+}
+

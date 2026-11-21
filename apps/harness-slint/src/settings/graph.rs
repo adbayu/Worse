@@ -16,6 +16,12 @@ use slint::ComponentHandle;
 use super::graph_view;
 use crate::ui::{AppWindow, GraphUi};
 
+mod installer;
+mod runner;
+
+use installer::{Installer, Step};
+use runner::run;
+
 /// Lines of command output kept for the page.
 const LOG_LINES: usize = 14;
 
@@ -153,10 +159,6 @@ fn spawn(work: impl FnOnce() + Send + 'static) {
         .spawn(work);
 }
 
-/// One command of a sequence, made when its turn comes: a later step can depend on what an earlier one
-/// installed.
-type Step = Box<dyn FnOnce() -> Result<Command, String> + Send>;
-
 /// `graphify update <workspace>`: Graphify's code-only pass.
 fn build_command(workspace: &Path) -> Result<Command, String> {
     let program = graphify::cli().ok_or(
@@ -169,96 +171,6 @@ fn build_command(workspace: &Path) -> Result<Command, String> {
         .current_dir(workspace)
         .env("GRAPHIFY_NO_TIPS", "1");
     Ok(command)
-}
-
-/// What can install Graphify on this computer, best first.
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum Installer {
-    /// `uv tool install "graphifyy[mcp]"`.
-    Uv,
-    /// `pipx install "graphifyy[mcp]"`.
-    Pipx(PathBuf),
-    /// Windows without uv: `winget install astral-sh.uv`, then as `Uv`. uv brings its own Python, so this
-    /// works on a computer without Python.
-    WingetThenUv(PathBuf),
-    /// `python -m pip install --user "graphifyy[mcp]"`.
-    Pip(PathBuf),
-}
-
-impl Installer {
-    fn find() -> Option<Self> {
-        let on_path = harness_agent_hub::agents::resolve_program;
-        if graphify::uv().is_some() {
-            return Some(Self::Uv);
-        }
-        if let Some(pipx) = on_path("pipx") {
-            return Some(Self::Pipx(pipx));
-        }
-        if cfg!(windows) {
-            if let Some(winget) = on_path("winget") {
-                return Some(Self::WingetThenUv(winget));
-            }
-        }
-        ["python3", "python", "py"]
-            .into_iter()
-            .find_map(on_path)
-            .map(Self::Pip)
-    }
-
-    /// What it will run, in words, for the page.
-    fn plan(&self) -> String {
-        match self {
-            Self::Uv => graphify::INSTALL_COMMAND.to_owned(),
-            Self::Pipx(_) => "pipx install \"graphifyy[mcp]\"".to_owned(),
-            Self::WingetThenUv(_) => {
-                format!(
-                    "winget install astral-sh.uv, then {}",
-                    graphify::INSTALL_COMMAND
-                )
-            }
-            Self::Pip(_) => "python -m pip install --user \"graphifyy[mcp]\"".to_owned(),
-        }
-    }
-
-    fn steps(self) -> Vec<Step> {
-        fn with_uv() -> Result<Command, String> {
-            let uv = graphify::uv().ok_or(
-                "uv was installed but is not found yet. Restart Harness, then press Set up again.",
-            )?;
-            let mut command = Command::new(uv);
-            command.args(["tool", "install", "graphifyy[mcp]"]);
-            Ok(command)
-        }
-        match self {
-            Self::Uv => vec![Box::new(with_uv)],
-            Self::Pipx(pipx) => vec![Box::new(move || {
-                let mut command = Command::new(pipx);
-                command.args(["install", "graphifyy[mcp]", "--force"]);
-                Ok(command)
-            })],
-            Self::WingetThenUv(winget) => vec![
-                Box::new(move || {
-                    let mut command = Command::new(winget);
-                    command.args([
-                        "install",
-                        "--id",
-                        "astral-sh.uv",
-                        "-e",
-                        "--accept-source-agreements",
-                        "--accept-package-agreements",
-                        "--disable-interactivity",
-                    ]);
-                    Ok(command)
-                }),
-                Box::new(with_uv),
-            ],
-            Self::Pip(python) => vec![Box::new(move || {
-                let mut command = Command::new(python);
-                command.args(["-m", "pip", "install", "--user", "graphifyy[mcp]"]);
-                Ok(command)
-            })],
-        }
-    }
 }
 
 /// "1,204" for 1204.
@@ -365,98 +277,6 @@ fn show_running(ctx: &Ctx, busy: bool, log: String) {
             ui.set_log(log.into());
         }
     });
-}
-
-/// Runs `steps` one after the other on a worker thread, showing the last lines of their output; stops at the
-/// first one that fails.
-fn run(ctx: &Ctx, steps: Vec<Step>, done: &'static str, failed: &'static str) {
-    if ctx.busy.swap(true, Ordering::SeqCst) {
-        return;
-    }
-    let ctx = ctx.clone();
-    spawn(move || {
-        show_running(&ctx, true, String::new());
-        let lines: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
-        let mut note = done.to_owned();
-        for step in steps {
-            let outcome = step().and_then(|command| run_one(&ctx, command, &lines));
-            if let Err(reason) = outcome {
-                note = format!("{failed}: {reason}");
-                break;
-            }
-        }
-        let tail = lines
-            .lock()
-            .map(|all| all[all.len().saturating_sub(LOG_LINES)..].join("\n"))
-            .unwrap_or_default();
-        ctx.busy.store(false, Ordering::SeqCst);
-        show_running(&ctx, false, tail);
-        refresh(&ctx, Some(note));
-    });
-}
-
-/// Runs one command to its end, feeding its output lines to the page. `Err`: why it did not succeed.
-fn run_one(ctx: &Ctx, mut command: Command, lines: &Arc<Mutex<Vec<String>>>) -> Result<(), String> {
-    let shown = format!(
-        "> {} {}",
-        command.get_program().to_string_lossy(),
-        command
-            .get_args()
-            .map(|a| a.to_string_lossy().into_owned())
-            .collect::<Vec<_>>()
-            .join(" ")
-    );
-    if let Ok(mut all) = lines.lock() {
-        all.push(shown);
-    }
-    command
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        // No console window for the child.
-        command.creation_flags(0x0800_0000);
-    }
-    let mut child = command.spawn().map_err(|e| e.to_string())?;
-    let mut readers = Vec::new();
-    let streams: [Option<Box<dyn std::io::Read + Send>>; 2] = [
-        child.stdout.take().map(|s| Box::new(s) as _),
-        child.stderr.take().map(|s| Box::new(s) as _),
-    ];
-    for stream in streams.into_iter().flatten() {
-        let lines = Arc::clone(lines);
-        let ctx = ctx.clone();
-        readers.push(std::thread::spawn(move || {
-            for line in BufReader::new(stream).lines().map_while(Result::ok) {
-                let line = line.trim_end().to_owned();
-                if line.is_empty() {
-                    continue;
-                }
-                let Ok(mut all) = lines.lock() else {
-                    return;
-                };
-                all.push(line);
-                let from = all.len().saturating_sub(LOG_LINES);
-                let tail = all[from..].join("\n");
-                drop(all);
-                show_running(&ctx, true, tail);
-            }
-        }));
-    }
-    let status = child.wait();
-    for reader in readers {
-        let _ = reader.join();
-    }
-    match status {
-        Ok(status) if status.success() => Ok(()),
-        Ok(status) => Err(status.code().map_or_else(
-            || "the command was stopped. Its output is below.".to_owned(),
-            |code| format!("exit code {code}. The output is below."),
-        )),
-        Err(error) => Err(error.to_string()),
-    }
 }
 
 /// Opens a file with the system's default program (the graph page in the browser, the report in an editor).

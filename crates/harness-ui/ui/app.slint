@@ -1,0 +1,674 @@
+// Harness main window (spec docs/specs/harness/phase-8-ui.md, visuals phase-10-midnight-glass-ui.md). All state comes
+// from the core via Rust; this file only holds view state (overlays, draft, scroll stickiness, side-pane tab).
+import "fonts/PlusJakartaSans-Regular.ttf";
+import "fonts/PlusJakartaSans-Medium.ttf";
+import "fonts/PlusJakartaSans-SemiBold.ttf";
+import "fonts/PlusJakartaSans-Bold.ttf";
+import "fonts/Inter-Regular.ttf";
+import "fonts/Inter-Medium.ttf";
+import "fonts/Inter-SemiBold.ttf";
+import "fonts/Inter-Bold.ttf";
+import { Sidebar } from "./chat/sidebar.slint";
+import { AgentRow, ChatItem, FileRow, PermOption, QueueRow, SessionRow } from "./models.slint";
+// Brand faces: wide display headings, italic serif taglines, and the mono the glyph art is set in.
+import "fonts/Syne-Bold.ttf";
+import "fonts/InstrumentSerif-Italic.ttf";
+import "fonts/JetBrainsMono-Regular.ttf";
+import { Theme } from "./theme/tokens.slint";
+import { MidnightBackdrop, DitherField } from "./theme/backdrop.slint";
+import { ArtClock } from "./components/ascii.slint";
+export { ArtClock }
+import { Look } from "./theme/look.slint";
+export { Look }
+import { Icon, Glass, Spinner, Card } from "./components/controls.slint";
+
+export { Theme }
+import { LiveUi, LiveLine, LiveFile } from "./panels/live.slint";
+export { LiveUi, LiveLine, LiveFile }
+import { ScreenUi, ScreenAct } from "./panels/screen.slint";
+export { ScreenUi, ScreenAct }
+// Agent A's panel globals are reachable from Rust through this re-export.
+export * from "panels/globals.slint";
+import { SettingsShell, FallbackRow } from "./settings/shell.slint";
+import { SettingsUi, DiffUi, ConfigUi, SkillsUi, DocUi, ShortcutsUi, AgentsUi, AccountRow, AgyAccountRow, ProviderRow, ProjectsUi, ArchiveUi, NavEntry, DiffLine, ResRow, SkillRow, FormField, ShortcutRow, AgentCard, ProjectRow, ArchiveRow, RecallUi, RecallRow, GraphUi, DecisionUi } from "./settings/globals.slint";
+import { SelectOption } from "./settings/parts.slint";
+import { Labels } from "./settings/labels.slint";
+import { ChatUi, FleetGroup, PaletteRow, ChipRow, ToolPart, OutputRow, UsagePart, PlanLimit, PlanBar, ChangeRow, PlanRow, GroupRow, ScheduleRow } from "./chat/globals.slint";
+import { TextDialog, SchedulesDialog } from "./chat/turns.slint";
+import { CommandCenter } from "./chat/palette.slint";
+import { WhiteboardUi, WhiteboardDialog, WbStroke } from "./chat/whiteboard.slint";
+import { DockUi, OptionRow } from "./chat/dock.slint";
+import { GitUi, BranchRow, GraphRow, GitDialogs } from "./panels/gitops.slint";
+import { PanelGit } from "./panels/globals.slint";
+// §9.10 first-run setup dialog (src/setup.rs).
+import { SetupUi, SetupRow, SetupDialog } from "./setup.slint";
+import { ProviderDialog } from "./settings/agents.slint";
+import { GraphCanvas } from "./settings/graph_canvas.slint";
+import { OrchestraUi, OrchNode, OrchEdge, OrchLink, OrchAgent, OrchConn } from "./settings/orchestra.slint";
+import { InboxUi, InboxSourceRow, InboxTicketRow, InboxTriggerRow, InboxNotice } from "./settings/inbox.slint";
+import { ImportUi, ImportRow } from "./settings/import.slint";
+import { RemoteUi, RemoteDevice } from "./settings/remote.slint";
+export { RemoteUi, RemoteDevice }
+export { ImportUi, ImportRow }
+import { SecurityUi, VulnRow } from "./settings/globals.slint";
+import { PerformanceUi } from "./settings/performance.slint";
+import { BoardUi, BoardPage, BoardCard, BoardColumn } from "./board/board.slint";
+import { OrchLiveUi, OrchestraLive } from "./orchestra/live.slint";
+export { SecurityUi, VulnRow }
+export { PerformanceUi }
+export { BoardUi, BoardCard, BoardColumn }
+export { OrchestraUi, OrchNode, OrchEdge, OrchLink, OrchAgent, OrchConn }
+export { InboxUi, InboxSourceRow, InboxTicketRow, InboxTriggerRow, InboxNotice }
+export { SetupUi, SetupRow }
+export { ChatUi, FleetGroup, PaletteRow, ChipRow, ToolPart, OutputRow, UsagePart, PlanLimit, PlanBar, ChangeRow, PlanRow, GroupRow, ScheduleRow, WhiteboardUi, WbStroke, DockUi, OptionRow, GitUi, BranchRow, GraphRow }
+export { SettingsUi, DiffUi, ConfigUi, DocUi, ShortcutsUi, AgentsUi, AccountRow, AgyAccountRow, ProviderRow, ProjectsUi, ArchiveUi, NavEntry, DiffLine, ResRow, FormField, ShortcutRow, AgentCard, ProjectRow, ArchiveRow, SelectOption, FallbackRow, Labels, RecallUi, RecallRow, GraphUi, DecisionUi, SkillsUi, SkillRow }
+export { QueueRow } from "models.slint";
+import { QueueRow } from "./models.slint";
+import { Composer } from "./chat/composer.slint";
+import { SidePane } from "./panels/side_pane.slint";
+import { ResizeFrame } from "./components/resize_frame.slint";
+import { NarrowDrawer } from "./chat/narrow_drawer.slint";
+import { DropHint, Toast, PickerScrim, SettingsOverlay, GraphEmpty } from "./chat/overlays.slint";
+import { SidebarCard } from "./chat/sidebar_card.slint";
+import { TopBar } from "./chat/top_bar.slint";
+import { ChatDock } from "./chat/chat_dock.slint";
+import { ChatTranscript } from "./chat/transcript.slint";
+import { MenuLayer } from "./chat/menu_layer.slint";
+import { SidebarResizer } from "./components/sidebar_resizer.slint";
+
+export component AppWindow inherits Window {
+    title: "Harness";
+    preferred-width: 1100px;
+    preferred-height: 720px;
+    min-width: 360px;
+    min-height: 480px;
+    no-frame: !root.native-frame;
+    // Use the OS window frame (Windows title bar): the custom title bar then only renders the
+    // Harness header row, and drag/resize/maximize stay native. Applied at startup.
+    in property <bool> native-frame: true;
+    background: Theme.canvas;
+    default-font-size: Theme.ui-base;
+    callback window-action(string);
+    in property <bool> win-maximized;
+    // Light or dark changed (a theme picked in Settings, or the system's): Rust tints the Windows title bar
+    // and border to match (`window_frame.rs`).
+    callback frame-dark-changed(bool);
+    property <bool> frame-dark: Theme.dark;
+    changed frame-dark => {
+        root.frame-dark-changed(self.frame-dark);
+    }
+    // Live update (phase 1): Rust sets this when the build output changed under the running shadow copy.
+    in-out property <bool> update-ready;
+    callback restart-for-update();
+    in property <string> workspace-initial;
+    in-out property <bool> sidebar-hidden;
+    property <bool> show-sidebar: !root.narrow && !root.sidebar-hidden;
+    // 修复：Windows 上默认字体回退会为汉字选到日文字体，简体专用字（会话、设置、语言…）显示为方框；
+    // 由 Rust 按平台传入含简体中文字形的 UI 字体（空字符串 = Slint 默认）。
+    in property <string> ui-font-family;
+    default-font-family: root.ui-font-family;
+    icon: @image-url("brand/app-icon.png");
+    // Syne / Instrument Serif are Latin only: when the UI font is a system CJK face, headings use it too.
+    property <bool> latin-ui: root.ui-font-family == "Plus Jakarta Sans" || root.ui-font-family == "Inter" || root.ui-font-family == "Segoe UI" || root.ui-font-family == "";
+    changed latin-ui => {
+        Theme.display-font = self.latin-ui ? "Syne" : root.ui-font-family;
+        Theme.serif-font = self.latin-ui ? "Instrument Serif" : root.ui-font-family;
+    }
+
+    in property <[SessionRow]> sessions;
+    in property <[AgentRow]> agents;
+    in property <[FallbackRow]> fallback;
+    in property <[ChatItem]> chat;
+    in property <[FileRow]> files;
+    in property <[QueueRow]> queue;
+    in property <string> workspace;
+    in property <string> active-title;
+    in property <string> sticky-agent;
+    in property <string> sticky-name;
+    in property <bool> running;
+    in property <int> queued;
+    in property <bool> paused;
+    in property <bool> perm-visible;
+    in property <int> perm-request;
+    in property <string> perm-title;
+    in property <string> perm-detail;
+    in property <[PermOption]> perm-options;
+    in property <string> error-text;
+    in-out property <string> draft;
+    in-out property <bool> settings-open;
+    // 修复：通过按钮（或无障碍动作）开始录制快捷键时，焦点可能落在已被销毁的元素上（页面切换后），
+    // 此时按键不会进入任何 FocusScope，录制永远收不到组合键。录制/按键搜索开始时把焦点交回根 FocusScope。
+    property <bool> capturing-keys: ShortcutsUi.recording != "" || ShortcutsUi.key-search;
+    changed capturing-keys => {
+        if self.capturing-keys {
+            key-scope.focus();
+        }
+    }
+    in-out property <bool> picker-open;
+    in-out property <bool> drawer-open;
+    in-out property <bool> files-open: true;
+    in-out property <length> sidebar-w: Theme.sidebar-width;
+
+    callback new-session();
+    callback new-worktree-session();
+    callback open-folder();
+    callback open-session(string);
+    callback archive-session(string);
+    callback send-draft(string);
+    callback stop();
+    callback cancel-queued(string);
+    callback choose-agent(string);
+    callback permission(int, bool);
+    callback choose-permission(int, string);
+    // "1".."9" → 0..8, anything else → -1 (permission option keys).
+    pure function digit(text: string) -> int {
+        if text == "1" { return 0; }
+        if text == "2" { return 1; }
+        if text == "3" { return 2; }
+        if text == "4" { return 3; }
+        if text == "5" { return 4; }
+        if text == "6" { return 5; }
+        if text == "7" { return 6; }
+        if text == "8" { return 7; }
+        if text == "9" { return 8; }
+        -1
+    }
+    callback move-fallback(int, int);
+    // Global shortcut command (ShortcutsUi.match) that Rust runs (zoom, theme, …).
+    callback run-command(string);
+    callback toggle-file(int);
+    callback open-link(string);
+
+    // 用 changed 回调而非绑定：narrow 影响布局的最小宽度，直接绑定 width 会形成布局绑定环。
+    property <bool> narrow: false;
+    property <length> win-w: 1100px;
+    property <bool> title-editing;
+    changed width => {
+        self.narrow = self.width < 720px;
+        self.win-w = self.width;
+        Look.win-w = self.width;
+        self.window-action("sync");
+    }
+    changed height => {
+        Look.win-h = self.height;
+    }
+    init => {
+        Look.win-w = self.width;
+        Look.win-h = self.height;
+    }
+    // The one timer behind the hero glyph art (empty chat wordmark, bunny and dither field, the napping bunny
+    // in an empty session list): runs only while one of them is on screen and the window is visible.
+    property <bool> art-on-screen: !Theme.reduce-motion && ArtClock.visible && ArtClock.focused && (root.chat.length == 0 || root.sessions.length == 0 || (Look.field-motion == "always" && Look.field != "none"));
+    art-clock := Timer {
+        interval: ArtClock.period;
+        running: root.art-on-screen;
+        triggered => {
+            ArtClock.tick = mod(ArtClock.tick + 1, 1000000);
+        }
+    }
+    // Busy clock: while a turn runs or Orchestra has live subagents / tasks (the tool spinner, the
+    // "Thinking" line and the level bars all step on it, so they redraw together).
+    property <bool> busy-on-screen: !Theme.reduce-motion && ArtClock.visible && (root.running || ChatUi.subagents-running + ChatUi.background-tasks-running + ChatUi.fleet-running > 0);
+    busy-clock := Timer {
+        interval: ArtClock.busy-period;
+        running: root.busy-on-screen;
+        triggered => {
+            ArtClock.busy-tick = mod(ArtClock.busy-tick + 1, 1000000);
+        }
+    }
+    // Every turn counts (the "shuffle" thinking animation and the playful words start elsewhere each turn).
+    property <bool> run-watch: root.running;
+    changed run-watch => {
+        if root.run-watch {
+            Look.turn = mod(Look.turn + 1, 1000000);
+        }
+    }
+    // A file chip / change peek in the chat asks for the Live view (Rust bumps LiveUi.open-tick).
+    property <int> live-open: LiveUi.open-tick;
+    changed live-open => {
+        root.files-open = true;
+        root.side-tab = "live";
+        if root.narrow {
+            root.drawer-open = false;
+        }
+    }
+    property <bool> stick-bottom: true;
+    property <length> chat-pad: 16px;
+    // Last path component of the workspace (sidebar footer), set by Rust.
+    in property <string> workspace-name;
+    // User bubble max width (80% of the chat column), written from the panel's changed-width callback.
+    property <length> bubble-max: 600px;
+
+    function open-memory-graph() {
+        if GraphUi.view-wide {
+            GraphUi.view-wide = false;
+            return;
+        }
+        BoardUi.open = false;
+        OrchLiveUi.open = false;
+        if !GraphUi.has-graph {
+            GraphUi.refresh();
+        }
+        GraphUi.view-wide = true;
+    }
+
+    function do-send() {
+        if root.draft != "" || ChatUi.chips.length > 0 {
+            root.send-draft(root.draft);
+            root.draft = "";
+            root.picker-open = false;
+        }
+    }
+
+    // Composer text goes to src/chat on every change (@ / popups, long-paste chips, history browsing).
+    changed draft => {
+        ChatUi.draft-edited(self.draft);
+    }
+    // Clipboard: Slint has no clipboard API in Rust, so text is copied through a hidden TextInput (ChatUi.copy).
+    public function copy-text(text: string) {
+        clipboard.text = text;
+        clipboard.select-all();
+        clipboard.copy();
+        clipboard.text = "";
+    }
+    // Pinned state for the session menu (Pin / Unpin label); asked from Rust when the menu opens.
+    pure callback session-pinned(string) -> bool;
+    property <bool> overlay-open: ChatUi.palette-open || ChatUi.find-open;
+    changed overlay-open => {
+        if !self.overlay-open {
+            key-scope.focus();
+        }
+    }
+
+    // 修复：窗口启动时没有焦点项，键盘事件不会进入 FocusScope，未点过输入框时 Esc 无法关闭设置页；
+    // 把初始焦点交给根 FocusScope。
+    forward-focus: key-scope;
+    // Side pane tab shared by the wide and the narrow (overlay) side pane. bridge.rs wires PanelNav.open-tab to it
+    // (a git row opens Diff).
+    in-out property <string> side-tab: "overview";
+    // 修复：权限提示出现时输入框（持有焦点）被移除，焦点随之丢失，Esc 等快捷键不再到达 key-scope；
+    // 此时把焦点交回根 FocusScope。
+    changed perm-visible => {
+        if root.perm-visible {
+            key-scope.focus();
+        }
+    }
+
+    key-scope := FocusScope {
+        capture-key-pressed(event) => {
+            // Shortcut recorder / key search (settings): the root sees keys before the focused child, so it hands
+            // them to Rust first; Esc there cancels the recording instead of closing settings.
+            if root.settings-open && (ShortcutsUi.recording != "" || ShortcutsUi.key-search) {
+                if ShortcutsUi.key(event.text, event.modifiers.control, event.modifiers.alt, event.modifiers.shift, event.modifiers.meta) {
+                    return accept;
+                }
+            }
+            // Permission options (ZCode PermissionDialog): number keys pick the option, Esc denies once. Checked before
+            // the generic Esc handling, which would otherwise stop the run that waits for this answer.
+            if root.perm-visible && !root.settings-open && !ChatUi.palette-open && !event.modifiers.control && !event.modifiers.alt && !event.modifiers.meta && root.perm-options.length > 0 {
+                let index = root.digit(event.text);
+                if index >= 0 && index < root.perm-options.length {
+                    root.choose-permission(root.perm-request, root.perm-options[index].id);
+                    return accept;
+                }
+                if event.text == Key.Escape {
+                    root.permission(root.perm-request, false);
+                    return accept;
+                }
+            }
+            if event.text == Key.Escape {
+                if ChatUi.palette-open {
+                    ChatUi.palette-open = false;
+                    return accept;
+                }
+                if ChatUi.dialog-open {
+                    ChatUi.dialog-open = false;
+                    root.title-editing = false;
+                    return accept;
+                }
+                if ChatUi.schedules-open {
+                    ChatUi.schedules-open = false;
+                    return accept;
+                }
+                if BoardUi.dialog-open {
+                    BoardUi.dialog-open = false;
+                    return accept;
+                }
+                if BoardUi.open && !root.settings-open {
+                    BoardUi.open = false;
+                    return accept;
+                }
+                if WhiteboardUi.open {
+                    WhiteboardUi.open = false;
+                    return accept;
+                }
+                if menus.ctx-open || menus.header-menu-open || menus.gctx-open {
+                    menus.ctx-open = false;
+                    menus.header-menu-open = false;
+                    menus.gctx-open = false;
+                    return accept;
+                }
+                if ChatUi.find-open {
+                    ChatUi.find-close();
+                    return accept;
+                }
+                if DiffUi.open {
+                    DiffUi.cancel();
+                    return accept;
+                }
+                if DockUi.picker-open != "" {
+                    DockUi.picker-open = "";
+                    return accept;
+                }
+                if root.picker-open {
+                    root.picker-open = false;
+                    return accept;
+                }
+                if root.settings-open {
+                    root.settings-open = false;
+                    return accept;
+                }
+                if root.running {
+                    root.stop();
+                    return accept;
+                }
+            }
+            // Global shortcuts (user keymap in settings.json, defaults from ZCode's shortcutCommands).
+            if event.modifiers.control || event.modifiers.alt || event.modifiers.meta {
+                let command = ShortcutsUi.match(event.text, event.modifiers.control, event.modifiers.alt, event.modifiers.shift, event.modifiers.meta);
+                if command != "" {
+                    root.run-command(command);
+                    return accept;
+                }
+            }
+            reject
+        }
+
+        MidnightBackdrop {
+            visible: !GraphUi.view-wide;
+            width: parent.width;
+            height: parent.height;
+        }
+        HorizontalLayout {
+            visible: !GraphUi.view-wide;
+            // Liquid-glass redesign: sidebar, chat and side pane float as rounded glass cards over the backdrop.
+            padding: Theme.frame-gap;
+            spacing: Theme.frame-gap;
+            if root.show-sidebar: VerticalLayout {
+                width: root.sidebar-w;
+                SidebarCard {
+                    native-frame: root.native-frame;
+                    window-width: root.width;
+                    win-maximized: root.win-maximized;
+                    sessions: root.sessions;
+                    workspace-initial: root.workspace-initial;
+                    workspace-name: root.workspace-name;
+                    window-action(a) => { root.window-action(a); }
+                    hide-sidebar => { root.sidebar-hidden = true; }
+                    show-settings => { root.settings-open = true; }
+                    new-session => { root.new-session(); }
+                    new-worktree-session => { root.new-worktree-session(); }
+                    open-session(id) => { root.open-session(id); }
+                    archive-session(id) => { root.archive-session(id); }
+                    open-new-menu(x, y) => { menus.open-new-menu(x, y); }
+                    open-menu(id, x, y) => { menus.open-menu(id, x, y); }
+                    open-group-menu(id, x, y) => { menus.open-group-menu(id, x, y); }
+                }
+            }
+            VerticalLayout {
+            horizontal-stretch: 1;
+            // Topbar: floats directly on the backdrop (no fill, no rule) above the chat card.
+            TopBar {
+                narrow: root.narrow;
+                win-w: root.win-w;
+                window-width: root.width;
+                native-frame: root.native-frame;
+                win-maximized: root.win-maximized;
+                active-title: root.active-title;
+                workspace-name: root.workspace-name;
+                drawer-open <=> root.drawer-open;
+                sidebar-hidden <=> root.sidebar-hidden;
+                title-editing <=> root.title-editing;
+                ctx-open <=> menus.ctx-open;
+                header-menu-open <=> menus.header-menu-open;
+                files-open <=> root.files-open;
+                side-tab <=> root.side-tab;
+                window-action(a) => { root.window-action(a); }
+                open-memory-graph => { root.open-memory-graph(); }
+            }
+            HorizontalLayout {
+                vertical-stretch: 1;
+                padding-right: 0px;
+                padding-bottom: 0px;
+                spacing: Theme.frame-gap;
+                // Main column: flat on the backdrop (no card). The dither field hugs its edges and stays clear of
+                // the transcript column; on the empty chat it comes further in and shimmers.
+                main-panel := Rectangle {
+                    horizontal-stretch: 1;
+                    clip: true;
+                    DitherField {
+                        lively: Look.field-motion != "off" && (root.chat.length == 0 || Look.field-motion == "always") && !root.settings-open;
+                        reach: root.chat.length == 0 ? clamp((parent.width - 600px) / 2, 0px, 420px) : clamp((parent.width - Theme.chat-max-width) / 2 - 12px, 0px, 300px);
+                    }
+                    // 与 narrow 相同：内容列宽度用 changed 回调写入普通属性，避免宽度→内边距→布局的绑定环。
+                    changed width => {
+                        root.chat-pad = max(16px, (self.width - Theme.chat-max-width) / 2);
+                        root.bubble-max = (self.width - 2 * root.chat-pad) * 0.8;
+                    }
+                    VerticalLayout {
+                        ChatTranscript {
+                            vertical-stretch: 1;
+                            chat: root.chat;
+                            chat-pad: root.chat-pad;
+                            bubble-max: root.bubble-max;
+                            running: root.running;
+                            workspace-name: root.workspace-name;
+                            stick-bottom <=> root.stick-bottom;
+                            draft <=> root.draft;
+                            open-link(url) => { root.open-link(url); }
+                        }
+                        // 修复：底部区域（横幅、选择器、输入框）与聊天列表平分多余高度，暂停横幅被拉伸占满聊天区；
+                        // 底部区域不参与纵向拉伸，多余高度全部给聊天列表。
+                        ChatDock {
+                            chat-pad: root.chat-pad;
+                            paused: root.paused;
+                            error-text: root.error-text;
+                            perm-visible: root.perm-visible;
+                            perm-title: root.perm-title;
+                            perm-detail: root.perm-detail;
+                            perm-options: root.perm-options;
+                            perm-request: root.perm-request;
+                            queue: root.queue;
+                            agents: root.agents;
+                            sticky-agent: root.sticky-agent;
+                            sticky-name: root.sticky-name;
+                            running: root.running;
+                            queued: root.queued;
+                            update-ready: root.update-ready;
+                            picker-open <=> root.picker-open;
+                            draft <=> root.draft;
+                            stick-bottom <=> root.stick-bottom;
+                            permission(id, allow) => { root.permission(id, allow); }
+                            choose-permission(id, opt) => { root.choose-permission(id, opt); }
+                            cancel-queued(id) => { root.cancel-queued(id); }
+                            choose-agent(id) => { root.choose-agent(id); }
+                            restart-for-update => { root.restart-for-update(); }
+                            do-send => { root.do-send(); }
+                            stop => { root.stop(); }
+                        }
+                    }
+                }
+                if root.files-open && !root.narrow: SidePane {
+                    property <length> main-w: root.win-w - (root.show-sidebar ? root.sidebar-w + Theme.frame-gap : 0px) - Theme.frame-gap * 2;
+                    width: self.wide ? max(Theme.side-pane-width, self.main-w * 0.7) : root.side-tab == "diff" ? max(Theme.side-pane-width, self.main-w * 0.5) : root.side-tab == "live" ? max(Theme.side-pane-width, self.main-w * 0.4) : Theme.side-pane-width;
+                    tab <=> root.side-tab;
+                    files: root.files;
+                    workspace: root.workspace;
+                    toggle(i) => {
+                        root.toggle-file(i);
+                    }
+                    close => {
+                        root.files-open = false;
+                    }
+                }
+            }
+            }
+        }
+
+        // Sidebar resize handle (ZCode: drag the sidebar edge; 200–420px). Width is UI-local.
+        if root.show-sidebar: SidebarResizer {
+            x: Theme.frame-gap + root.sidebar-w + Theme.frame-gap / 2 - 3px;
+            y: Theme.topbar-height;
+            height: parent.height - Theme.topbar-height * 2;
+            sidebar-w <=> root.sidebar-w;
+        }
+
+        if !root.win-maximized && !root.native-frame: ResizeFrame {
+            width: parent.width;
+            height: parent.height;
+            action(a) => { root.window-action(a); }
+        }
+
+        // Narrow (phone-size) layout: sessions drawer and files sheet as overlays.
+        if root.narrow && root.drawer-open: NarrowDrawer {
+            sessions: root.sessions;
+            workspace-initial: root.workspace-initial;
+            workspace-name: root.workspace-name;
+            close => { root.drawer-open = false; }
+            show-settings => { root.settings-open = true; }
+            new-session => { root.new-session(); }
+            new-worktree-session => { root.new-worktree-session(); }
+            open-session(id) => { root.open-session(id); }
+            archive-session(id) => { root.archive-session(id); }
+            open-new-menu(x, y) => { menus.open-new-menu(x, y); }
+            open-menu(id, x, y) => { menus.open-menu(id, x, y); }
+            open-group-menu(id, x, y) => { menus.open-group-menu(id, x, y); }
+        }
+        if root.narrow && root.files-open && !root.drawer-open && root.chat.length == 0: Rectangle {
+            // On phones the file tree is a sheet that only shows on an empty chat; the header toggle hides it.
+            x: 12px;
+            y: 52px;
+            width: parent.width - 24px;
+            height: min(260px, parent.height / 3);
+            SidePane {
+                tab <=> root.side-tab;
+                files: root.files;
+                workspace: root.workspace;
+                toggle(i) => {
+                    root.toggle-file(i);
+                }
+            }
+        }
+
+        // Session menu (sidebar row), group menu, new session menu and header menu: click outside closes them.
+        menus := MenuLayer {
+            width: parent.width;
+            height: parent.height;
+            running: root.running;
+            has-chat: root.chat.length > 0;
+            show-sidebar: root.show-sidebar;
+            sidebar-w: root.sidebar-w;
+            session-pinned(id) => {
+                return root.session-pinned(id);
+            }
+            new-session => { root.new-session(); }
+            new-worktree-session => { root.new-worktree-session(); }
+            open-folder => { root.open-folder(); }
+            open-session(id) => { root.open-session(id); }
+            archive-session(id) => { root.archive-session(id); }
+        }
+
+        if ChatUi.palette-open: CommandCenter {
+            close => {
+                ChatUi.palette-open = false;
+            }
+        }
+
+        // OS file drag over the window: drop target hint (files become composer chips).
+        if ChatUi.drop-hover: DropHint { }
+
+        if ChatUi.toast != "": Toast {
+            x: (parent.width - self.width) / 2;
+            y: parent.height - self.height - 96px;
+        }
+
+        // Hidden clipboard helper (copy-text).
+        Rectangle {
+            width: 0px;
+            height: 0px;
+            clip: true;
+            opacity: 0;
+            // 多行文本（代码块、整条回复）也要原样复制，single-line 会把换行吞掉。
+            clipboard := TextInput {
+                single-line: false;
+                accessible-role: none;
+            }
+        }
+
+        if ChatUi.schedules-open: SchedulesDialog { }
+        if WhiteboardUi.open: WhiteboardDialog { }
+        if DockUi.picker-open != "" || root.picker-open: PickerScrim {
+            x: 0;
+            y: 0;
+            width: root.width;
+            height: root.height;
+            close => { root.picker-open = false; }
+        }
+        if ChatUi.dialog-open && !(root.title-editing && ChatUi.dialog-kind == "rename"): TextDialog { }
+        if GitUi.dialog != "": GitDialogs {
+            message <=> PanelGit.message;
+        }
+
+        if BoardUi.open: BoardPage {
+            close => {
+                BoardUi.open = false;
+            }
+            window-action(action) => {
+                root.window-action(action);
+            }
+        }
+        if OrchLiveUi.open: OrchestraLive {
+            session-title: root.active-title;
+            agent-id: root.sticky-agent;
+            agent-name: root.sticky-name;
+            model-name: DockUi.model-name;
+            session-running: root.running;
+            close => {
+                OrchLiveUi.open = false;
+            }
+            open-settings => {
+                OrchLiveUi.open = false;
+                root.settings-open = true;
+                SettingsUi.open-page("orchestra");
+            }
+            delegate => {
+                OrchLiveUi.open = false;
+                root.draft = @tr("Delegate to subagents: ");
+            }
+        }
+        // Settings is a centred modal over a dimmed backdrop (click outside or Esc closes); full window only when
+        // the window is too small for a dialog.
+        if root.settings-open: SettingsOverlay {
+            narrow: root.narrow;
+            fallback: root.fallback;
+            update-ready: root.update-ready;
+            close => { root.settings-open = false; }
+            restart-for-update => { root.restart-for-update(); }
+            open-folder => { root.open-folder(); }
+            move-fallback(index, delta) => { root.move-fallback(index, delta); }
+        }
+        // 设置页里也能打开（Settings › Agents › Set up agents…），所以放在 SettingsShell 之后，叠在其上。
+        if SetupUi.open: SetupDialog { }
+        // The picture of the project graph over the whole window (Settings › Memory › Graph, "Fill the window").
+        if GraphUi.view-wide: GraphCanvas {
+            wide: true;
+            width: 100%;
+            height: 100%;
+        }
+        if GraphUi.view-wide && !GraphUi.has-graph: GraphEmpty {
+            open-settings => { root.settings-open = true; }
+        }
+        if AgentsUi.provider-open: ProviderDialog { }
+    }
+}
+

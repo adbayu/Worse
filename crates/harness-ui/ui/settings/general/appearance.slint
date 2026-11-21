@@ -1,0 +1,399 @@
+import { Theme } from "../../theme/tokens.slint";
+import { Look } from "../../theme/look.slint";
+import { ThinkGlyph, GlyphAnim, AsciiArt } from "../../components/ascii.slint";
+import { Button } from "../../components/controls.slint";
+import { SettingsUi } from "../globals.slint";
+import { PageHeader, Group, SettingRow, Switch, TextField, Stepper, RangeSlider, Select, SetButton, Pill, SegmentedControl, CapsLabel, Dot } from "../parts.slint";
+import { BoolRow, SectionCaps, ThemeOption, Swatch, ThinkTile, FieldTile } from "./parts.slint";
+
+export component AppearancePage inherits VerticalLayout {
+    in property <bool> stacked;
+    property <string> accent: SettingsUi.get-string("appearance.accentColor", SettingsUi.rev);
+    spacing: 20px;
+    PageHeader {
+        title: @tr("Appearance");
+        description: @tr("Theme, accent colour, text size and motion. Changes preview live.");
+    }
+    // Card · Theme
+    Group {
+        title: @tr("Theme");
+        note: @tr("Applies immediately");
+        HorizontalLayout {
+            padding: 16px;
+            spacing: 12px;
+            ThemeOption {
+                title: @tr("System");
+                kind: 0;
+                selected: Theme.pref != 1 && Theme.pref != 2;
+                picked => {
+                    SettingsUi.set-int("appearance.theme", 0);
+                }
+            }
+            ThemeOption {
+                title: @tr("Dark");
+                kind: 1;
+                selected: Theme.pref == 2;
+                picked => {
+                    SettingsUi.set-int("appearance.theme", 2);
+                }
+            }
+            ThemeOption {
+                title: @tr("Light");
+                kind: 2;
+                selected: Theme.pref == 1;
+                picked => {
+                    SettingsUi.set-int("appearance.theme", 1);
+                }
+            }
+        }
+    }
+    // Card · Colour & type
+    Group {
+        title: @tr("Colour & type");
+        note: @tr("Per window");
+        SettingRow {
+            first: true;
+            stacked: root.stacked;
+            wide: true;
+            title: @tr("Accent colour");
+            description: @tr("Used for focus rings, active nav and the brand gradient.");
+            HorizontalLayout {
+                spacing: 10px;
+                alignment: end;
+                for s in [
+                    { c: #c8f04a, h: "#C8F04A" },
+                    { c: #5fd8cb, h: "#5FD8CB" },
+                    { c: #7cc4ff, h: "#7CC4FF" },
+                    { c: #f5b14c, h: "#F5B14C" },
+                    { c: #ff9a52, h: "#FF9A52" },
+                    { c: #f2708a, h: "#F2708A" },
+                    { c: #f4f4f5, h: "#F4F4F5" },
+                ]: Swatch {
+                    tint: s.c;
+                    hex: s.h;
+                    selected: root.accent == s.h || ((root.accent == "" || root.accent == "#7C8CFF") && s.h == "#C8F04A");
+                    picked => {
+                        SettingsUi.set-string("appearance.accentColor", s.h);
+                    }
+                }
+            }
+        }
+        SettingRow {
+            stacked: root.stacked;
+            pad-y: 10px;
+            title: @tr("Interface font");
+            description: @tr("Typeface for chat, sidebar and settings.");
+            Select {
+                fit: true;
+                property <string> value: SettingsUi.get-string("appearance.uiFont", SettingsUi.rev);
+                label: @tr("Interface font");
+                options: [
+                    { id: "jakarta", label: "Plus Jakarta Sans" },
+                    { id: "inter", label: "Inter" },
+                    { id: "system", label: @tr("System default") },
+                ];
+                current: self.value;
+                current-label: self.value == "inter" ? "Inter" : self.value == "system" ? @tr("System default") : "Plus Jakarta Sans";
+                select(id) => {
+                    SettingsUi.set-string("appearance.uiFont", id);
+                }
+            }
+        }
+        SettingRow {
+            stacked: root.stacked;
+            pad-y: 10px;
+            title: @tr("Font size");
+            description: @tr("Base size for chat, sidebar and settings.");
+            SegmentedControl {
+                label: @tr("Font size");
+                options: [{ id: "12", label: "12" }, { id: "13", label: "13" }, { id: "14", label: "14" }, { id: "15", label: "15" }];
+                current: SettingsUi.get-int("appearance.uiFontSize", SettingsUi.rev);
+                select(id) => {
+                    SettingsUi.set-int("appearance.uiFontSize", id.to-float());
+                }
+            }
+        }
+        SettingRow {
+            stacked: root.stacked;
+            pad-y: 10px;
+            title: @tr("Density");
+            description: @tr("Comfortable adds padding to rows and messages.");
+            SegmentedControl {
+                label: @tr("Density");
+                options: [{ id: "compact", label: @tr("Compact") }, { id: "comfortable", label: @tr("Comfortable") }];
+                current: SettingsUi.get-string("appearance.density", SettingsUi.rev);
+                select(id) => {
+                    SettingsUi.set-string("appearance.density", id);
+                }
+            }
+        }
+        BoolRow {
+            stacked: root.stacked;
+            pad-y: 10px;
+            key: "appearance.reduceMotion";
+            title: @tr("Reduce motion");
+            description: @tr("Disable transitions and animated typing.");
+        }
+        BoolRow {
+            stacked: root.stacked;
+            pad-y: 10px;
+            key: "appearance.showTokenUsage";
+            title: @tr("Show token usage in sidebar");
+            description: @tr("A small ring next to each session shows context use.");
+        }
+    }
+    // Card · While the agent works
+    Group {
+        title: @tr("While the agent works");
+        note: @tr("Unicode animation beside the status line");
+        think-box := VerticalLayout {
+            padding: 16px;
+            spacing: 8px;
+            property <string> pick: SettingsUi.get-string("appearance.thinkingStyle", SettingsUi.rev);
+            HorizontalLayout {
+                spacing: 8px;
+                for t in [
+                    { id: "scan", title: @tr("Scan"), index: 0 },
+                    { id: "bars", title: @tr("Bars"), index: 1 },
+                    { id: "pulse", title: @tr("Pulse"), index: 2 },
+                    { id: "quads", title: @tr("Quads"), index: 3 },
+                    { id: "charge", title: @tr("Charge"), index: 4 },
+                ]: ThinkTile {
+                    title: t.title;
+                    index: t.index;
+                    selected: think-box.pick == t.id || (think-box.pick == "" && t.id == "scan");
+                    picked => {
+                        SettingsUi.set-string("appearance.thinkingStyle", t.id);
+                    }
+                }
+            }
+            HorizontalLayout {
+                spacing: 8px;
+                for t in [
+                    { id: "moon", title: @tr("Moon"), index: 5 },
+                    { id: "cipher", title: @tr("Cipher"), index: 6 },
+                    { id: "chevrons", title: @tr("Chevrons"), index: 7 },
+                    { id: "bunny", title: @tr("Bunny"), index: 8 },
+                    { id: "shuffle", title: @tr("Shuffle"), index: -1 },
+                ]: ThinkTile {
+                    title: t.title;
+                    index: t.index;
+                    selected: think-box.pick == t.id;
+                    picked => {
+                        SettingsUi.set-string("appearance.thinkingStyle", t.id);
+                    }
+                }
+            }
+        }
+        SettingRow {
+            stacked: root.stacked;
+            pad-y: 10px;
+            title: @tr("Status words");
+            description: @tr("Plain says \"Thinking…\"; Playful rotates through a few bunny-flavoured lines.");
+            SegmentedControl {
+                label: @tr("Status words");
+                options: [{ id: "plain", label: @tr("Plain") }, { id: "playful", label: @tr("Playful") }];
+                current: SettingsUi.get-string("appearance.statusWords", SettingsUi.rev);
+                select(id) => {
+                    SettingsUi.set-string("appearance.statusWords", id);
+                }
+            }
+        }
+        BoolRow {
+            stacked: root.stacked;
+            pad-y: 10px;
+            key: "appearance.showTokenSpeed";
+            title: @tr("Show generation speed (tok/s)");
+            description: @tr("While the agent writes: an estimate from the text (≈). After the turn: the exact figure for agents that report token counts.");
+        }
+    }
+    // Card · Background
+    Group {
+        title: @tr("Background");
+        note: @tr("Unicode field, wallpaper, blur and dim");
+        field-box := VerticalLayout {
+            padding: 16px;
+            spacing: 8px;
+            property <string> pick: SettingsUi.get-string("appearance.backdropField", SettingsUi.rev);
+            HorizontalLayout {
+                spacing: 8px;
+                for t in [
+                    { id: "dither", title: @tr("Dither") },
+                    { id: "rain", title: @tr("Rain") },
+                    { id: "stars", title: @tr("Stars") },
+                    { id: "circuit", title: @tr("Circuit") },
+                    { id: "none", title: @tr("None") },
+                ]: FieldTile {
+                    title: t.title;
+                    id: t.id;
+                    selected: field-box.pick == t.id || (field-box.pick == "" && t.id == "dither");
+                    picked => {
+                        SettingsUi.set-string("appearance.backdropField", t.id);
+                    }
+                }
+            }
+        }
+        SettingRow {
+            stacked: root.stacked;
+            wide: true;
+            pad-y: 10px;
+            title: @tr("Motion");
+            description: @tr("When the field moves. Always keeps it moving during chats and uses more CPU.");
+            SegmentedControl {
+                label: @tr("Motion");
+                options: [{ id: "home", label: @tr("Home only") }, { id: "always", label: @tr("Always") }, { id: "off", label: @tr("Off") }];
+                current: SettingsUi.get-string("appearance.backdropMotion", SettingsUi.rev);
+                select(id) => {
+                    SettingsUi.set-string("appearance.backdropMotion", id);
+                }
+            }
+        }
+        SettingRow {
+            stacked: root.stacked;
+            wide: true;
+            pad-y: 10px;
+            title: @tr("Wallpaper");
+            description: Look.wallpaper-note == "loading" ? @tr("Loading…") : Look.wallpaper-note != "" ? @tr("Could not load: {}", Look.wallpaper-note) : Look.wallpaper-name != "" ? (Look.wallpaper-animated ? @tr("{} · animated: the whole window repaints for every frame, so it costs CPU. It pauses while the window is not focused; GPU rendering (General) makes it cheap.", Look.wallpaper-name) : Look.wallpaper-name) : @tr("A picture or an animated GIF / WebP behind the whole window.");
+            HorizontalLayout {
+                spacing: 8px;
+                alignment: end;
+                if Look.wallpaper-name != "": SetButton {
+                    text: @tr("Remove");
+                    variant: "ghost";
+                    clicked => {
+                        Look.clear-wallpaper();
+                    }
+                }
+                SetButton {
+                    text: @tr("Choose image…");
+                    clicked => {
+                        Look.pick-wallpaper();
+                    }
+                }
+            }
+        }
+        SettingRow {
+            stacked: root.stacked;
+            wide: true;
+            pad-y: 10px;
+            title: @tr("Blur");
+            description: @tr("Softens the wallpaper. Glass panels always show a frosted copy of it.");
+            RangeSlider {
+                label: @tr("Blur");
+                value: SettingsUi.get-int("appearance.wallpaperBlur", SettingsUi.rev);
+                maximum: 40;
+                suffix: "px";
+                changed-value(v) => {
+                    SettingsUi.set-int("appearance.wallpaperBlur", v);
+                }
+            }
+        }
+        SettingRow {
+            stacked: root.stacked;
+            wide: true;
+            pad-y: 10px;
+            title: @tr("Dim");
+            description: @tr("How much of the theme colour covers the wallpaper: darker in dark mode, lighter in light mode.");
+            RangeSlider {
+                label: @tr("Dim");
+                value: SettingsUi.get-int("appearance.wallpaperDim", SettingsUi.rev);
+                maximum: 95;
+                suffix: "%";
+                moved(v) => {
+                    Look.dim = v / 100;
+                }
+                changed-value(v) => {
+                    SettingsUi.set-int("appearance.wallpaperDim", v);
+                }
+            }
+        }
+    }
+    // Card · Preview
+    Group {
+        title: @tr("Preview");
+        note: @tr("Sample chat bubble");
+        HorizontalLayout {
+            padding: 16px;
+            alignment: start;
+            Rectangle {
+                background: Theme.surface;
+                border-radius: 10px;
+                VerticalLayout {
+                    padding: 12px;
+                    spacing: 8px;
+                    HorizontalLayout {
+                        alignment: start;
+                        Pill {
+                            text: "Claude Code";
+                            tint: Theme.accent-fg;
+                        }
+                    }
+                    Text {
+                        text: "cargo build -p harness-slint finished in 41s";
+                        font-size: Theme.ui-caption;
+                        color: Theme.foreground-subtle;
+                    }
+                }
+            }
+        }
+    }
+
+    // ---- Beyond the design: existing settings, kept below ----
+    SectionCaps {
+        text: @tr("ADVANCED");
+    }
+    Group {
+        title: @tr("Window & code");
+        note: @tr("Native frame needs a restart");
+        SettingRow {
+            first: true;
+            stacked: root.stacked;
+            title: @tr("Zoom");
+            description: @tr("Scales the whole window. Ctrl+= / Ctrl+- also change zoom.");
+            Stepper {
+                label: @tr("Zoom");
+                value: SettingsUi.get-int("appearance.zoomPercent", SettingsUi.rev);
+                minimum: 80;
+                maximum: 150;
+                step: 10;
+                suffix: "%";
+                changed-value(v) => {
+                    SettingsUi.set-int("appearance.zoomPercent", v);
+                }
+            }
+        }
+        BoolRow {
+            stacked: root.stacked;
+            key: "appearance.nativeFrame";
+            title: @tr("Use Windows title bar");
+            description: @tr("Native frame, snapping and resize borders. Takes effect after restarting Harness.");
+        }
+        SettingRow {
+            stacked: root.stacked;
+            title: @tr("Code font size");
+            description: @tr("Code blocks, diffs and the file viewer.");
+            Stepper {
+                label: @tr("Code font size");
+                value: SettingsUi.get-int("appearance.codeFontSize", SettingsUi.rev);
+                minimum: 10;
+                maximum: 20;
+                suffix: "px";
+                changed-value(v) => {
+                    SettingsUi.set-int("appearance.codeFontSize", v);
+                }
+            }
+        }
+        BoolRow {
+            stacked: root.stacked;
+            key: "appearance.wrapLines";
+            title: @tr("Wrap long lines");
+            description: @tr("Wrap code in chat code blocks and the file viewer instead of scrolling.");
+        }
+        BoolRow {
+            stacked: root.stacked;
+            key: "appearance.lineNumbers";
+            title: @tr("Line numbers");
+            description: @tr("Show line numbers in the file viewer and diffs.");
+        }
+    }
+}

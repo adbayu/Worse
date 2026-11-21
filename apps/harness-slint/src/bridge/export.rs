@@ -124,6 +124,7 @@ fn render_turn(out: &mut String, turn: &TurnView, name: &dyn Fn(&str) -> String)
             ),
             ContextItem::Session { session_id } => format!("- Session: `{}`", session_id.as_str()),
             ContextItem::Research => "- Deep research mode".to_owned(),
+            ContextItem::CodeMode => "- Code mode".to_owned(),
         };
         let _ = writeln!(out, "{line}");
     }

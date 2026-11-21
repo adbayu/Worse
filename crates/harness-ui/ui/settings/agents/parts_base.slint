@@ -1,0 +1,240 @@
+import { Theme } from "../../theme/tokens.slint";
+import { Icon, Icons, Button, IconButton, Divider, Dialog, Spinner } from "../../components/controls.slint";
+import { AgentsUi, AgentCard, ProviderPreset } from "../globals.slint";
+import { Select, TextField, TextArea, Switch } from "../parts.slint";
+import { SetupUi } from "../../setup.slint";
+import { AgentLogo, AgentMark } from "../../components/agent_logo.slint";
+
+
+export global AgentsLook {
+    out property <color> rule: #1E2025;
+    out property <color> seg-bg: #0E1013;
+    out property <color> seg-on-text: Theme.accent-fg;
+    out property <color> drag: #4A4F58;
+    pure public function color-of(id: string) -> color {
+        if id == "claude-code" { return Theme.agent-claude; }
+        if id == "codex" { return Theme.agent-codex; }
+        if id == "harness" { return Theme.agent-deepseek; }
+        if id == "agy" { return Theme.agent-agy; }
+        if id == "gemini" { return Theme.agent-gemini; }
+        return Theme.accent-fg;
+    }
+    // Initial colour on the tile (design: dark ink on the light Codex / Gemini tiles).
+    pure public function ink-of(id: string) -> color {
+        if id == "codex" { return #08130D; }
+        if id == "gemini" { return #06131A; }
+        return #FFFFFF;
+    }
+    pure public function initial-of(id: string) -> string {
+        if id == "claude-code" { return "C"; }
+        if id == "codex" { return "X"; }
+        if id == "harness" { return "D"; }
+        if id == "agy" { return "A"; }
+        if id == "gemini" { return "G"; }
+        return "?";
+    }
+    pure public function vendor-of(id: string) -> string {
+        if id == "claude-code" { return "Anthropic"; }
+        if id == "codex" { return "OpenAI"; }
+        if id == "harness" { return "DeepSeek"; }
+        if id == "agy" { return "agy"; }
+        if id == "gemini" { return "Google"; }
+        return "";
+    }
+    // Provider tile (design frame 03): known vendors get their colour, anything else the custom purple.
+    pure public function provider-color(label: string) -> color {
+        if label.to-lowercase() == "anthropic" { return Theme.agent-claude; }
+        if label.to-lowercase() == "openai" { return #E6E8EB; }
+        if label.to-lowercase() == "deepseek" { return Theme.agent-deepseek; }
+        if label.to-lowercase() == "openrouter" { return #9AA3B2; }
+        return Theme.agent-agy;
+    }
+    pure public function provider-initial(label: string) -> string {
+        if label.to-lowercase() == "anthropic" { return "A"; }
+        if label.to-lowercase() == "openai" { return "O"; }
+        if label.to-lowercase() == "deepseek" { return "D"; }
+        if label.to-lowercase() == "openrouter" { return "R"; }
+        if label.to-lowercase() == "9router" { return "9"; }
+        return "◆";
+    }
+}
+
+export component Pill inherits Rectangle {
+    in property <string> text;
+    in property <color> tone: Theme.icon-subtlest;
+    in property <length> size: 10.5px;
+    in property <length> pad-v: 3px;
+    in property <length> pad-h: 7px;
+    in property <color> fill: root.tone.with-alpha(0.12);
+    border-radius: 999px;
+    background: root.fill;
+    horizontal-stretch: 0;
+    accessible-role: AccessibleRole.text;
+    accessible-label: root.text;
+    HorizontalLayout {
+        padding-top: root.pad-v;
+        padding-bottom: root.pad-v;
+        padding-left: root.pad-h;
+        padding-right: root.pad-h;
+        Text {
+            text: root.text;
+            color: root.tone;
+            font-size: root.size;
+            font-weight: Theme.weight-medium;
+            vertical-alignment: center;
+            horizontal-alignment: center;
+            accessible-role: none;
+        }
+    }
+}
+
+export component Caps inherits Text {
+    font-size: 9.5px;
+    font-weight: Theme.weight-semibold;
+    letter-spacing: 0.8px;
+    color: Theme.caps-label;
+    vertical-alignment: center;
+}
+
+export component SegBox inherits Rectangle {
+    height: 26px;
+    horizontal-stretch: 0;
+    background: AgentsLook.seg-bg;
+    border-width: 1px;
+    border-color: Theme.border;
+    border-radius: 8px;
+    accessible-role: tab-list;
+    HorizontalLayout {
+        padding: 2px;
+        spacing: 2px;
+        @children
+    }
+}
+
+export component Seg inherits Rectangle {
+    in property <string> text;
+    in property <bool> active;
+    in property <length> min-w: 63px;
+    callback clicked;
+    height: 22px;
+    min-width: root.min-w;
+    border-radius: 6px;
+    background: root.active ? Theme.accent-fg.with-alpha(0.2) : (ta.has-hover ? Theme.hover : Theme.hover.with-alpha(0));
+    animate background { duration: Theme.dur-hover; }
+    accessible-role: AccessibleRole.tab;
+    accessible-label: root.text;
+    accessible-item-selected: root.active;
+    accessible-action-default => {
+        root.clicked();
+    }
+    HorizontalLayout {
+        padding-left: 9px;
+        padding-right: 9px;
+        Text {
+            text: root.text;
+            font-size: 11px;
+            font-weight: root.active ? Theme.weight-semibold : Theme.weight-normal;
+            color: root.active ? AgentsLook.seg-on-text : Theme.muted;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            accessible-role: none;
+        }
+    }
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+export component DButton inherits Rectangle {
+    in property <string> text;
+    in property <string> glyph;
+    in property <length> h: 28px;
+    in property <length> pad: 11px;
+    in property <length> size: 12px;
+    in property <bool> primary: false;
+    in property <bool> outline: false;
+    in property <bool> enabled: true;
+    callback clicked;
+    height: root.h;
+    horizontal-stretch: 0;
+    border-radius: root.h >= 28px ? 7px : 8px;
+    background: root.primary ? Theme.primary : root.outline ? (ta.has-hover ? Theme.hover : Theme.hover.with-alpha(0)) : (ta.has-hover && root.enabled ? Theme.border-hover : Theme.raised);
+    border-width: root.primary ? 0px : 1px;
+    border-color: Theme.border-hover;
+    opacity: root.enabled ? 1 : 0.5;
+    animate background { duration: Theme.dur-hover; }
+    accessible-role: button;
+    accessible-label: root.text;
+    accessible-enabled: root.enabled;
+    accessible-action-default => {
+        if root.enabled {
+            root.clicked();
+        }
+    }
+    HorizontalLayout {
+        padding-left: root.pad;
+        padding-right: root.pad;
+        spacing: root.glyph != "" ? (root.h >= 28px ? 7px : 5px) : 0px;
+        alignment: center;
+        if root.glyph != "": Text {
+            text: root.glyph;
+            font-family: "Segoe UI Symbol";
+            font-size: 11px;
+            color: root.outline ? Theme.muted : Theme.foreground-subtle;
+            vertical-alignment: center;
+            accessible-role: none;
+        }
+        Text {
+            text: root.text;
+            font-size: root.size;
+            font-weight: root.outline ? Theme.weight-normal : Theme.weight-medium;
+            color: root.primary ? Theme.primary-foreground : root.outline ? Theme.muted : Theme.foreground;
+            vertical-alignment: center;
+            accessible-role: none;
+        }
+    }
+    ta := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+export component Glyph inherits Rectangle {
+    in property <string> text;
+    in property <string> label;
+    in property <length> size: 12px;
+    in property <color> tint: Theme.icon-subtlest;
+    in property <bool> active: false;
+    callback clicked;
+    width: 20px;
+    height: 20px;
+    border-radius: 5px;
+    background: ta.has-hover || root.active ? Theme.hover : Theme.hover.with-alpha(0);
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-action-default => {
+        root.clicked();
+    }
+    Text {
+        text: root.text;
+        font-family: "Segoe UI Symbol";
+        font-size: root.size;
+        color: ta.has-hover || root.active ? Theme.foreground-subtle : root.tint;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        accessible-role: none;
+    }
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+

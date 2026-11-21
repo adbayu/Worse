@@ -29,6 +29,7 @@ if (-not (Test-Path (Join-Path $App "node_modules"))) {
     throw "Frontend dependencies are missing. Run: pnpm --dir apps/harness-app install"
 }
 Set-Location $Root
+Invoke-Step "file size" { node scripts/size-check.mjs }
 Invoke-Step "cargo fmt --check" { cargo fmt --all -- --check }
 Invoke-Step "cargo clippy" { cargo clippy --workspace --all-targets -- -D warnings }
 Invoke-Step "cargo test" { cargo test --workspace }

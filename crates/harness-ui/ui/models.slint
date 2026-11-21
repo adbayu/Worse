@@ -1,0 +1,200 @@
+import { ChangeRow, ChatImage, ChatUi, MdLink, ToolPart } from "./chat/globals.slint";
+import { AgentLogo, AgentMark } from "./components/agent_logo.slint";
+import { FileIcons } from "./components/icons.slint";
+
+export struct MdRow {
+    cells: [styled-text],
+    cells-dark: [styled-text],
+    plain: string,
+    links: [MdLink],
+}
+
+// kind: 0 text (StyledText), 1 heading (level 1..6), 2 code block, 3 table (rows[0] = header, level = columns),
+// 4 list (lang "ul" / "ol", level = first number, one row per item with the item text in cells[0]).
+// Code blocks: `highlighted` → `code-light` / `code-dark` (syntax colors per theme), else plain `code`.
+export struct MdBlock {
+    kind: int,
+    level: int,
+    text: styled-text,
+    text-dark: styled-text,
+    code: string,
+    plain: string,
+    lang: string,
+    lang-icon: int,
+    highlighted: bool,
+    code-light: styled-text,
+    code-dark: styled-text,
+    rows: [MdRow],
+    // Table only: CSV of the table (copy as CSV); `code` holds its Markdown source (copy as Markdown).
+    csv: string,
+    links: [MdLink],
+}
+
+// kind: 0 user, 1 assistant, 2 tool, 3 failover notice, 4 paused notice, 5 thinking (live only).
+// expanded: tool card / thinking row open (kept in the model so virtualised rows keep it).
+// parts / tool-kind: tool card content (R8). changes / change-dir / change-note: the turn's changed files (R14,
+// on its last assistant row; change-dir 1 = undo available, 2 = reapply available).
+// status (assistant): 0 streaming, 1 done, 2 stopped, 3 interrupted, 4 failed.
+// status (tool): 0 running, 1 awaiting permission, 2 done, 3 denied, 4 failed.
+export struct ChatItem {
+    id: int,
+    kind: int,
+    agent: string,
+    text: string,
+    blocks: [MdBlock],
+    status: int,
+    title: string,
+    from: string,
+    to: string,
+    reset: string,
+    expanded: bool,
+    parts: [ToolPart],
+    tool-kind: string,
+    changes: [ChangeRow],
+    change-dir: int,
+    change-note: string,
+    images: [ChatImage],
+    images-more: int,
+    // Tool rows: the first changed lines of an edit (shown under the collapsed row), and the file the tool read or
+    // changed with its line range ("L120–180"), which opens the Live view there.
+    peek: [ToolPart],
+    file: string,
+    file-line: int,
+    range: string,
+    // Assistant message: generation speed of its turn ("41 tok/s · 85 tokens", or "≈ 38 tok/s" when estimated).
+    speed: string,
+    group: int,
+    group-label: string,
+    group-open: bool,
+    group-state: int,
+    folded: bool,
+    continued: bool,
+    added: int,
+    removed: int,
+    group-added: int,
+    group-removed: int,
+    group-images: [ChatImage],
+    group-images-more: int,
+    member: bool,
+    turn-end: bool,
+    head: bool,
+}
+
+// header: on the first row of a section: "pinned", a timeline group id ("today", "yesterday", "week", "month",
+// "older") or "group" (a user group: header-label / header-color / header-id), else "".
+// id == "": header-only row of a collapsed group. ago-unit / ago-n: relative update time (ChatUi.ago).
+export struct SessionRow {
+    id: string,
+    title: string,
+    agents: string,
+    active: bool,
+    header: string,
+    ago-unit: string,
+    ago-n: int,
+    pinned: bool,
+    unread: bool,
+    header-id: string,
+    header-label: string,
+    // Group colour id; for a "project" header the workspace folder (tooltip / accessible description).
+    header-color: string,
+    // Sessions under a "project" header.
+    header-count: int,
+    collapsed: bool,
+    worktree: bool,
+}
+
+// state: 0 available, 1 not installed, 2 limit reached.
+export struct AgentRow {
+    id: string,
+    name: string,
+    state: int,
+    reset: string,
+    claude: bool,
+}
+
+// icon: index into FileIcons.all (src/files.rs `icon_index`).
+export struct FileRow {
+    name: string,
+    depth: int,
+    is-dir: bool,
+    expanded: bool,
+    icon: int,
+}
+
+// A queued (not yet running) message; `id` is the core's queue key for cancel-queued.
+// One answer of a permission request, exactly as the agent offered it (core Event::PermissionChoices).
+// kind: 0 allow once, 1 allow always, 2 reject once, 3 reject always.
+export struct PermOption {
+    id: string,
+    label: string,
+    kind: int,
+}
+
+export struct QueueRow {
+    id: string,
+    text: string,
+}
+
+// Material file-type icon, centered in its layout cell (fixed-size items are top-aligned in Slint layouts).
+// Agent identity colour (design tokens) from an agent display name or id; mixed / unknown → accent.
+export global AgentTint {
+    pure public function of(name: string) -> color {
+        AgentLogo.tint(AgentLogo.key(name))
+    }
+}
+
+// Small rounded agent tile with the agent's initial (assistant author row, design frame 01).
+export component AgentTile inherits Rectangle {
+    in property <string> name;
+    width: 20px;
+    height: 20px;
+    border-radius: 5px;
+    background: AgentLogo.key(root.name) != "" ? transparent : AgentTint.of(root.name);
+    property <string> lower: root.name.to-lowercase();
+    if AgentLogo.key(root.name) != "": AgentMark {
+        name: root.name;
+        size: root.width;
+    }
+    property <string> known: AgentLogo.key(root.name) != "" ? "" : self.lower == "claude code" || self.lower == "claude" ? "C" : self.lower == "codex" ? "X" : self.lower == "deepseek" ? "D" : self.lower == "antigravity" || self.lower == "agy" ? "A" : self.lower == "gemini" ? "G" : "";
+    if (root.known != "" || root.name == "") && AgentLogo.key(root.name) == "": Text {
+        text: root.known != "" ? root.known : "H";
+        font-size: 11px;
+        font-weight: 700;
+        color: #ffffff;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        accessible-role: none;
+    }
+    // Unknown agent: first letter only (Slint has no substring; clip the upper-cased name).
+    if root.known == "" && root.name != "" && AgentLogo.key(root.name) == "": Rectangle {
+        x: 6px;
+        width: 9px;
+        clip: true;
+        Text {
+            x: 0;
+            text: root.name.to-uppercase();
+            font-size: 11px;
+            font-weight: 700;
+            color: #ffffff;
+            vertical-alignment: center;
+            accessible-role: none;
+        }
+    }
+}
+
+export component FileIcon inherits Rectangle {
+    in property <int> index;
+    in property <length> size: 16px;
+    width: root.size;
+    min-height: root.size;
+    accessible-role: none;
+    Image {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        width: root.size;
+        height: root.size;
+        source: FileIcons.all[root.index];
+        image-fit: contain;
+        accessible-role: none;
+    }
+}

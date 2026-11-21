@@ -6,7 +6,10 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 description = "Harness native UI (Slint), Phase 8 round 1"
-build = "build.rs"
+
+[lib]
+name = "harness_slint"
+path = "src/lib.rs"
 
 [[bin]]
 name = "harness-slint"
@@ -15,7 +18,7 @@ path = "src/main.rs"
 [features]
 default = []
 # Test-only: embedded Slint MCP introspection server (starts only when SLINT_MCP_PORT is set) + element ids.
-automation = ["slint/mcp"]
+automation = ["slint/mcp", "harness-ui/automation"]
 
 [dependencies]
 slint = { version = "=1.18.1", default-features = false, features = [
@@ -35,6 +38,7 @@ serde_json = { workspace = true }
 uuid = { workspace = true }
 pulldown-cmark = { version = "0.13", default-features = false }
 harness-core-api = { path = "../../crates/harness-core-api" }
+harness-ui = { path = "../../crates/harness-ui" }
 harness-agent-hub = { path = "../../crates/harness-agent-hub" }
 # The picture of the project graph, drawn on the CPU (Settings › Memory › Graph).
 harness-graph-view = { path = "../../crates/harness-graph-view" }
@@ -67,9 +71,6 @@ qrcode = { version = "0.14", default-features = false }
 [target.'cfg(windows)'.dependencies]
 clipboard-win = "5.4"
 windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_UI_WindowsAndMessaging", "Win32_UI_Shell", "Win32_Security_Credentials"] }
-
-[build-dependencies]
-slint-build = "=1.18.1"
 
 # Same lints as the workspace, except `unsafe_code` is `deny` instead of `forbid`: Slint's generated code
 # (`slint::include_modules!`, vtable macros) carries `#[allow(unsafe_code)]`, which `forbid` rejects.

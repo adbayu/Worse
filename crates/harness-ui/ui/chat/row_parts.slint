@@ -1,0 +1,355 @@
+import { MarkdownView } from "./markdown_view.slint";
+import { MessageAction } from "../components/message_action.slint";
+import { ChatItem, AgentTile } from "../models.slint";
+import { ChatUi } from "./globals.slint";
+import { ChangesCard, ImageStrip, ThinkingRow, ToolCard } from "./turns.slint";
+import { Icon, Icons, Spinner } from "../components/controls.slint";
+import { Theme } from "../theme/tokens.slint";
+
+export component UserBubble inherits Rectangle {
+    in property <ChatItem> item;
+    in property <length> bubble-max;
+    in property <bool> busy;
+    in property <bool> hit;
+    min-width: ul.min-width;
+    min-height: ul.min-height;
+    preferred-height: ul.preferred-height;
+    max-height: ul.max-height;
+    uta := TouchArea {
+        ul := VerticalLayout {
+            spacing: 2px;
+            if root.item.images.length > 0: ImageStrip {
+                images: root.item.images;
+                more: root.item.images-more;
+                at-end: true;
+                padding-bottom: 4px;
+            }
+            HorizontalLayout {
+                alignment: end;
+                Rectangle {
+                    // Soft filled bubble, no outline; the bottom-right corner is tighter, like a tail.
+                    max-width: min(root.bubble-max, 560px);
+                    background: Theme.user-bubble;
+                    border-radius: 18px;
+                    border-bottom-right-radius: 6px;
+                    border-width: root.hit ? 1px : 0px;
+                    border-color: root.hit ? Theme.find-highlight-active : transparent;
+                    accessible-role: AccessibleRole.text;
+                    accessible-label: root.item.text;
+                    accessible-item-selected: root.hit;
+                    HorizontalLayout {
+                        padding-top: 10px;
+                        padding-bottom: 10px;
+                        padding-left: 15px;
+                        padding-right: 15px;
+                        TextInput {
+                            text: root.item.text;
+                            read-only: true;
+                            single-line: false;
+                            wrap: word-wrap;
+                            color: Theme.foreground;
+                            font-size: Theme.ui-caption;
+                            selection-background-color: Theme.text-selection;
+                            accessible-role: none;
+                        }
+                    }
+                }
+            }
+            HorizontalLayout {
+                alignment: end;
+                height: Theme.control-sm;
+                // R10: edit + resend, rewind to here (text and context back into the composer), fork from here.
+                MessageAction {
+                    icon: Icons.pencil;
+                    label: @tr("Edit message");
+                    opacity: uta.has-hover ? 1 : 0.0;
+                    enabled: !root.busy;
+                    clicked => {
+                        ChatUi.turn-action("edit", root.item.id);
+                    }
+                }
+                MessageAction {
+                    icon: Icons.rotate-ccw;
+                    label: @tr("Rewind to here");
+                    opacity: uta.has-hover ? 1 : 0.0;
+                    enabled: !root.busy;
+                    clicked => {
+                        ChatUi.turn-action("rewind", root.item.id);
+                    }
+                }
+                MessageAction {
+                    icon: Icons.git-fork;
+                    label: @tr("Fork from here");
+                    opacity: uta.has-hover ? 1 : 0.0;
+                    clicked => {
+                        ChatUi.turn-action("fork", root.item.id);
+                    }
+                }
+                MessageAction {
+                    icon: Icons.copy;
+                    label: @tr("Copy message");
+                    opacity: uta.has-hover ? 1 : 0.0;
+                    clicked => {
+                        ChatUi.copy(root.item.text);
+                    }
+                }
+            }
+        }
+    }
+}
+
+export component AssistantBubble inherits Rectangle {
+    in property <ChatItem> item;
+    in property <bool> busy;
+    in property <bool> continued;
+    in property <bool> hit;
+    callback link(string);
+    property <bool> select-mode;
+    property <length> select-width: 400px;
+    changed width => {
+        self.select-width = self.width;
+    }
+    init => {
+        self.select-width = self.width;
+    }
+    // Screen readers (and the gate) read "<agent>: <raw text>".
+    accessible-role: AccessibleRole.text;
+    accessible-label: root.item.agent + ": " + root.item.text;
+    accessible-item-selected: root.hit;
+    border-width: root.hit ? 2px : 0px;
+    border-color: Theme.find-highlight-active;
+    border-radius: Theme.radius-lg;
+    min-width: al.min-width;
+    min-height: al.min-height;
+    preferred-height: al.preferred-height;
+    max-height: al.max-height;
+    ata := TouchArea {
+        al := VerticalLayout {
+            spacing: 6px;
+            if !root.continued || root.item.status != 1: HorizontalLayout {
+                spacing: 8px;
+                alignment: start;
+                height: root.continued ? 18px : 24px;
+                if !root.continued: AgentTile {
+                    y: (parent.height - self.height) / 2;
+                    name: root.item.agent;
+                }
+                if !root.continued: Text {
+                    text: root.item.agent;
+                    font-size: Theme.ui-caption;
+                    font-weight: Theme.weight-semibold;
+                    color: Theme.foreground;
+                    vertical-alignment: center;
+                    accessible-role: none;
+                }
+                if root.item.status == 0: Spinner {
+                    y: (parent.height - self.height) / 2;
+                    size: 13px;
+                    clocked: true;
+                }
+                if root.item.status == 0: Text {
+                    text: @tr("Streaming…");
+                    font-size: Theme.ui-sm;
+                    color: Theme.foreground-subtle;
+                    vertical-alignment: center;
+                }
+                if root.item.status == 2: Text {
+                    text: @tr("Stopped");
+                    font-size: Theme.ui-sm;
+                    color: Theme.warning-surface-foreground;
+                    vertical-alignment: center;
+                }
+                if root.item.status == 3: Text {
+                    text: @tr("Interrupted");
+                    font-size: Theme.ui-sm;
+                    color: Theme.warning-surface-foreground;
+                    vertical-alignment: center;
+                }
+                if root.item.status == 4: Text {
+                    text: @tr("Failed");
+                    font-size: Theme.ui-sm;
+                    color: Theme.destructive;
+                    vertical-alignment: center;
+                }
+            }
+            if !root.select-mode: MarkdownView {
+                blocks: root.item.blocks;
+                link(url) => {
+                    root.link(url);
+                }
+            }
+            if root.select-mode: Rectangle {
+                background: Theme.card;
+                border-radius: Theme.radius-lg;
+                border-width: 1px;
+                border-color: Theme.border;
+                HorizontalLayout {
+                    padding: 12px;
+                    TextInput {
+                        width: root.select-width - 24px;
+                        text: root.item.text;
+                        read-only: true;
+                        single-line: false;
+                        wrap: word-wrap;
+                        color: Theme.foreground;
+                        font-size: Theme.ui-base;
+                        selection-background-color: Theme.text-selection;
+                        accessible-role: none;
+                        init => {
+                            self.focus();
+                            self.select-all();
+                        }
+                        key-pressed(event) => {
+                            if event.text == Key.Escape {
+                                root.select-mode = false;
+                                return accept;
+                            }
+                            reject
+                        }
+                    }
+                }
+            }
+            if root.item.changes.length > 0: ChangesCard {
+                id: root.item.id;
+                files: root.item.changes;
+                dir: root.item.change-dir;
+                note: root.item.change-note;
+            }
+            if root.item.status != 0 && root.item.turn-end: HorizontalLayout {
+                alignment: start;
+                height: Theme.control-sm;
+                MessageAction {
+                    icon: Icons.copy;
+                    label: @tr("Copy response");
+                    opacity: ata.has-hover ? 1 : 0.0;
+                    clicked => {
+                        ChatUi.copy(root.item.text);
+                    }
+                }
+                MessageAction {
+                    icon: Icons.file-text;
+                    label: root.select-mode ? @tr("Show formatted") : @tr("Select text");
+                    active: root.select-mode;
+                    opacity: ata.has-hover || root.select-mode ? 1 : 0.0;
+                    clicked => {
+                        root.select-mode = !root.select-mode;
+                    }
+                }
+                if root.item.id == ChatUi.last-assistant: MessageAction {
+                    icon: Icons.refresh-cw;
+                    label: @tr("Retry");
+                    opacity: ata.has-hover ? 1 : 0.0;
+                    enabled: !root.busy;
+                    clicked => {
+                        ChatUi.turn-action("retry", root.item.id);
+                    }
+                }
+                MessageAction {
+                    icon: Icons.git-fork;
+                    label: @tr("Fork from here");
+                    opacity: ata.has-hover ? 1 : 0.0;
+                    clicked => {
+                        ChatUi.turn-action("fork", root.item.id);
+                    }
+                }
+                // Generation speed of the turn (Settings › Appearance).
+                if ChatUi.show-speed && root.item.speed != "": Text {
+                    text: "  " + root.item.speed;
+                    font-family: Theme.art-font;
+                    font-size: 10px;
+                    color: Theme.foreground-subtlest;
+                    vertical-alignment: center;
+                    accessible-role: text;
+                    accessible-label: root.item.speed;
+                }
+            }
+        }
+    }
+}
+
+export component RowGroupHeader inherits Rectangle {
+    in property <ChatItem> item;
+    height: 28px;
+    border-radius: Theme.radius-md;
+    background: gta.has-hover ? Theme.hover : Theme.hover.with-alpha(0);
+    accessible-role: AccessibleRole.button;
+    accessible-label: root.item.group-label;
+    accessible-description: root.item.group-open ? "expanded" : "collapsed";
+    accessible-action-default => {
+        ChatUi.toggle-group(root.item.id);
+    }
+    gta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            ChatUi.toggle-group(root.item.id);
+        }
+    }
+    HorizontalLayout {
+        padding-left: 8px;
+        padding-right: 8px;
+        spacing: 8px;
+        alignment: start;
+        Text {
+            text: root.item.group-label;
+            font-size: Theme.ui-caption;
+            color: gta.has-hover ? Theme.foreground : Theme.foreground-subtle;
+            vertical-alignment: center;
+            overflow: elide;
+            accessible-role: none;
+        }
+        if root.item.group-added > 0: Text {
+            text: "+" + root.item.group-added;
+            font-size: Theme.ui-caption;
+            color: Theme.success-surface-foreground;
+            vertical-alignment: center;
+        }
+        if root.item.group-removed > 0: Text {
+            text: "−" + root.item.group-removed;
+            font-size: Theme.ui-caption;
+            color: Theme.destructive-surface-foreground;
+            vertical-alignment: center;
+        }
+        Icon {
+            y: (parent.height - self.height) / 2;
+            source: root.item.group-open ? Icons.chevron-down : Icons.chevron-right;
+            size: Theme.icon-xs;
+            tint: gta.has-hover ? Theme.icon : Theme.icon-subtlest;
+        }
+        if root.item.group-state == 0: Spinner {
+            y: (parent.height - self.height) / 2;
+            size: 13px;
+            clocked: true;
+        }
+        if root.item.group-state == 4: Icon {
+            y: (parent.height - self.height) / 2;
+            source: Icons.circle-alert;
+            size: 13px;
+            tint: Theme.destructive;
+        }
+        Rectangle {
+            horizontal-stretch: 1;
+        }
+        if root.item.group-images-more > 0: Text {
+            text: "+" + root.item.group-images-more;
+            font-size: Theme.ui-sm;
+            color: Theme.foreground-subtle;
+            vertical-alignment: center;
+        }
+        for img in root.item.group-images: Rectangle {
+            y: (parent.height - self.height) / 2;
+            height: 18px;
+            width: max(12px, min(32px, 18px * img.image.width / max(1, img.image.height)));
+            border-radius: 3px;
+            border-width: 1px;
+            border-color: Theme.border;
+            clip: true;
+            Image {
+                width: parent.width;
+                height: parent.height;
+                source: img.image;
+                image-fit: cover;
+                accessible-role: none;
+            }
+        }
+    }
+}

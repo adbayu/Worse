@@ -1,0 +1,50 @@
+import { Theme } from "../../theme/tokens.slint";
+import { ConfigUi } from "../globals.slint";
+import { Labels } from "../labels.slint";
+import { AgentDot, ConfigCopy } from "./types.slint";
+import { Dot, Hairline, DCard, CardHead, Th, Muted } from "./parts.slint";
+
+export component RowBg inherits Rectangle {
+    in property <int> index;
+    in property <bool> selected;
+    in property <bool> clickable: true;
+    callback clicked;
+    background: root.selected || (ta.has-hover && root.clickable) ? Theme.surface-hover : (mod(root.index, 2) == 0 ? Theme.surface : Theme.surface.with-alpha(0));
+    animate background { duration: Theme.dur-hover; }
+    ta := TouchArea {
+        enabled: root.clickable;
+        mouse-cursor: root.clickable ? pointer : default;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+// Caps sub-heading inside a table (built-in vs configured MCP servers).
+export component GroupRow inherits HorizontalLayout {
+    in property <string> text;
+    padding-left: 16px;
+    padding-right: 16px;
+    height: 30px;
+    Th {
+        text: root.text.to-uppercase();
+    }
+}
+
+export component EmptyBody inherits VerticalLayout {
+    padding: 32px;
+    spacing: 4px;
+    alignment: center;
+    Text {
+        text: ConfigUi.loading ? @tr("Loading…") : ConfigUi.query != "" ? @tr("No matches") : @tr("Nothing configured yet");
+        font-size: 13px;
+        color: Theme.foreground-subtle;
+        horizontal-alignment: center;
+    }
+    Text {
+        text: ConfigUi.query != "" ? @tr("Try another search.") : Labels.new-label(ConfigUi.concept);
+        font-size: 11px;
+        color: Theme.icon-subtlest;
+        horizontal-alignment: center;
+    }
+}

@@ -1,0 +1,197 @@
+import { ListView } from "std-widgets.slint";
+import { Theme } from "../theme/tokens.slint";
+import { Icon, Icons, Button, IconButton, Tag, Dialog, MenuItem } from "../components/controls.slint";
+import { TextField, TextArea, Switch } from "../settings/parts.slint";
+import { ResultLine, GitUi } from "./git_ui.slint";
+
+// Branch switcher: filter, branch list (current checked), "Create branch <filter>", blocked-switch notice.
+export component BranchDialog inherits Dialog {
+    title: @tr("Switch branch");
+    close-label: @tr("Close");
+    dialog-width: 420px;
+    close => {
+        GitUi.open("");
+    }
+    TextField {
+        text <=> GitUi.filter;
+        label: @tr("Find or create a branch");
+        placeholder: @tr("Find or create a branch");
+        edited(text) => {
+            GitUi.filter-edited(text);
+        }
+        accepted => {
+            if GitUi.filter != "" {
+                GitUi.switch-branch(GitUi.filter, true);
+            }
+        }
+    }
+    if GitUi.blocked != "": Rectangle {
+        background: Theme.destructive-surface;
+        border-radius: Theme.radius-lg;
+        VerticalLayout {
+            padding: Theme.space-2;
+            spacing: Theme.space-1;
+            Text {
+                text: @tr("Can't switch to {0}: local changes to these files would be overwritten. Commit or stash them first.", GitUi.blocked-branch);
+                wrap: word-wrap;
+                font-size: Theme.ui-sm;
+                color: Theme.destructive;
+                accessible-role: AccessibleRole.text;
+                accessible-label: "blocked " + GitUi.blocked-branch;
+            }
+            Text {
+                text: GitUi.blocked;
+                wrap: word-wrap;
+                font-family: Theme.mono-font;
+                font-size: Theme.ui-xs;
+                color: Theme.foreground;
+                accessible-role: AccessibleRole.text;
+                accessible-label: "blocked files " + self.text;
+            }
+        }
+    }
+    Rectangle {
+        height: min(max(GitUi.branches.length, 1) * 32px + 8px, 280px);
+        ListView {
+            for b in GitUi.branches: MenuItem {
+                height: 32px;
+                text: b.name;
+                detail: b.upstream;
+                label: "branch " + b.name;
+                checked: b.current;
+                enabled: !GitUi.busy;
+                clicked => {
+                    if !b.current {
+                        GitUi.switch-branch(b.name, false);
+                    }
+                }
+            }
+        }
+    }
+    if GitUi.filter != "": MenuItem {
+        text: @tr("Create branch {0}", GitUi.filter);
+        label: @tr("Create branch {0}", GitUi.filter);
+        has-icon: true;
+        icon: Icons.plus;
+        show-check: false;
+        enabled: !GitUi.busy;
+        clicked => {
+            GitUi.switch-branch(GitUi.filter, true);
+        }
+    }
+    ResultLine { }
+}
+
+// Commit dialog: the panel's commit message, "Include unstaged changes", Commit and Commit & push.
+export component CommitDialog inherits Dialog {
+    in-out property <string> message;
+    title: @tr("Commit changes");
+    close-label: @tr("Close");
+    dialog-width: 460px;
+    close => {
+        GitUi.open("");
+    }
+    TextArea {
+        height: 120px;
+        mono: false;
+        text <=> root.message;
+        label: @tr("Commit message");
+    }
+    HorizontalLayout {
+        spacing: 8px;
+        Switch {
+            checked: GitUi.include-unstaged;
+            label: @tr("Include unstaged changes");
+            toggled(on) => {
+                GitUi.include-unstaged = on;
+            }
+        }
+        Text {
+            text: @tr("Include unstaged changes");
+            font-size: Theme.ui-sm;
+            color: Theme.foreground;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+            accessible-role: none;
+        }
+    }
+    ResultLine { }
+    HorizontalLayout {
+        alignment: end;
+        spacing: 8px;
+        Button {
+            text: @tr("Cancel");
+            size: "lg";
+            clicked => {
+                GitUi.open("");
+            }
+        }
+        Button {
+            text: @tr("Commit & push");
+            size: "lg";
+            enabled: root.message != "" && !GitUi.busy && !GitUi.pushing;
+            clicked => {
+                GitUi.commit(true);
+            }
+        }
+        Button {
+            text: @tr("Commit");
+            variant: "primary";
+            size: "lg";
+            enabled: root.message != "" && !GitUi.busy && !GitUi.pushing;
+            clicked => {
+                GitUi.commit(false);
+            }
+        }
+    }
+}
+
+// Push dialog: branch, upstream (or "sets the upstream"), ahead / behind, Push, result or copyable error.
+export component PushDialog inherits Dialog {
+    title: @tr("Push");
+    close-label: @tr("Close");
+    dialog-width: 420px;
+    close => {
+        GitUi.open("");
+    }
+    Text {
+        text: GitUi.upstream == "" ? @tr("{0} has no upstream yet; the push sets it.", GitUi.current) : @tr("{0} → {1}", GitUi.current, GitUi.upstream);
+        wrap: word-wrap;
+        font-size: Theme.ui-sm;
+        color: Theme.foreground;
+        accessible-role: AccessibleRole.text;
+        accessible-label: "push target " + self.text;
+    }
+    Text {
+        text: @tr("{0} ahead, {1} behind", GitUi.ahead, GitUi.behind);
+        font-size: Theme.ui-sm;
+        color: Theme.foreground-subtle;
+        accessible-role: AccessibleRole.text;
+        accessible-label: "push sync " + self.text;
+    }
+
+    ResultLine { }
+    HorizontalLayout {
+        alignment: end;
+        spacing: 8px;
+        Button {
+            text: @tr("Close");
+            size: "lg";
+            clicked => {
+                GitUi.open("");
+            }
+        }
+        Button {
+            text: @tr("Push");
+            label: @tr("Push now");
+            variant: "primary";
+            size: "lg";
+            has-icon: true;
+            icon: Icons.arrow-up;
+            enabled: !GitUi.pushing && GitUi.current != "";
+            clicked => {
+                GitUi.push();
+            }
+        }
+    }
+}

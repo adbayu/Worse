@@ -1,0 +1,158 @@
+import { ScrollView } from "std-widgets.slint";
+import { Theme } from "../theme/tokens.slint";
+import { Icon, Icons, Button, IconButton, Divider, Card, MenuShell, MenuItem, Dialog, SegmentOption } from "../components/controls.slint";
+
+// Page title + optional intro (design: 22 semibold title, 13 muted subtitle, 6px gap — frame S1/S6).
+export component PageHeader inherits VerticalLayout {
+    in property <string> title;
+    in property <string> description;
+    spacing: 6px;
+    Text {
+        text: root.title;
+        font-family: Theme.display-font;
+        font-size: 22px;
+        font-weight: 700;
+        color: Theme.foreground;
+        accessible-role: AccessibleRole.text;
+        accessible-label: root.title;
+    }
+    if root.description != "": Text {
+        text: root.description;
+        font-size: Theme.ui-caption;
+        color: Theme.muted;
+        wrap: word-wrap;
+    }
+}
+
+// Card header strip on its own (cards that build their own body): 46px min, pad [0,16], title 13 + note 11.
+// Extra children (e.g. a SetButton) are appended at the right.
+export component CardHeader inherits HorizontalLayout {
+    in property <string> title;
+    in property <string> note;
+    in property <string> description;
+    min-height: 46px;
+    padding-left: 16px;
+    padding-right: 16px;
+    padding-top: root.description != "" ? 12px : 0px;
+    padding-bottom: root.description != "" ? 12px : 0px;
+    spacing: 12px;
+    VerticalLayout {
+        horizontal-stretch: 1;
+        alignment: center;
+        spacing: 3px;
+        Text {
+            text: root.title;
+            font-size: Theme.ui-caption;
+            font-weight: Theme.weight-semibold;
+            color: Theme.foreground;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+        if root.description != "": Text {
+            text: root.description;
+            font-size: Theme.ui-sm;
+            color: Theme.muted;
+            wrap: word-wrap;
+        }
+    }
+    if root.note != "": Text {
+        text: root.note;
+        font-size: Theme.ui-font-size - 3px;
+        color: Theme.icon-subtlest;
+        vertical-alignment: center;
+        horizontal-alignment: right;
+        accessible-role: none;
+    }
+    @children
+}
+
+// Group = the design's card (fill #111215, 1px #24272D border, radius 12). Header (design "header · X"): 46px tall,
+// 16px side padding, title 13 left + `note` 11 #6B717C right (spaceBetween), then a 1px #24272D rule. `description`
+// (optional, legacy) is drawn under the title as a 12px muted line. Rows (SettingRow) draw their own dividers.
+export component Group inherits Rectangle {
+    in property <string> title;
+    in property <string> description;
+    in property <string> note;
+    background: Theme.card;
+    border-radius: 12px;
+    border-width: 1px;
+    border-color: Theme.card-border;
+    clip: true;
+    VerticalLayout {
+        padding: 1px;
+        if root.title != "": CardHeader {
+            title: root.title;
+            note: root.note;
+            description: root.description;
+        }
+        if root.title != "": Rectangle {
+            height: 1px;
+            background: Theme.border;
+        }
+        @children
+    }
+}
+
+// 1px #24272D rule between card rows / sections.
+export component RowDivider inherits Rectangle {
+    height: 1px;
+    background: Theme.border;
+    accessible-role: none;
+}
+
+// Settings row (design frames S1–S16): label 13 medium + description 12 muted on the left, control right-aligned in
+// a fixed column, 14/16 padding and a 1px #24272D divider above every row but the first. `first` hides that hairline.
+// Below 560px of content width (`stacked`) the control moves under the text.
+export component SettingRow inherits VerticalLayout {
+    in property <string> title;
+    in property <string> description;
+    in property <bool> first: false;
+    in property <bool> wide: false;
+    in property <bool> stacked: false;
+    in property <bool> enabled: true;
+    // Text inputs (terminal font, proxy): the control sits under the description at up to 480px, so the value is
+    // readable instead of elided in the 192/280px control column.
+    in property <bool> below: false;
+    // Vertical padding of a side-by-side row (design: 14 → 62px rows; Appearance S2 uses 10 → 54px rows).
+    in property <length> pad-y: 14px;
+    property <bool> under: root.stacked || root.below;
+    if !root.first: Divider { }
+    // 修复（窄布局）：原先用一个 GridLayout 按 stacked 切换控件的 row/col，但这两个属性改变后网格不会重新排布，
+    // 窄窗口下控件仍在右侧并被裁掉。改为显式定位：宽布局控件在右侧固定列，stacked 时控件放到文字下方。
+    body := Rectangle {
+        property <length> ctrl-w: root.below ? min(480px, self.width) : root.stacked ? min(ctrl.preferred-width, self.width) : (root.wide ? 280px : 192px);
+        property <length> text-w: max(0px, root.under ? self.width - 32px : self.width - 44px - self.ctrl-w);
+        height: root.under ? txt.preferred-height + ctrl.preferred-height + 40px : max(txt.preferred-height, ctrl.preferred-height) + 2 * root.pad-y;
+        txt := VerticalLayout {
+            x: 16px;
+            y: root.under ? 14px : (parent.height - self.preferred-height) / 2;
+            width: body.text-w;
+            height: self.preferred-height;
+            spacing: 3px;
+            Text {
+                text: root.title;
+                font-size: Theme.ui-caption;
+                font-weight: Theme.weight-medium;
+                color: root.enabled ? Theme.foreground : Theme.foreground-subtlest;
+                wrap: word-wrap;
+            }
+            if root.description != "": Text {
+                text: root.description;
+                font-size: Theme.ui-sm;
+                color: root.enabled ? Theme.muted : Theme.foreground-subtlest;
+                wrap: word-wrap;
+            }
+        }
+        ctrl := HorizontalLayout {
+            x: root.under ? 16px : parent.width - 16px - body.ctrl-w;
+            y: root.under ? txt.preferred-height + 20px : (parent.height - self.preferred-height) / 2;
+            width: body.ctrl-w;
+            height: self.preferred-height;
+            alignment: root.below ? LayoutAlignment.stretch : root.stacked ? LayoutAlignment.start : LayoutAlignment.end;
+            VerticalLayout {
+                alignment: center;
+                @children
+            }
+        }
+    }
+}

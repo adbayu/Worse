@@ -1,0 +1,99 @@
+import { ChatUi, MdLink } from "../chat/globals.slint";
+import { Theme } from "../theme/tokens.slint";
+
+export component RichSelect inherits Rectangle {
+    in property <styled-text> text;
+    in property <string> plain;
+    in property <[MdLink]> links;
+    in property <length> font-size: Theme.ui-base;
+    in property <string> font-family;
+    in property <int> font-weight: 400;
+    in property <brush> ink: Theme.foreground;
+    callback link(string);
+    height: st.preferred-height;
+    st := StyledText {
+        x: 0;
+        y: 0;
+        width: root.width;
+        text: root.text;
+        default-color: root.ink;
+        link-color: Theme.link;
+        default-font-size: root.font-size;
+        default-font-family: root.font-family;
+    }
+    field := TextInput {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+        text: root.plain;
+        read-only: true;
+        single-line: false;
+        wrap: word-wrap;
+        font-size: root.font-size;
+        font-family: root.font-family;
+        font-weight: root.font-weight;
+        color: #00000001;
+        selection-foreground-color: #00000001;
+        selection-background-color: Theme.text-selection;
+        accessible-role: none;
+        cursor-position-changed(p) => {
+            if self.has-focus && root.links.length > 0 && self.anchor-position-byte-offset == self.cursor-position-byte-offset {
+                if ChatUi.link-at(root.links, self.cursor-position-byte-offset) != "" {
+                    root.link(ChatUi.link-at(root.links, self.cursor-position-byte-offset));
+                }
+            }
+            // A selection began here: blocks the pointer is dragged over from now on join it.
+            if self.has-focus && self.anchor-position-byte-offset != self.cursor-position-byte-offset {
+                ChatUi.drag-begin(root.top, root.top + root.height);
+            }
+            // The field keeps following the pointer sideways after it has left; hold the selection at the edge.
+            if (root.below || root.above) && self.cursor-position-byte-offset != root.pin {
+                root.reach();
+            }
+        }
+        key-pressed(event) => {
+            if ChatUi.drag-on && (event.modifiers.control || event.modifiers.meta) && (event.text == "c" || event.text == "C") {
+                ChatUi.drag-copy(self.text, self.anchor-position-byte-offset, self.cursor-position-byte-offset, root.top / 1px, root.left / 1px);
+                return accept;
+            }
+            return reject;
+        }
+    }
+    // The pointer has left this block downwards (upwards) with a selection that began here: the selection
+    // runs to the block's end (start).
+    property <bool> leading: field.has-focus && ChatUi.drag-on && ChatUi.drag-hi > ChatUi.drag-lo;
+    property <bool> below: root.leading && ChatUi.drag-lo >= root.top + root.height - 1px;
+    property <bool> above: root.leading && ChatUi.drag-hi <= root.top + 1px;
+    property <int> pin: -1;
+    function reach() {
+        // An offset past the end is taken as the end.
+        field.set-selection-offsets(field.anchor-position-byte-offset, root.below ? 100000000 : 0);
+        root.pin = field.cursor-position-byte-offset;
+    }
+    changed below => {
+        if root.below {
+            root.reach();
+        }
+    }
+    changed above => {
+        if root.above {
+            root.reach();
+        }
+    }
+    // A text field's selection ends at its edge. When a selection that began in another block is dragged
+    // over this one, it selects itself whole and hands in its text (`chat::select`).
+    property <length> top: root.absolute-position.y;
+    property <length> left: root.absolute-position.x;
+    property <bool> joined: ChatUi.drag-on && !field.has-focus && root.top < ChatUi.drag-hi && root.top + root.height > ChatUi.drag-lo + 2px;
+    changed joined => {
+        if root.joined {
+            field.select-all();
+            ChatUi.drag-join(root.top / 1px, root.left / 1px, root.plain);
+        } else {
+            field.clear-selection();
+            ChatUi.drag-part(root.top / 1px, root.left / 1px);
+        }
+    }
+}
+

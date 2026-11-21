@@ -1,0 +1,106 @@
+import { PermOption } from "../models.slint";
+import { Icon, Icons, MenuItem } from "../components/controls.slint";
+import { Theme } from "../theme/tokens.slint";
+
+export component PermissionCard inherits Rectangle {
+    in property <string> title;
+    in property <string> detail;
+    in property <[PermOption]> options;
+    callback answer(bool);
+    callback choose(string);
+    callback feedback();
+    // Design 01 card grammar: surface, radius 12, strong border; tinted icon tile.
+    background: Theme.surface;
+    border-radius: 12px;
+    border-width: 1px;
+    border-color: Theme.border-hover;
+    drop-shadow-blur: 16px;
+    drop-shadow-offset-y: 4px;
+    drop-shadow-color: Theme.glass-shadow;
+    VerticalLayout {
+        padding: 14px;
+        spacing: 10px;
+        HorizontalLayout {
+            spacing: 10px;
+            Rectangle {
+                width: 24px;
+                height: 24px;
+                border-radius: 6px;
+                background: Theme.ask-foreground.with-alpha(0.12);
+                Icon {
+                    source: Icons.shield-check;
+                    size: Theme.icon-xs;
+                    tint: Theme.ask-foreground;
+                }
+            }
+            Text {
+                text: @tr("Permission required");
+                font-size: Theme.ui-caption;
+                font-weight: Theme.weight-semibold;
+                color: Theme.foreground;
+                vertical-alignment: center;
+                horizontal-stretch: 1;
+            }
+        }
+        Rectangle {
+            background: Theme.background;
+            border-radius: Theme.radius-md;
+            border-width: 1px;
+            border-color: Theme.border;
+            HorizontalLayout {
+                padding: 8px;
+                padding-left: 10px;
+                Text {
+                    text: root.title;
+                    font-family: Theme.mono-font;
+                    font-size: Theme.code-size;
+                    color: Theme.foreground;
+                    overflow: elide;
+                }
+            }
+        }
+        if root.detail != "": Text {
+            text: root.detail;
+            font-size: Theme.ui-sm;
+            color: Theme.foreground-subtle;
+            wrap: word-wrap;
+        }
+        // Every option the agent offered, numbered like ZCode (1, 2, 3 … choose by key).
+        for o[i] in root.options: MenuItem {
+            text: o.label;
+            detail: i < 9 ? "" + (i + 1) : "";
+            show-check: false;
+            has-icon: true;
+            icon: o.kind < 2 ? Icons.check : Icons.x;
+            clicked => {
+                root.choose(o.id);
+            }
+        }
+        // R9: deny once and tell the agent why (ChoosePermission reject + a follow-up message).
+        if root.options.length > 0: MenuItem {
+            text: @tr("Deny with feedback…");
+            show-check: false;
+            has-icon: true;
+            icon: Icons.message-square;
+            clicked => {
+                root.feedback();
+            }
+        }
+        if root.options.length > 0: Text {
+            text: @tr("Press a number to choose, Esc to deny once");
+            font-size: Theme.ui-xs;
+            color: Theme.foreground-subtlest;
+            horizontal-alignment: right;
+        }
+        // 选项随 PermissionChoices 紧随请求到达；到达前不提供按钮（旧的 RespondPermission 回退已移除）。
+        if root.options.length == 0: Text {
+            text: @tr("Loading options…");
+            font-size: Theme.ui-xs;
+            color: Theme.foreground-subtlest;
+            horizontal-alignment: right;
+        }
+    }
+}
+
+// ---- side pane -------------------------------------------------------------------------------------------
+

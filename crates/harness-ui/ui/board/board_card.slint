@@ -1,0 +1,183 @@
+import { Theme } from "../theme/tokens.slint";
+import { Icon, Icons, Spinner, Button, IconButton, Tag, Dialog, MenuShell, MenuItem } from "../components/controls.slint";
+import { TextField, TextArea } from "../settings/parts.slint";
+import { AgentTint, Pill } from "../panels/common.slint";
+import { BoardCard, BoardUi } from "./board_ui.slint";
+
+export component CardItem inherits Rectangle {
+    in property <BoardCard> card;
+    in property <bool> dragging;
+    border-radius: Theme.radius-lg;
+    background: root.dragging ? Theme.raised : Theme.surface;
+    border-width: 1px;
+    border-color: root.card.state == "needsApproval" ? Theme.warning-surface-foreground.with-alpha(0.6) : root.card.state == "failed" ? Theme.destructive-surface-foreground.with-alpha(0.6) : root.dragging ? Theme.border-hover : Theme.border;
+    drop-shadow-blur: root.dragging ? 18px : 0px;
+    drop-shadow-offset-y: root.dragging ? 6px : 0px;
+    drop-shadow-color: Theme.shadow-md-color;
+    accessible-role: button;
+    accessible-label: root.card.title;
+    property <color> agent-tint: AgentTint.of(root.card.agent);
+    VerticalLayout {
+        padding: 10px;
+        padding-left: 12px;
+        padding-right: 12px;
+        spacing: 6px;
+        HorizontalLayout {
+            spacing: 6px;
+            Text {
+                text: root.card.title;
+                font-size: 13px;
+                font-weight: Theme.weight-medium;
+                color: Theme.foreground;
+                wrap: word-wrap;
+                overflow: elide;
+                max-height: 36px;
+                horizontal-stretch: 1;
+                accessible-role: none;
+            }
+            if root.card.agent != "": Pill {
+                text: root.card.agent;
+                tint: root.agent-tint;
+            }
+        }
+        if root.card.preview != "": Text {
+            text: root.card.preview;
+            font-size: 12px;
+            color: Theme.muted;
+            overflow: elide;
+            accessible-role: none;
+        }
+        Rectangle {
+            vertical-stretch: 1;
+        }
+        HorizontalLayout {
+            spacing: 6px;
+            height: 18px;
+            if root.card.state == "running": working := HorizontalLayout {
+                property <int> beat;
+                spacing: 6px;
+                Timer {
+                    interval: 100ms;
+                    running: !Theme.reduce-motion;
+                    triggered => {
+                        working.beat = mod(working.beat + 1, 20);
+                    }
+                }
+                Rectangle {
+                    y: (parent.height - self.height) / 2;
+                    width: 6px;
+                    height: 6px;
+                    border-radius: 3px;
+                    background: root.agent-tint;
+                    opacity: Theme.reduce-motion ? 1 : 0.55 + 0.45 * abs(sin(working.beat * 18deg));
+                }
+                Text {
+                    text: "Agent working…";
+                    font-size: 11px;
+                    color: root.agent-tint;
+                    vertical-alignment: center;
+                    accessible-role: none;
+                }
+            }
+            if root.card.state == "needsApproval": Pill {
+                y: 0;
+                text: "Needs approval";
+                tint: Theme.warning-surface-foreground;
+            }
+            if root.card.state == "failed": Pill {
+                y: 0;
+                text: "Failed";
+                tint: Theme.destructive-surface-foreground;
+            }
+            if root.card.branch != "": Rectangle {
+                y: 0;
+                height: 18px;
+                width: min(br.preferred-width + 26px, 180px);
+                border-radius: 5px;
+                background: Theme.success-surface.with-alpha(0.08);
+                border-width: 1px;
+                border-color: Theme.success-surface-foreground.with-alpha(0.35);
+                HorizontalLayout {
+                    padding-left: 6px;
+                    padding-right: 6px;
+                    spacing: 4px;
+                    Icon {
+                        y: (parent.height - self.height) / 2;
+                        source: Icons.git-fork;
+                        size: 11px;
+                        tint: Theme.success-surface-foreground;
+                    }
+                    br := Text {
+                        text: root.card.branch;
+                        font-size: 10px;
+                        color: Theme.success-surface-foreground;
+                        vertical-alignment: center;
+                        overflow: elide;
+                        accessible-role: none;
+                    }
+                }
+            }
+            Rectangle {
+                horizontal-stretch: 1;
+            }
+            if root.card.cost != "": Text {
+                text: root.card.cost;
+                font-size: 11px;
+                color: Theme.foreground-subtlest;
+                vertical-alignment: center;
+                accessible-role: none;
+            }
+        }
+    }
+}
+
+export component CardDialog inherits Dialog {
+    title: BoardUi.dialog-id == "" ? "New card" : "Edit card";
+    close-label: "Close";
+    dialog-width: 520px;
+    close => {
+        BoardUi.dialog-open = false;
+    }
+    init => {
+        title-field.focus();
+    }
+    title-field := TextField {
+        text <=> BoardUi.dialog-title;
+        label: "Title";
+        placeholder: "Title";
+        accepted => {
+            BoardUi.save();
+        }
+    }
+    TextArea {
+        height: 180px;
+        mono: false;
+        text <=> BoardUi.dialog-body;
+        label: "Description";
+    }
+    if BoardUi.error != "": Text {
+        text: BoardUi.error;
+        font-size: Theme.ui-sm;
+        color: Theme.destructive;
+        wrap: word-wrap;
+    }
+    HorizontalLayout {
+        alignment: end;
+        spacing: 8px;
+        Button {
+            text: "Cancel";
+            size: "lg";
+            clicked => {
+                BoardUi.dialog-open = false;
+            }
+        }
+        Button {
+            text: BoardUi.dialog-id == "" ? "Create" : "Save";
+            variant: "primary";
+            size: "lg";
+            clicked => {
+                BoardUi.save();
+            }
+        }
+    }
+}

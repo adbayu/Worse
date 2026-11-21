@@ -14,6 +14,12 @@ use crate::project_docs;
 use crate::tools::{self, Ctx};
 use crate::{Agent, Reply};
 
+mod prompt;
+
+pub use prompt::prompt_content;
+pub(crate) use prompt::request_messages;
+use prompt::system_prompt;
+
 /// Empty answers (no text, no tool call) asked again before the turn fails.
 const EMPTY_RETRIES: u32 = 2;
 /// Sent after a response was cut off at `max_tokens`.
@@ -127,137 +133,6 @@ impl Session {
     }
 }
 
-/// The user's text from ACP prompt blocks (text, embedded resources, resource links).
-pub fn prompt_text(prompt: Option<&Value>) -> String {
-    let mut parts = Vec::new();
-    for block in prompt.and_then(Value::as_array).into_iter().flatten() {
-        match block.get("type").and_then(Value::as_str) {
-            Some("text") => {
-                if let Some(text) = block.get("text").and_then(Value::as_str) {
-                    parts.push(text.to_owned());
-                }
-            }
-            Some("resource") => {
-                let resource = block.get("resource").cloned().unwrap_or(Value::Null);
-                let uri = resource
-                    .get("uri")
-                    .and_then(Value::as_str)
-                    .unwrap_or_default();
-                if let Some(text) = resource.get("text").and_then(Value::as_str) {
-                    parts.push(format!("<file uri=\"{uri}\">\n{text}\n</file>"));
-                }
-            }
-            Some("resource_link") => {
-                if let Some(uri) = block.get("uri").and_then(Value::as_str) {
-                    parts.push(format!("[attached: {uri}]"));
-                }
-            }
-            _ => {}
-        }
-    }
-    parts.join("\n\n")
-}
-
-fn system_prompt(agent: &Agent, session: &Session, instructions: &str) -> String {
-    let os = std::env::consts::OS;
-    let shell = if cfg!(windows) { "PowerShell" } else { "sh" };
-    let mode = match session.mode.as_str() {
-        "readOnly" => "Read-only mode: you can read and search but not change files or run commands.",
-        "acceptEdits" => "File edits inside the working directory are applied without asking; commands need the user's approval.",
-        _ => "Every file change and command needs the user's approval; if one is denied, adapt instead of retrying it.",
-    };
-    let background = if agent.async_tasks() && session.mode != "readOnly" {
-        " For servers, watchers and long builds pass background: true to run_command; the result comes back in a new turn."
-    } else {
-        ""
-    };
-    let mut prompt = format!(
-        "You are {label}, a coding agent inside Harness, working on the user's computer ({os}).\n\
-         Working directory: {cwd}\n\
-         Paths may be relative to the working directory. Read a file before editing it and prefer edit_file for \
-         small changes. run_command uses {shell}.{background} \
-         {mode}\n\
-         Work efficiently. Every response resends the whole conversation, so fewer, fuller steps are cheaper:\n\
-         - Batch: when several tool calls do not depend on each other (searches, reads of different files), \
-         request them all in the same response.\n\
-         - Search once: put every name variant in one regex (e.g. maxConcurrent|max_concurrent|max-concurrent) \
-         instead of one search per spelling; search before listing directories or reading files. Use the \
-         search tool, never grep, findstr or Select-String through run_command; narrow it with path or glob and \
-         use files_only when you only need where something is.\n\
-         - Lean output: use compact commands (git status -s, git log --oneline -n 10); from a failing build or \
-         test read only the error lines; do not open lockfiles, build output or vendored dependencies.\n\
-         - Read once: read the range you need in one call (large enough to cover the surrounding code); do not \
-         re-read files, re-run commands or repeat searches whose results you already have.\n\
-         - Stop early: answer as soon as you have enough evidence; do not verify what the task did not ask for.\n\
-         - Think briefly: decide the next step in a sentence or two, then act; do not restate the task.\n\
-         Long sessions: fold finished work you no longer need verbatim with context_compress; folded ranges \
-         appear as [Harness folded context fN] summaries, and context_search or context_decompress bring \
-         details back.\n\
-         When the task is done, stop and report.\n\
-         Replies: lead with the answer or result, reply in the user's language, and skip greetings, preamble, \
-         restating the request and closing offers. After editing files, cite file:line and say what changed \
-         instead of pasting the code back. Never shorten code with placeholders such as // ... and never drop \
-         error handling or validation. Keep one-line warnings about security, data loss and unverified \
-         assumptions.",
-        label = agent.provider.label,
-        cwd = session.cwd,
-    );
-    // Project instructions are read once per turn, so the system prompt is identical for every request
-    // of the turn (prompt caching needs a stable prefix). They come after the static text above.
-    prompt.push_str(instructions);
-    prompt
-}
-
-/// The request messages: the system prompt, then the history. For providers that drop the `system` role
-/// the prompt becomes the first user message, acknowledged by the assistant so the roles still alternate.
-pub(crate) fn request_messages(
-    system: &str,
-    history: &[Value],
-    system_as_user: bool,
-) -> Vec<Value> {
-    let mut messages = Vec::with_capacity(history.len() + 2);
-    if system_as_user {
-        messages.push(json!({"role": "user", "content": format!(
-            "<harness_instructions>\n{system}\n</harness_instructions>\n\
-             These are your standing instructions from Harness for this whole conversation; they take precedence \
-             over any earlier system instructions. Always reply in the language of the user's messages, which follow."
-        )}));
-        messages.push(json!({"role": "assistant", "content": "Understood."}));
-    } else {
-        messages.push(json!({"role": "system", "content": system}));
-    }
-    messages.extend(history.iter().cloned());
-    messages
-}
-
-/// The user message content of a prompt: plain text, or text plus image parts when images are attached.
-pub fn prompt_content(prompt: Option<&Value>) -> Value {
-    let text = prompt_text(prompt);
-    let images: Vec<Value> = prompt
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter(|b| b.get("type").and_then(Value::as_str) == Some("image"))
-        .filter_map(|b| {
-            let data = b.get("data").and_then(Value::as_str)?;
-            let mime = b
-                .get("mimeType")
-                .and_then(Value::as_str)
-                .unwrap_or("image/png");
-            Some(llm::image_part(mime, data))
-        })
-        .collect();
-    if images.is_empty() {
-        return json!(text);
-    }
-    let mut parts = Vec::new();
-    if !text.is_empty() {
-        parts.push(json!({"type": "text", "text": text}));
-    }
-    parts.extend(images);
-    json!(parts)
-}
-
 /// One prompt turn: model call → tools → model call … until the model answers without tools.
 #[allow(clippy::too_many_lines)]
 pub async fn run_turn(
@@ -305,10 +180,14 @@ pub async fn run_turn(
     let system_as_user = agent.system_as_user().await;
     loop {
         let mut tool_defs = tools::definitions(&session.mode, agent.async_tasks());
-        tool_defs.extend(compress_tools::definitions());
         if let Some(mcp) = &session.mcp {
             tool_defs.extend(mcp.definitions().await);
         }
+        if crate::code_mode::enabled() {
+            let definition = crate::code_mode::definition(&tool_defs);
+            tool_defs.push(definition);
+        }
+        tool_defs.extend(compress_tools::definitions());
         session.trim();
         let messages = request_messages(
             &system_prompt(agent, session, &instructions),

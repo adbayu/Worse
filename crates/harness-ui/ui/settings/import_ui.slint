@@ -1,0 +1,42 @@
+import { Theme } from "../theme/tokens.slint";
+import { Icon, Icons } from "../components/controls.slint";
+import { PageHeader, StatusLine, SetButton, Pill, Dot, CapsLabel, Switch, SegmentedControl, SearchField } from "parts.slint";
+
+export struct ImportRow {
+    key: string,
+    title: string,
+    meta: string,
+    source: string,
+    imported: bool,
+    selected: bool,
+    // Design S16 columns.
+    project: string,
+    turns: int,
+    active: string,
+}
+
+export global ImportUi {
+    in property <[ImportRow]> rows;
+    in property <string> filter: "all";
+    in property <int> count-all;
+    in property <int> count-claude;
+    in property <int> count-codex;
+    in property <int> count-zcode;
+    in property <int> selected;
+    in property <int> selected-turns;
+    in property <int> imported-count;
+    in property <bool> all-selected;
+    in property <string> busy;
+    in property <string> status;
+    in property <bool> status-error;
+    in-out property <string> query;
+    callback set-filter(string);
+    callback search(string);
+    callback toggle(string);
+    // Select all / none for the rows on screen (filter + search).
+    callback select-all(bool);
+    // Clears every selection, also of rows hidden by the filter or search.
+    callback clear-selection();
+    callback refresh();
+    callback import-selected();
+}

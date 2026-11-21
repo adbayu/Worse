@@ -1,0 +1,9 @@
+import { IconButton } from "./controls.slint";
+import { Theme } from "../theme/tokens.slint";
+
+export component MessageAction inherits IconButton {
+    size: Theme.control-sm;
+    icon-size: Theme.icon-xs;
+    animate opacity { duration: Theme.dur-hover; easing: ease-out-quint; }
+}
+

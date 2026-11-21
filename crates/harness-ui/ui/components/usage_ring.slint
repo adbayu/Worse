@@ -1,0 +1,308 @@
+import { LimitBar } from "./limit_bar.slint";
+import { AgentRow } from "../models.slint";
+import { ChatUi } from "../chat/globals.slint";
+import { Divider, Icon, Icons } from "./controls.slint";
+import { Theme } from "../theme/tokens.slint";
+
+export component UsageRing inherits Rectangle {
+    in property <[AgentRow]> agents;
+    property <float> ratio: ChatUi.usage-known ? clamp(ChatUi.usage-ratio, 0, 1) : 0;
+    property <angle> sweep: clamp(root.ratio, 0.001, 0.999) * 360deg;
+    property <color> tone: root.ratio > 0.9 ? Theme.destructive : root.ratio > 0.7 ? Theme.warning-surface-foreground : Theme.primary;
+    width: 28px;
+    height: 28px;
+    border-radius: Theme.radius-md;
+    background: ta.has-hover ? Theme.hover : transparent;
+    accessible-role: button;
+    accessible-label: ChatUi.usage-known ? "Usage: context " + round(root.ratio * 100) + "% used" : "Usage";
+    accessible-action-default => {
+        pop.show();
+    }
+    Path {
+        x: 5px;
+        y: 5px;
+        width: 18px;
+        height: 18px;
+        viewbox-width: 18;
+        viewbox-height: 18;
+        commands: "M 9 2 A 7 7 0 1 1 8.99 2";
+        stroke: Theme.border;
+        stroke-width: 2.5px;
+        accessible-role: none;
+    }
+    if root.ratio > 0: Path {
+        x: 5px;
+        y: 5px;
+        width: 18px;
+        height: 18px;
+        viewbox-width: 18;
+        viewbox-height: 18;
+        commands: "M 9 2 A 7 7 0 \{root.ratio > 0.5 ? 1 : 0} 1 \{9 + 7 * sin(root.sweep)} \{9 - 7 * cos(root.sweep)}";
+        stroke: root.tone;
+        stroke-width: 2.5px;
+        stroke-line-cap: round;
+        accessible-role: none;
+    }
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            ChatUi.usage-action("refreshPlan");
+            pop.show();
+        }
+    }
+    pop := PopupWindow {
+        close-policy: close-on-click-outside;
+        width: 360px;
+        height: card.preferred-height;
+        x: root.width - self.width;
+        y: -self.height - 8px;
+        card := Rectangle {
+            background: Theme.menu;
+            border-radius: 12px;
+            border-width: 1px;
+            border-color: Theme.popover-border;
+            drop-shadow-blur: Theme.shadow-md-blur;
+            drop-shadow-offset-y: Theme.shadow-md-y;
+            drop-shadow-color: Theme.shadow-md-color;
+            // 修复：弹窗打开期间每 30 秒刷新一次额度，之前只在打开时读取一次，数字不会实时更新。
+            Timer {
+                interval: 30s;
+                running: true;
+                triggered => {
+                    ChatUi.usage-action("refreshPlan");
+                }
+            }
+            VerticalLayout {
+                padding: 16px;
+                spacing: 14px;
+                Text {
+                    text: "Plan usage limits";
+                    font-size: Theme.ui-sm;
+                    color: Theme.foreground-subtle;
+                }
+                if ChatUi.plan-limits.length == 0: Text {
+                    text: "Checking plan usage…";
+                    font-size: Theme.ui-sm;
+                    color: Theme.foreground-subtle;
+                }
+                for p in ChatUi.plan-limits: VerticalLayout {
+                    property <bool> open: ChatUi.plan-limits.length == 1 ? ChatUi.limit-open != p.id : ChatUi.limit-open == p.id;
+                    spacing: 8px;
+                    Rectangle {
+                        height: 24px;
+                        accessible-role: button;
+                        accessible-label: p.label;
+                        accessible-description: open ? "expanded" : "collapsed";
+                        accessible-action-default => {
+                            ChatUi.limit-open = open ? "" : p.id;
+                        }
+                        pta := TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => {
+                                ChatUi.limit-open = open ? "" : p.id;
+                            }
+                        }
+                        HorizontalLayout {
+                            spacing: 6px;
+                            Icon {
+                                y: (parent.height - self.height) / 2;
+                                source: open ? Icons.chevron-down : Icons.chevron-right;
+                                size: Theme.icon-xs;
+                                tint: pta.has-hover ? Theme.foreground : Theme.icon-subtle;
+                            }
+                            Text {
+                                text: p.label + (p.plan != "" ? " · " + p.plan : "");
+                                font-size: Theme.ui-sm;
+                                color: Theme.foreground;
+                                vertical-alignment: center;
+                                overflow: elide;
+                                horizontal-stretch: 1;
+                            }
+                            Text {
+                                text: p.error != "" ? p.error : (open ? "" : p.summary != "" ? p.summary : "5h " + round(p.five * 100) + "% · week " + round(p.week * 100) + "%");
+                                font-size: Theme.ui-xs;
+                                color: p.error != "" ? Theme.warning-surface-foreground : Theme.foreground-subtle;
+                                vertical-alignment: center;
+                                overflow: elide;
+                                max-width: 180px;
+                            }
+                        }
+                    }
+                    if open && p.known: LimitBar {
+                        label: p.five-label != "" ? p.five-label : "5-hour limit";
+                        reset: p.five-reset;
+                        value: p.five;
+                    }
+                    if open && p.known: LimitBar {
+                        label: p.week-label != "" ? p.week-label : "Weekly · all models";
+                        reset: p.week-reset;
+                        value: p.week;
+                    }
+                    if open && p.known && p.has-opus: LimitBar {
+                        label: p.opus-label != "" ? p.opus-label : "Weekly · Opus";
+                        reset: p.opus-reset;
+                        value: p.opus;
+                    }
+                    for b in (open ? p.bars : []): LimitBar {
+                        label: b.label;
+                        reset: b.reset;
+                        value: b.value;
+                    }
+                }
+                for a in root.agents: HorizontalLayout {
+                    property <bool> hidden: a.claude || (a.id == "agy" && ChatUi.agy-plan);
+                    visible: !self.hidden;
+                    height: self.hidden ? 0px : 22px;
+                    spacing: 8px;
+                    Rectangle {
+                        width: Theme.icon-xs;
+                    }
+                    Text {
+                        text: a.name;
+                        font-size: Theme.ui-sm;
+                        color: a.state == 1 ? Theme.foreground-subtlest : Theme.foreground;
+                        vertical-alignment: center;
+                        overflow: elide;
+                        horizontal-stretch: 1;
+                    }
+                    Text {
+                        text: a.state == 0 ? "Available" : a.state == 1 ? "Not installed" : (a.reset != "" ? "Limit reached · resets " + a.reset : "Limit reached");
+                        font-size: Theme.ui-xs;
+                        vertical-alignment: center;
+                        color: a.state == 0 ? Theme.foreground-subtle : a.state == 1 ? Theme.foreground-subtlest : Theme.warning-surface-foreground;
+                    }
+                }
+                Divider { }
+                HorizontalLayout {
+                    Text {
+                        text: "Context window";
+                        font-size: Theme.ui-sm;
+                        color: Theme.foreground-subtle;
+                        horizontal-stretch: 1;
+                        vertical-alignment: center;
+                    }
+                    compact-link := Rectangle {
+                        width: compact-row.preferred-width;
+                        accessible-role: button;
+                        accessible-label: "Compact now";
+                        accessible-action-default => {
+                            if ChatUi.usage-known {
+                                ChatUi.usage-action("compactSession");
+                                pop.close();
+                            }
+                        }
+                        compact-ta := TouchArea {
+                            enabled: ChatUi.usage-known;
+                            mouse-cursor: pointer;
+                            clicked => {
+                                ChatUi.usage-action("compactSession");
+                                pop.close();
+                            }
+                        }
+                        compact-row := HorizontalLayout {
+                            spacing: 4px;
+                            Text {
+                                text: "Compact now";
+                                font-size: Theme.ui-sm;
+                                font-weight: Theme.weight-medium;
+                                color: !ChatUi.usage-known ? Theme.foreground-subtlest : compact-ta.has-hover ? Theme.link : Theme.foreground;
+                                vertical-alignment: center;
+                            }
+                            Icon {
+                                y: (parent.height - self.height) / 2;
+                                source: Icons.chevron-right;
+                                size: Theme.icon-xs;
+                                tint: !ChatUi.usage-known ? Theme.foreground-subtlest : compact-ta.has-hover ? Theme.link : Theme.foreground;
+                            }
+                        }
+                    }
+                }
+                VerticalLayout {
+                    spacing: 8px;
+                    HorizontalLayout {
+                        spacing: 8px;
+                        Text {
+                            text: "Current session";
+                            font-size: Theme.ui-sm;
+                            color: Theme.foreground;
+                            horizontal-stretch: 1;
+                        }
+                        Text {
+                            text: ChatUi.usage-known ? ChatUi.usage-text : "Not reported yet";
+                            font-size: Theme.ui-sm;
+                            color: Theme.foreground-subtle;
+                        }
+                        if ChatUi.usage-known: Text {
+                            text: round(root.ratio * 100) + "%";
+                            font-size: Theme.ui-sm;
+                            color: Theme.foreground;
+                        }
+                    }
+                    Rectangle {
+                        height: 4px;
+                        border-radius: 2px;
+                        background: Theme.secondary;
+                        Rectangle {
+                            x: 0;
+                            width: parent.width * root.ratio;
+                            height: parent.height;
+                            border-radius: 2px;
+                            background: root.ratio > 0.9 ? Theme.destructive : root.ratio > 0.7 ? Theme.warning-surface-foreground : Theme.link;
+                        }
+                    }
+                }
+                Rectangle {
+                    height: 22px;
+                    accessible-role: checkbox;
+                    accessible-label: "Auto-compact";
+                    accessible-checked: ChatUi.auto-compact;
+                    accessible-action-default => {
+                        ChatUi.usage-action("toggleAutoCompact");
+                    }
+                    auto-ta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => {
+                            ChatUi.usage-action("toggleAutoCompact");
+                        }
+                    }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        Text {
+                            text: "Auto-compact";
+                            font-size: Theme.ui-sm;
+                            color: Theme.foreground;
+                            horizontal-stretch: 1;
+                            vertical-alignment: center;
+                        }
+                        Text {
+                            text: "at 85%";
+                            font-size: Theme.ui-sm;
+                            color: Theme.foreground-subtle;
+                            vertical-alignment: center;
+                        }
+                        Rectangle {
+                            y: (parent.height - self.height) / 2;
+                            width: 30px;
+                            height: 18px;
+                            border-radius: 9px;
+                            background: ChatUi.auto-compact ? Theme.switch-on : Theme.secondary;
+                            border-width: ChatUi.auto-compact ? 0px : 1px;
+                            border-color: Theme.border-hover;
+                            Rectangle {
+                                x: ChatUi.auto-compact ? parent.width - self.width - 3px : 3px;
+                                y: 3px;
+                                width: 12px;
+                                height: 12px;
+                                border-radius: 6px;
+                                background: ChatUi.auto-compact ? Theme.on-accent : Theme.foreground-subtle;
+                                animate x { duration: 120ms; }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+

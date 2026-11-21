@@ -1,0 +1,297 @@
+import { Theme } from "../../theme/tokens.slint";
+import { ConfigUi } from "../globals.slint";
+import { PageHeader, Group, SettingRow, Switch, TextField, TextArea, Select, SearchField, UnsupportedNotice, StatusLine } from "../parts.slint";
+import { AgentDot, ConfigCopy } from "./types.slint";
+import { Pill, Dot, Hairline, DCard, CardHead, Th, Muted } from "./parts.slint";
+import { RowBg, GroupRow, EmptyBody } from "./list_row.slint";
+
+export component McpTable inherits DCard {
+    VerticalLayout {
+        CardHead {
+            title: "Servers";
+            sub: "stdio and http transports";
+        }
+        Hairline { }
+        VerticalLayout {
+            padding-top: 4px;
+            HorizontalLayout {
+                height: 30px;
+                padding-left: 16px;
+                padding-right: 16px;
+                Th { width: 190px; text: "SERVER"; }
+                Th { width: 90px; text: "TYPE"; }
+                Th { width: 130px; text: "STATUS"; }
+                Th { width: 80px; text: "TOOLS"; }
+                Th { horizontal-stretch: 1; text: "COMMAND / URL"; }
+                Th { width: 60px; text: "ON"; horizontal-alignment: right; }
+            }
+            Hairline { }
+        }
+        VerticalLayout {
+            padding-bottom: 8px;
+            if ConfigUi.rows.length == 0: EmptyBody { }
+            for r[i] in ConfigUi.rows: VerticalLayout {
+                if r.group != "" && (i == 0 || ConfigUi.rows[i - 1].group != r.group): GroupRow {
+                    text: r.group;
+                }
+                RowBg {
+                    index: i;
+                    height: 46px;
+                    selected: ConfigUi.editing && !ConfigUi.is-new && ConfigUi.edit-name == r.name;
+                    clickable: !r.builtin;
+                    clicked => {
+                        ConfigUi.edit(r.name);
+                    }
+                    HorizontalLayout {
+                        padding-left: 16px;
+                        padding-right: 16px;
+                        Text {
+                            width: 190px;
+                            text: r.name;
+                            font-size: 12px;
+                            color: r.enabled ? Theme.foreground : Theme.foreground-subtlest;
+                            vertical-alignment: center;
+                            overflow: elide;
+                        }
+                        Muted {
+                            width: 90px;
+                            text: r.detail;
+                        }
+                        HorizontalLayout {
+                            width: 130px;
+                            spacing: 6px;
+                            alignment: start;
+                            VerticalLayout {
+                                alignment: center;
+                                Dot {
+                                    tint: r.builtin ? Theme.accent-fg : r.enabled ? Theme.success : Theme.icon-subtlest;
+                                }
+                            }
+                            Text {
+                                text: r.builtin ? "Built-in" : r.enabled ? "Enabled" : "Disabled";
+                                font-size: 11px;
+                                color: r.builtin ? Theme.accent-fg : r.enabled ? Theme.success : Theme.icon-subtlest;
+                                vertical-alignment: center;
+                            }
+                        }
+                        Text {
+                            width: 80px;
+                            text: "—";
+                            font-size: 11px;
+                            color: Theme.icon-subtlest;
+                            vertical-alignment: center;
+                        }
+                        Text {
+                            horizontal-stretch: 1;
+                            text: r.summary;
+                            font-size: 11px;
+                            color: Theme.icon-subtlest;
+                            vertical-alignment: center;
+                            overflow: elide;
+                        }
+                        HorizontalLayout {
+                            width: 60px;
+                            alignment: end;
+                            if r.toggleable && !r.builtin: VerticalLayout {
+                                alignment: center;
+                                Switch {
+                                    label: @tr("Enable {0}", r.name);
+                                    checked: r.enabled;
+                                    enabled: ConfigUi.can-disable;
+                                    toggled(on) => {
+                                        ConfigUi.toggle(r.name, on);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+export component SubagentTable inherits DCard {
+    VerticalLayout {
+        CardHead {
+            title: "Definitions";
+            sub: "Available to the orchestrator";
+        }
+        Hairline { }
+        VerticalLayout {
+            padding-top: 4px;
+            HorizontalLayout {
+                height: 30px;
+                padding-left: 16px;
+                padding-right: 16px;
+                Th { width: 200px; text: "NAME"; }
+                Th { width: 150px; text: "MODEL"; }
+                Th { width: 190px; text: "TOOLS"; }
+                Th { width: 130px; text: "CONCURRENCY"; }
+                Th { horizontal-stretch: 1; text: "ENABLED"; horizontal-alignment: right; }
+            }
+            Hairline { }
+        }
+        VerticalLayout {
+            padding-bottom: 8px;
+            if ConfigUi.rows.length == 0: EmptyBody { }
+            for r[i] in ConfigUi.rows: RowBg {
+                index: i;
+                height: 56px;
+                selected: ConfigUi.editing && !ConfigUi.is-new && ConfigUi.edit-name == r.name;
+                clicked => {
+                    ConfigUi.edit(r.name);
+                }
+                HorizontalLayout {
+                    padding-left: 16px;
+                    padding-right: 16px;
+                    VerticalLayout {
+                        width: 200px;
+                        alignment: center;
+                        spacing: 3px;
+                        HorizontalLayout {
+                            spacing: 7px;
+                            alignment: start;
+                            VerticalLayout {
+                                alignment: center;
+                                Dot {
+                                    tint: AgentDot.color-of(ConfigUi.agent);
+                                }
+                            }
+                            Text {
+                                text: r.name;
+                                font-size: 12px;
+                                color: Theme.foreground;
+                                overflow: elide;
+                            }
+                        }
+                        Text {
+                            width: 186px;
+                            text: r.summary;
+                            font-size: 11px;
+                            color: Theme.icon-subtlest;
+                            overflow: elide;
+                        }
+                    }
+                    Text {
+                        width: 150px;
+                        text: r.detail != "" ? r.detail : "inherit";
+                        font-size: 12px;
+                        color: Theme.foreground-subtle;
+                        vertical-alignment: center;
+                        overflow: elide;
+                    }
+                    HorizontalLayout {
+                        width: 190px;
+                        padding-right: 14px;
+                        Muted {
+                            text: r.extra != "" ? r.extra : "all tools";
+                        }
+                    }
+                    Muted {
+                        width: 130px;
+                        text: "—";
+                    }
+                    HorizontalLayout {
+                        horizontal-stretch: 1;
+                        alignment: end;
+                        if r.toggleable: VerticalLayout {
+                            alignment: center;
+                            Switch {
+                                label: @tr("Enable {0}", r.name);
+                                checked: r.enabled;
+                                enabled: ConfigUi.can-disable;
+                                toggled(on) => {
+                                    ConfigUi.toggle(r.name, on);
+                                }
+                            }
+                        }
+                        if !r.toggleable: Muted {
+                            text: "always";
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+export component CommandTable inherits DCard {
+    VerticalLayout {
+        CardHead {
+            title: "Slash commands";
+            sub: "Built-in commands cannot be edited";
+        }
+        Hairline { }
+        VerticalLayout {
+            padding-top: 4px;
+            HorizontalLayout {
+                height: 30px;
+                padding-left: 16px;
+                padding-right: 16px;
+                Th { width: 170px; text: "COMMAND"; }
+                Th { width: 400px; text: "DESCRIPTION"; }
+                Th { width: 120px; text: "SOURCE"; }
+                Th { horizontal-stretch: 1; text: "ARGS"; horizontal-alignment: right; }
+            }
+            Hairline { }
+        }
+        VerticalLayout {
+            padding-bottom: 8px;
+            if ConfigUi.rows.length == 0: EmptyBody { }
+            for r[i] in ConfigUi.rows: RowBg {
+                index: i;
+                height: 46px;
+                selected: ConfigUi.editing && !ConfigUi.is-new && ConfigUi.edit-name == r.name;
+                clickable: !r.builtin;
+                clicked => {
+                    ConfigUi.edit(r.name);
+                }
+                HorizontalLayout {
+                    padding-left: 16px;
+                    padding-right: 16px;
+                    Text {
+                        width: 170px;
+                        text: "/" + r.name;
+                        font-size: 12px;
+                        color: Theme.accent-fg;
+                        vertical-alignment: center;
+                        overflow: elide;
+                    }
+                    HorizontalLayout {
+                        width: 400px;
+                        padding-right: 16px;
+                        Text {
+                            text: r.summary;
+                            font-size: 12px;
+                            color: Theme.foreground-subtle;
+                            vertical-alignment: center;
+                            overflow: elide;
+                        }
+                    }
+                    HorizontalLayout {
+                        width: 120px;
+                        alignment: start;
+                        VerticalLayout {
+                            alignment: center;
+                            Pill {
+                                small: true;
+                                text: r.builtin ? "built-in" : ConfigCopy.scope-name(r.scope);
+                                tint: r.builtin ? Theme.foreground-subtlest : ConfigCopy.scope-tint(r.scope);
+                            }
+                        }
+                    }
+                    Text {
+                        horizontal-stretch: 1;
+                        text: r.detail != "" ? r.detail : "—";
+                        font-size: 11px;
+                        color: Theme.icon-subtlest;
+                        vertical-alignment: center;
+                        horizontal-alignment: right;
+                        overflow: elide;
+                    }
+                }
+            }
+        }
+    }
+}

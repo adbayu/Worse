@@ -1,0 +1,283 @@
+// Settings state shared between the Slint pages and `src/settings` (spec phase-9-parity.md §6.3/§6.4).
+// Rust is the only writer of the models; pages call callbacks. Values of app settings are read through pure
+// callbacks keyed by the settings.json path ("general.showReasoning"); `rev` is passed so bindings re-evaluate when
+// Rust bumps it after a snapshot changes.
+import { SelectOption } from "parts.slint";
+import { NavEntry, DiffLine, ResRow, ResGroup, DocEntry, FormField, ShortcutRow, AgentCard, ProjectRow, ArchiveRow, SkillRow, AccountRow, AgyAccountRow, ProviderRow, ProviderPreset, VulnRow, RecallRow, GraphLabel, GraphHit } from "./settings_types.slint";
+export { NavEntry, DiffLine, ResRow, ResGroup, DocEntry, FormField, ShortcutRow, AgentCard, ProjectRow, ArchiveRow, SkillRow, AccountRow, AgyAccountRow, ProviderRow, ProviderPreset, VulnRow, RecallRow, GraphLabel, GraphHit }
+import { RecallUi, GraphUi, DecisionUi } from "./graph_globals.slint";
+export { RecallUi, GraphUi, DecisionUi }
+
+export global SettingsUi {
+    in-out property <string> page: "general";
+    in property <[NavEntry]> nav;
+    // Narrow (< 720px) shows either the nav list or one page.
+    in-out property <bool> narrow-nav: true;
+    in property <int> rev;
+    in property <string> data-dir;
+    in property <string> pending-data-dir;
+    in property <string> status;
+    in property <bool> status-error;
+    pure callback get-bool(string, int) -> bool;
+    pure callback get-int(string, int) -> int;
+    pure callback get-string(string, int) -> string;
+    callback set-bool(string, bool);
+    callback set-int(string, int);
+    callback set-string(string, string);
+    callback open-page(string);
+    callback relocate-data-dir(string);
+    callback cancel-relocation();
+    // Settings S1 "Reset all settings to defaults" (app preferences only).
+    callback reset-settings();
+}
+
+// Diff confirmation before every agent-config / document write (spec §1.3, §6.2).
+export global DiffUi {
+    in property <bool> open;
+    in property <string> title;
+    in property <string> path;
+    in property <[DiffLine]> lines;
+    in property <bool> no-op;
+    in property <string> error;
+    callback confirm();
+    callback cancel();
+}
+
+export global SkillsUi {
+    in property <[SkillRow]> rows;
+    in property <int> hidden;
+    in property <bool> loading;
+    in property <bool> catalog-available: true;
+    in property <string> status;
+    in property <bool> status-error;
+    in-out property <string> query;
+    // Worst grade over the installed skills plus its score, for the page header.
+    in property <string> health-grade;
+    in property <int> health-score;
+    in property <bool> checking;
+    // Copyable `reach eval` line, shown only while the opt-in live check is on (spec skill-health.md).
+    in property <string> live-command;
+    callback search(string);
+    callback refresh();
+    callback install(string);
+    callback update(string);
+    callback remove(string);
+    callback check-health();
+}
+
+export global ConfigUi {
+    in property <string> concept;
+    in property <string> agent: "claude-code";
+    in property <string> scope: "user";
+    in property <[ResRow]> rows;
+    in property <[ResGroup]> groups;
+    in-out property <int> limit: 10;
+    in property <int> total;
+    in property <int> hidden;
+    callback show-more();
+    in property <bool> loading;
+    in property <bool> supported: true;
+    in property <bool> scope-supported: true;
+    in property <bool> can-disable: true;
+    in property <string> reason;
+    in-out property <string> query;
+    // Editor
+    in property <bool> editing;
+    in property <bool> is-new;
+    in-out property <bool> raw-mode;
+    in property <string> edit-name;
+    in property <[FormField]> form;
+    in-out property <string> raw;
+    in property <string> raw-path;
+    in property <string> error;
+    callback select-agent(string);
+    callback select-scope(string);
+    callback search(string);
+    callback refresh();
+    callback edit(string);
+    callback create();
+    callback toggle(string, bool);
+    callback remove(string);
+    callback copy-to-harness(string);
+    callback import(string);
+    callback set-field(string, string);
+    callback save();
+    callback close-editor();
+    callback open-folder(string);
+}
+
+// Instructions (CLAUDE.md / AGENTS.md / GEMINI.md) and Memory (MEMORY.md).
+export global DocUi {
+    in property <string> kind: "instructions";
+    in property <string> agent: "claude-code";
+    in property <string> scope: "user";
+    in property <string> path;
+    in property <bool> exists;
+    in property <bool> supported: true;
+    in-out property <string> text;
+    in property <bool> dirty;
+    in property <int> bytes;
+    in property <int> limit: 102400;
+    in-out property <string> query;
+    in property <[string]> matches;
+    in property <string> error;
+    in property <string> saved;
+    // Design S7/S8: file name, line count, unsaved diff against the saved text, memory entries.
+    in property <string> file-name;
+    in property <int> line-count: 1;
+    in property <[DiffLine]> changes;
+    in property <int> added;
+    in property <int> removed;
+    in property <[DocEntry]> entries;
+    in property <int> entry-count;
+    in-out property <int> selected: -1;
+    in-out property <string> entry-text;
+    callback select-entry(int);
+    callback entry-edited(string);
+    callback new-entry();
+    callback delete-entry();
+    callback select-agent(string);
+    callback select-scope(string);
+    callback edited(string);
+    callback save();
+    callback revert();
+    callback refresh();
+    callback search(string);
+}
+
+export global ShortcutsUi {
+    in property <[ShortcutRow]> rows;
+    in-out property <string> query;
+    in property <string> key-query;
+    in property <bool> key-search;
+    in property <string> recording;
+    in property <string> recorded;
+    in property <string> error;
+    // Command that owns the recorded binding (steal confirmation), empty when none.
+    in property <string> conflict;
+    callback search(string);
+    callback start-key-search();
+    callback clear-key-search();
+    callback start-record(string);
+    callback cancel-record();
+    // text, control, alt, shift, meta -> true when consumed
+    callback key(string, bool, bool, bool, bool) -> bool;
+    callback steal();
+    callback clear(string);
+    callback reset-all();
+    // Global dispatch: returns the command id bound to the key, or "".
+    pure callback match(string, bool, bool, bool, bool) -> string;
+    // Display text of a binding string ("CmdOrCtrl+Shift+l" -> "Ctrl+Shift+L").
+    pure callback display(string) -> string;
+    // Same, split into one keycap per key (design S6: "Ctrl" "Shift" "O").
+    pure callback display-keys(string) -> [string];
+}
+
+export global AgentsUi {
+    in property <[ProviderPreset]> presets;
+    // id of the picked preset; "" = none picked yet, "custom" = any OpenAI-compatible endpoint
+    in-out property <string> provider-preset;
+    // the picked preset (set with provider-preset)
+    in property <ProviderPreset> provider-current;
+    // the endpoint field is shown (custom, or "edit" pressed on a preset)
+    in-out property <bool> provider-edit-url;
+    // models the endpoint listed (GET /models), filtered by the model field
+    in property <[string]> provider-models;
+    // "" idle, otherwise a status line for the model list ("Loading…", "41 models", an error)
+    in property <string> provider-models-note;
+    in property <bool> provider-models-loading;
+    callback pick-preset(string);
+    callback fetch-models();
+    callback filter-models(string);
+    callback open-key-page(string);
+    in property <[AgentCard]> cards;
+    in property <[ProviderRow]> providers;
+    in-out property <string> provider-label;
+    in-out property <string> provider-url;
+    in-out property <string> provider-model;
+    in-out property <string> provider-key;
+    // "" = OpenAI-compatible endpoint; "command-code" = API keys of the Command Code CLI (provider-key then
+    // holds one key per line, and the endpoint and model are not used).
+    in-out property <string> provider-kind;
+    in property <string> provider-error;
+    in-out property <bool> provider-open;
+    callback add-provider();
+    callback remove-provider(string);
+    in property <[AccountRow]> accounts;
+    in-out property <string> account-label;
+    in property <string> account-error;
+    callback add-account(string);
+    callback remove-account(string);
+    callback login-account(string);
+    callback refresh-accounts();
+    in property <[AgyAccountRow]> agy-accounts;
+    in property <bool> agy-available;
+    in property <bool> agy-live-signed-in;
+    in property <string> agy-pending;
+    in-out property <string> agy-label;
+    in property <string> agy-error;
+    callback agy-add(string);
+    callback agy-remove(string);
+    callback agy-sign-in(string);
+    callback agy-use(string);
+    callback agy-import();
+    callback agy-done();
+    callback agy-refresh();
+    callback agy-move-up(string);
+    callback set-enabled(string, bool);
+    callback set-default(string, string, string);
+    callback test(string);
+    callback refresh();
+    in-out property <string> open-agent;
+}
+
+export global ProjectsUi {
+    in property <[ProjectRow]> rows;
+    in-out property <string> query;
+    in-out property <bool> unused-only;
+    in property <int> unused-count;
+    // Sum of the sessions of every project (design S14 toolbar pill).
+    in property <int> total-sessions;
+    in property <int> selected;
+    in property <bool> available;
+    // Projects removed by the last remove (0 hides the undo bar).
+    in property <int> undo-count;
+    callback search(string);
+    callback set-unused-only(bool);
+    callback select(string, bool);
+    // Row remove button (design S14): selects only this project before the confirm dialog.
+    callback select-only(string);
+    callback remove-selected(bool);
+    callback undo-remove();
+}
+
+export global SecurityUi {
+    in property <bool> scanning;
+    in property <bool> installed;
+    in property <string> version;
+    in property <string> status;
+    in property <string> error;
+    in property <[VulnRow]> rows;
+    in property <int> total;
+    in property <int> critical;
+    in property <int> high;
+    in property <int> medium;
+    in property <int> low;
+    in property <string> scanned-at;
+    in property <string> gate;
+    callback download();
+    callback remove();
+    callback scan();
+    callback set-gate(string);
+}
+export global ArchiveUi {
+    in property <[ArchiveRow]> rows;
+    in-out property <string> query;
+    in property <bool> available;
+    in property <bool> has-more;
+    callback search(string);
+    callback unarchive(string);
+    callback delete(string);
+    callback more();
+}
+

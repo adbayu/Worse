@@ -1,0 +1,228 @@
+// Command center (ZCode CommandCenter, Mod+K): one search field over actions, sessions and workspace files.
+// Results, ranking and running come from src/chat (palette); this file is the view and the keyboard handling.
+import { ListView } from "std-widgets.slint";
+import { Theme } from "../theme/tokens.slint";
+import { Icon, Icons, Segmented, SegmentOption } from "../components/controls.slint";
+import { FileIcons } from "../components/icons.slint";
+import { ChatUi, PaletteRow } from "globals.slint";
+import { RowIcon, ResultList, HintKey } from "./palette_list.slint";
+export { RowIcon, ResultList, HintKey }
+
+export component CommandCenter inherits Rectangle {
+    callback close();
+    background: Theme.scrim;
+    property <string> query;
+    init => {
+        input.focus();
+        ChatUi.palette-query("", ChatUi.palette-scope);
+    }
+    function step(delta: int) {
+        ChatUi.palette-step(delta);
+    }
+    function set-scope(id: string) {
+        ChatUi.palette-scope = id;
+        ChatUi.palette-query(root.query, id);
+    }
+    TouchArea {
+        clicked => {
+            root.close();
+        }
+    }
+    panel := Rectangle {
+        width: min(672px, root.width - 32px);
+        height: body.preferred-height;
+        x: (root.width - self.width) / 2;
+        y: min(86px, root.height / 8);
+        background: Theme.card;
+        border-radius: Theme.radius-xl;
+        border-width: 1px;
+        border-color: Theme.border-hover;
+        drop-shadow-blur: 40px;
+        drop-shadow-offset-y: 16px;
+        drop-shadow-color: Theme.shadow-lg-color;
+        clip: true;
+        accessible-role: AccessibleRole.groupbox;
+        accessible-label: @tr("Search");
+        TouchArea { }
+        body := VerticalLayout {
+            VerticalLayout {
+                padding-left: 16px;
+                padding-right: 12px;
+                padding-top: 8px;
+                padding-bottom: 10px;
+                spacing: 8px;
+                HorizontalLayout {
+                    height: 40px;
+                    spacing: 10px;
+                    Icon {
+                        y: (parent.height - self.height) / 2;
+                        source: Icons.search;
+                        size: 15px;
+                        tint: Theme.icon-subtle;
+                    }
+                    Rectangle {
+                        horizontal-stretch: 1;
+                        FocusScope {
+                            capture-key-pressed(event) => {
+                                if event.text == Key.Escape {
+                                    root.close();
+                                    return accept;
+                                }
+                                if event.text == Key.DownArrow {
+                                    root.step(1);
+                                    return accept;
+                                }
+                                if event.text == Key.UpArrow {
+                                    root.step(-1);
+                                    return accept;
+                                }
+                                if event.text == Key.Return {
+                                    ChatUi.palette-run(ChatUi.palette-index);
+                                    return accept;
+                                }
+                                if event.text == Key.Tab {
+                                    root.set-scope(ChatUi.palette-scope == "all" ? "actions" : ChatUi.palette-scope == "actions" ? "sessions" : ChatUi.palette-scope == "sessions" ? "files" : "all");
+                                    return accept;
+                                }
+                                reject
+                            }
+                            input := TextInput {
+                                text <=> root.query;
+                                single-line: true;
+                                vertical-alignment: center;
+                                font-size: 14px;
+                                color: Theme.foreground;
+                                selection-background-color: Theme.selected;
+                                accessible-label: @tr("Search");
+                                edited => {
+                                    ChatUi.palette-query(self.text, ChatUi.palette-scope);
+                                }
+                            }
+                        }
+                        if root.query == "": Text {
+                            x: 0;
+                            width: parent.width;
+                            height: parent.height;
+                            vertical-alignment: center;
+                            text: @tr("Type a command or search…");
+                            font-size: 14px;
+                            color: Theme.foreground-subtlest;
+                            accessible-role: none;
+                        }
+                    }
+                    Rectangle {
+                        y: (parent.height - self.height) / 2;
+                        width: esc.preferred-width + 14px;
+                        height: 20px;
+                        border-radius: Theme.radius-sm;
+                        background: xta.has-hover ? Theme.surface-hover : Theme.raised;
+                        border-width: 1px;
+                        border-color: Theme.border-hover;
+                        accessible-role: button;
+                        accessible-label: @tr("Close");
+                        accessible-action-default => {
+                            root.close();
+                        }
+                        esc := Text {
+                            text: "esc";
+                            font-size: 10px;
+                            color: Theme.muted;
+                            accessible-role: none;
+                        }
+                        xta := TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => {
+                                root.close();
+                            }
+                        }
+                    }
+                }
+                HorizontalLayout {
+                    alignment: start;
+                    spacing: 2px;
+                    height: 28px;
+                    for s in ["all", "actions", "sessions", "files"]: Rectangle {
+                        width: st.preferred-width + 20px;
+                        border-radius: Theme.radius-md;
+                        background: ChatUi.palette-scope == s ? Theme.raised : (sta.has-hover ? Theme.hover : transparent);
+                        border-width: ChatUi.palette-scope == s ? 1px : 0px;
+                        border-color: Theme.border-hover;
+                        accessible-role: tab;
+                        accessible-label: ChatUi.scope-label(s);
+                        accessible-item-selected: ChatUi.palette-scope == s;
+                        accessible-action-default => {
+                            root.set-scope(s);
+                        }
+                        st := Text {
+                            text: ChatUi.scope-label(s);
+                            font-size: 12px;
+                            font-weight: Theme.weight-medium;
+                            color: ChatUi.palette-scope == s ? Theme.foreground : Theme.muted;
+                            accessible-role: none;
+                        }
+                        sta := TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => {
+                                root.set-scope(s);
+                                input.focus();
+                            }
+                        }
+                    }
+                }
+            }
+            Rectangle {
+                height: 1px;
+                background: Theme.border;
+            }
+            VerticalLayout {
+                padding: 6px;
+                if ChatUi.palette-rows.length == 0: Text {
+                    height: 64px;
+                    text: @tr("No results");
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    font-size: 13px;
+                    color: Theme.muted;
+                }
+                if ChatUi.palette-rows.length > 0: ResultList {
+                    height: min(ChatUi.palette-rows.length * 36px, 400px);
+                    rows: ChatUi.palette-rows;
+                    current: ChatUi.palette-index;
+                    list-label: @tr("Results");
+                    run(i) => {
+                        ChatUi.palette-run(i);
+                    }
+                }
+            }
+            Rectangle {
+                height: 1px;
+                background: Theme.border;
+            }
+            HorizontalLayout {
+                height: 34px;
+                padding-left: 14px;
+                padding-right: 14px;
+                spacing: 16px;
+                HintKey {
+                    label: @tr("Close");
+                    key: "Esc";
+                }
+                HintKey {
+                    label: @tr("Navigate");
+                    key: "↑↓";
+                }
+                HintKey {
+                    label: @tr("Open");
+                    key: "Enter";
+                }
+                Rectangle {
+                    horizontal-stretch: 1;
+                }
+                HintKey {
+                    label: @tr("Change type");
+                    key: "Tab";
+                }
+            }
+        }
+    }
+}

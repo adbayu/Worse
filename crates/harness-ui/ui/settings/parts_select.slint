@@ -1,0 +1,188 @@
+import { ScrollView } from "std-widgets.slint";
+import { Theme } from "../theme/tokens.slint";
+import { Icon, Icons, Button, IconButton, Divider, Card, MenuShell, MenuItem, Dialog, SegmentOption } from "../components/controls.slint";
+
+export struct SelectOption {
+    id: string,
+    label: string,
+}
+
+// Coloured dot (design ELLIPSE "dot" 8x8, e.g. agent colour).
+export component Dot inherits Rectangle {
+    in property <color> tint: Theme.accent-fg;
+    in property <length> size: 8px;
+    width: root.size;
+    height: root.size;
+    border-radius: root.size / 2;
+    background: root.tint;
+    accessible-role: none;
+}
+
+// Select (ZCode Select: input-style trigger + menu). The menu is a PopupWindow; Increment / Decrement on the
+// trigger also cycle the options (keyboard and automation).
+export component Select inherits Rectangle {
+    in property <[SelectOption]> options;
+    in property <string> current;
+    in property <string> label;
+    in property <string> placeholder;
+    in property <bool> enabled: true;
+    // Visible text of the current option (Slint functions cannot loop over `options`, so the caller passes it).
+    in property <string> current-label;
+    // When non-empty the menu starts with a reset row ("Agent default") that selects "".
+    in property <string> reset-label;
+    // Muted hint shown in the menu when `options` is empty.
+    in property <string> empty-text;
+    // Design "select · X": optional 8px coloured dot before the text (agent colour).
+    in property <bool> has-dot: false;
+    in property <color> dot: Theme.accent-fg;
+    // true = natural width (design: the trigger hugs its text) instead of filling the row's control column.
+    in property <bool> fit: false;
+    callback select(string);
+    height: 30px;
+    min-width: root.fit ? trig.preferred-width : 108px;
+    preferred-width: trig.preferred-width;
+    max-width: root.fit ? trig.preferred-width : 100000px;
+    horizontal-stretch: root.fit ? 0 : 1;
+    border-radius: Theme.radius-md;
+    background: Theme.input;
+    border-width: 1px;
+    border-color: ta.has-hover && root.enabled ? Theme.border-hover : Theme.border;
+    opacity: root.enabled ? 1 : 0.6;
+    animate border-color { duration: Theme.dur-hover; }
+    accessible-role: combobox;
+    accessible-label: root.label;
+    accessible-value: lbl.text;
+    accessible-enabled: root.enabled;
+    accessible-action-default => {
+        if root.enabled {
+            popup.show();
+        }
+    }
+    accessible-action-expand => {
+        if root.enabled {
+            popup.show();
+        }
+    }
+    // Design trigger: pad [6,10], gap 8, [dot] text 12 #EDEEF0, caret "▾" 11 #8A909A.
+    trig := HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 10px;
+        spacing: 8px;
+        if root.has-dot: VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 8px;
+                height: 8px;
+                border-radius: 4px;
+                background: root.dot;
+            }
+        }
+        lbl := Text {
+            horizontal-stretch: 1;
+            text: root.current-label != "" ? root.current-label : root.placeholder;
+            color: root.current-label == "" ? Theme.icon-subtlest : Theme.foreground;
+            font-size: Theme.ui-sm;
+            vertical-alignment: center;
+            overflow: elide;
+            accessible-role: none;
+        }
+        Text {
+            text: "▾"; font-family: "Segoe UI Symbol";
+            font-size: Theme.ui-font-size - 3px;
+            color: ta.has-hover && root.enabled ? Theme.foreground-subtle : Theme.muted;
+            vertical-alignment: center;
+            accessible-role: none;
+        }
+    }
+    ta := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        clicked => {
+            popup.show();
+        }
+    }
+    popup := PopupWindow {
+        x: 0;
+        y: root.height + 4px;
+        width: max(root.width, 180px);
+        MenuShell {
+            if root.reset-label != "": MenuItem {
+                text: root.reset-label;
+                checked: root.current == "";
+                clicked => {
+                    root.select("");
+                    popup.close();
+                }
+            }
+            if root.reset-label != "" && root.options.length > 0: Divider { }
+            for o in root.options: MenuItem {
+                text: o.label;
+                label: o.label;
+                checked: o.id == root.current;
+                clicked => {
+                    root.select(o.id);
+                    popup.close();
+                }
+            }
+            if root.options.length == 0 && root.empty-text != "": HorizontalLayout {
+                padding: 8px;
+                Text {
+                    text: root.empty-text;
+                    font-size: Theme.ui-sm;
+                    color: Theme.foreground-subtle;
+                    wrap: word-wrap;
+                }
+            }
+        }
+    }
+}
+
+// Segmented control at design size (pad 3 gap 2, segments pad [4,10] 12px, active fill #1C1F24 text #EDEEF0,
+// inactive text #8A909A). Same API as controls.slint `Segmented` (options / current / select).
+export component SegmentedControl inherits Rectangle {
+    in property <[SegmentOption]> options;
+    in property <string> current;
+    in property <string> label;
+    callback select(string);
+    height: 31px;
+    preferred-width: sg.preferred-width;
+    min-width: self.preferred-width;
+    max-width: self.preferred-width;
+    horizontal-stretch: 0;
+    border-radius: Theme.radius-md;
+    background: Theme.surface;
+    border-width: 1px;
+    border-color: Theme.border;
+    accessible-role: AccessibleRole.groupbox;
+    accessible-label: root.label;
+    sg := HorizontalLayout {
+        padding: 3px;
+        spacing: 2px;
+        for o in root.options: Rectangle {
+            width: st.preferred-width + 20px;
+            border-radius: Theme.radius-sm;
+            background: o.id == root.current ? Theme.raised : (sta.has-hover ? Theme.hover : transparent);
+            animate background { duration: Theme.dur-hover; }
+            accessible-role: button;
+            accessible-label: o.label;
+            accessible-checked: o.id == root.current;
+            accessible-action-default => {
+                root.select(o.id);
+            }
+            st := Text {
+                text: o.label;
+                font-size: Theme.ui-sm;
+                color: o.id == root.current ? Theme.foreground : Theme.muted;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                accessible-role: none;
+            }
+            sta := TouchArea {
+                mouse-cursor: pointer;
+                clicked => {
+                    root.select(o.id);
+                }
+            }
+        }
+    }
+}

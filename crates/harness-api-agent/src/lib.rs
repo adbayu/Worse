@@ -6,6 +6,12 @@
 //! The API key is only ever put into the `Authorization` header; it is never logged or echoed.
 
 mod background;
+mod code_mode;
+mod code_mode_engine;
+mod code_mode_script;
+#[cfg(test)]
+mod code_mode_tests;
+mod code_mode_types;
 mod compress;
 mod compress_tools;
 mod factcheck;
@@ -15,6 +21,7 @@ mod llm;
 mod mcp;
 mod papers;
 mod project_docs;
+mod prompt_source;
 mod search;
 mod session;
 mod tools;
@@ -32,6 +39,12 @@ use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 
 use crate::session::Session;
+
+mod handlers;
+mod server;
+
+pub use server::run;
+use server::text_param;
 
 /// Provider settings from the environment.
 pub(crate) struct Provider {
@@ -121,6 +134,7 @@ pub(crate) type Reply = Result<Value, Value>;
 /// The ACP side: stdout writer, client requests in flight, sessions.
 pub(crate) struct Agent {
     pub provider: Provider,
+    pub prompts: Box<dyn prompt_source::PromptSource>,
     pub http: reqwest::Client,
     out: mpsc::UnboundedSender<String>,
     pending: Mutex<HashMap<u64, oneshot::Sender<Value>>>,
@@ -142,90 +156,6 @@ pub(crate) struct Agent {
     system_probe: tokio::sync::Mutex<()>,
     /// Whether the endpoint is a Hermes gateway: 0 = not asked yet, 1 = no, 2 = yes.
     pub(crate) gateway_mode: std::sync::atomic::AtomicU8,
-}
-
-/// Runs the agent on stdio until stdin closes. Entry point of the `harness-api-agent` binary and of
-/// `harness-slint --api-agent` (phase-9-parity.md §9.9).
-#[must_use]
-pub fn run() -> std::process::ExitCode {
-    let runtime = match tokio::runtime::Builder::new_multi_thread()
-        .worker_threads(2)
-        .enable_all()
-        .build()
-    {
-        Ok(runtime) => runtime,
-        Err(error) => {
-            eprintln!("harness-api-agent: runtime: {error}");
-            return std::process::ExitCode::FAILURE;
-        }
-    };
-    runtime.block_on(serve())
-}
-
-async fn serve() -> std::process::ExitCode {
-    // reqwest 使用 rustls-no-provider：进程内先装 ring 作为默认加密实现，否则 HTTPS 请求会失败。
-    let _ = rustls::crypto::ring::default_provider().install_default();
-    let (out, mut out_rx) = mpsc::unbounded_channel::<String>();
-    let writer = tokio::spawn(async move {
-        let mut stdout = tokio::io::stdout();
-        while let Some(line) = out_rx.recv().await {
-            if stdout.write_all(line.as_bytes()).await.is_err()
-                || stdout.write_all(b"\n").await.is_err()
-                || stdout.flush().await.is_err()
-            {
-                break;
-            }
-        }
-    });
-    let http = match reqwest::Client::builder()
-        .connect_timeout(std::time::Duration::from_secs(30))
-        .user_agent(concat!("harness-api-agent/", env!("CARGO_PKG_VERSION")))
-        .build()
-    {
-        Ok(client) => client,
-        Err(error) => {
-            eprintln!("harness-api-agent: http client: {error}");
-            return std::process::ExitCode::from(2);
-        }
-    };
-    let agent = Arc::new_cyclic(|me| Agent {
-        provider: Provider::from_env(),
-        http,
-        out,
-        pending: Mutex::new(HashMap::new()),
-        next_id: Mutex::new(0),
-        sessions: Mutex::new(HashMap::new()),
-        cancels: Mutex::new(HashMap::new()),
-        me: me.clone(),
-        jobs: background::Jobs::default(),
-        async_tasks: AtomicBool::new(false),
-        echo_reasoning: AtomicBool::new(true),
-        cache_control: AtomicBool::new(true),
-        vision: AtomicBool::new(true),
-        system_mode: std::sync::atomic::AtomicU8::new(0),
-        system_probe: tokio::sync::Mutex::new(()),
-        gateway_mode: std::sync::atomic::AtomicU8::new(0),
-    });
-    let mut lines = BufReader::new(tokio::io::stdin()).lines();
-    while let Ok(Some(line)) = lines.next_line().await {
-        let Ok(message) = serde_json::from_str::<Value>(&line) else {
-            continue;
-        };
-        agent.dispatch(&message);
-    }
-    // stdin closed: the hub is shutting us down. Stop every turn (kills running commands).
-    agent.cancel_all();
-    drop(agent);
-    let _ = writer.await;
-    std::process::ExitCode::SUCCESS
-}
-
-fn text_param(params: &Value, key: &str) -> String {
-    params
-        .get(key)
-        .and_then(Value::as_str)
-        .unwrap_or_default()
-        .to_owned()
 }
 
 impl Agent {
@@ -399,174 +329,5 @@ impl Agent {
 
     fn session(&self, id: &str) -> Option<Arc<tokio::sync::Mutex<Session>>> {
         self.sessions.lock().ok()?.get(id).cloned()
-    }
-
-    async fn handle(&self, method: &str, params: &Value) -> Reply {
-        match method {
-            "initialize" => {
-                self.note_client(params);
-                Ok(self.initialize_result())
-            }
-            "_session/async_task/stop" => {
-                Ok(json!({"stopped": self.jobs.stop(&text_param(params, "asyncTaskId"))}))
-            }
-            "session/new" => Ok(self.new_session(params).await),
-            "session/load" => self.load_session(params).await,
-            "session/prompt" => self.prompt(params).await,
-            "session/set_mode" => self.set_mode(params).await,
-            "session/set_model" => {
-                let model = text_param(params, "modelId");
-                if model == self.provider.model {
-                    Ok(json!({}))
-                } else {
-                    Err(json!({"code": -32602, "message": format!("unknown model {model}")}))
-                }
-            }
-            _ => Err(json!({"code": -32601, "message": format!("unknown method {method}")})),
-        }
-    }
-
-    fn initialize_result(&self) -> Value {
-        json!({
-                "protocolVersion": 1,
-                "agentCapabilities": {
-                    "loadSession": true,
-                    "promptCapabilities": {"image": true, "audio": false, "embeddedContext": true},
-                    "mcpCapabilities": {"http": false, "sse": false}
-                },
-                "authMethods": [],
-                "agentInfo": {"name": "harness-api-agent", "title": self.provider.label, "version": env!("CARGO_PKG_VERSION")}
-        })
-    }
-
-    fn advertisement(&self, mode: &str) -> Value {
-        json!({
-            "modes": {
-                "currentModeId": mode,
-                "availableModes": [
-                    {"id": "default", "name": "Ask", "description": "Ask before every file change and command"},
-                    {"id": "acceptEdits", "name": "Accept edits", "description": "Edit files in the project without asking; commands still ask"},
-                    {"id": "readOnly", "name": "Read only", "description": "Read and search only; no changes, no commands"}
-                ]
-            },
-            "models": {
-                "currentModelId": self.provider.model,
-                "availableModels": [{"modelId": self.provider.model, "name": self.provider.model}]
-            }
-        })
-    }
-
-    async fn new_session(&self, params: &Value) -> Value {
-        let id = format!("api-{}", uuid::Uuid::new_v4().simple());
-        let session = Session::new(
-            text_param(params, "cwd"),
-            params
-                .get("mcpServers")
-                .and_then(Value::as_array)
-                .cloned()
-                .unwrap_or_default(),
-        );
-        let mut result = self.advertisement(&session.mode);
-        if hermes::is_gateway(self).await {
-            // A gateway decides approvals by its own rules: Harness's modes do not apply.
-            result["modes"] = json!({"currentModeId": "default", "availableModes": []});
-        }
-        session
-            .persist(self.provider.state_dir.as_deref(), &id)
-            .await;
-        if let Ok(mut sessions) = self.sessions.lock() {
-            sessions.insert(id.clone(), Arc::new(tokio::sync::Mutex::new(session)));
-        }
-        result["sessionId"] = json!(id);
-        result
-    }
-
-    async fn load_session(&self, params: &Value) -> Reply {
-        let id = text_param(params, "sessionId");
-        let mcp = params
-            .get("mcpServers")
-            .and_then(Value::as_array)
-            .cloned()
-            .unwrap_or_default();
-        let loaded = if let Some(existing) = self.session(&id) {
-            let mut s = existing.lock().await;
-            s.set_mcp(mcp);
-            (s.transcript(), s.mode.clone())
-        } else {
-            let Some(session) =
-                Session::restore(self.provider.state_dir.as_deref(), &id, mcp).await
-            else {
-                return Err(json!({"code": -32002, "message": format!("session {id} not found")}));
-            };
-            let out = (session.transcript(), session.mode.clone());
-            if let Ok(mut sessions) = self.sessions.lock() {
-                sessions.insert(id.clone(), Arc::new(tokio::sync::Mutex::new(session)));
-            }
-            out
-        };
-        let (transcript, mode) = loaded;
-        let gateway = hermes::is_gateway(self).await;
-        // ACP: replay the conversation as updates before answering.
-        for (user, text) in transcript {
-            let kind = if user {
-                "user_message_chunk"
-            } else {
-                "agent_message_chunk"
-            };
-            self.update(
-                &id,
-                &json!({"sessionUpdate": kind, "content": {"type": "text", "text": text}}),
-            );
-        }
-        let mut result = self.advertisement(&mode);
-        if gateway {
-            result["modes"] = json!({"currentModeId": "default", "availableModes": []});
-        }
-        Ok(result)
-    }
-
-    async fn set_mode(&self, params: &Value) -> Reply {
-        let id = text_param(params, "sessionId");
-        let mode = text_param(params, "modeId");
-        if !matches!(mode.as_str(), "default" | "acceptEdits" | "readOnly") {
-            return Err(json!({"code": -32602, "message": format!("invalid mode {mode}")}));
-        }
-        let Some(session) = self.session(&id) else {
-            return Err(json!({"code": -32002, "message": format!("session {id} not found")}));
-        };
-        {
-            let mut s = session.lock().await;
-            s.mode.clone_from(&mode);
-            s.persist(self.provider.state_dir.as_deref(), &id).await;
-        }
-        self.update(
-            &id,
-            &json!({"sessionUpdate": "current_mode_update", "currentModeId": mode}),
-        );
-        Ok(json!({}))
-    }
-
-    async fn prompt(&self, params: &Value) -> Reply {
-        let id = text_param(params, "sessionId");
-        let Some(session) = self.session(&id) else {
-            return Err(json!({"code": -32002, "message": format!("session {id} not found")}));
-        };
-        let user = session::prompt_content(params.get("prompt"));
-        let token = CancellationToken::new();
-        if let Ok(mut map) = self.cancels.lock() {
-            map.insert(id.clone(), token.clone());
-        }
-        let mut s = session.lock().await;
-        let result = if hermes::is_gateway(self).await {
-            hermes::run_turn(self, &id, &mut s, user, &token).await
-        } else {
-            session::run_turn(self, &id, &mut s, user, &token).await
-        };
-        s.persist(self.provider.state_dir.as_deref(), &id).await;
-        drop(s);
-        if let Ok(mut map) = self.cancels.lock() {
-            map.remove(&id);
-        }
-        result
     }
 }

@@ -1,0 +1,109 @@
+import { Theme } from "../theme/tokens.slint";
+import { Icon, Icons } from "../components/controls.slint";
+import { ProjectsUi, ArchiveUi } from "globals.slint";
+import { PageHeader, SearchField, UnsupportedNotice, SetButton, Pill, Dot, CapsLabel } from "parts.slint";
+
+// Card head (design "head": 44px, pad 16, title 13 #EDEEF0 + sub 11 #6B717C, gap 2).
+export component TableHead inherits HorizontalLayout {
+    in property <string> title;
+    in property <string> sub;
+    height: 44px;
+    padding-left: 16px;
+    padding-right: 16px;
+    VerticalLayout {
+        alignment: center;
+        spacing: 2px;
+        Text {
+            text: root.title;
+            font-size: 13px;
+            font-weight: Theme.weight-semibold;
+            color: Theme.foreground;
+        }
+        Text {
+            text: root.sub;
+            font-size: 11px;
+            color: Theme.icon-subtlest;
+        }
+    }
+}
+
+export component Rule inherits Rectangle {
+    height: 1px;
+    background: Theme.border;
+    accessible-role: none;
+}
+
+// Undo bar (surface, radius 10, 16px side padding).
+export component ActionBar inherits Rectangle {
+    in property <string> text;
+    border-radius: Theme.radius-lg;
+    background: Theme.surface;
+    border-width: 1px;
+    border-color: Theme.border;
+    HorizontalLayout {
+        padding-left: 16px;
+        padding-right: 12px;
+        padding-top: 8px;
+        padding-bottom: 8px;
+        spacing: 12px;
+        Text {
+            text: root.text;
+            font-size: 12px;
+            color: Theme.foreground-subtle;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+            overflow: elide;
+        }
+        @children
+    }
+}
+
+// Small text link (design archive "Restore" accent / "Delete" red, 11px).
+export component LinkText inherits Text {
+    in property <color> tint: Theme.accent-fg;
+    callback clicked();
+    font-size: 11px;
+    color: lta.has-hover ? root.tint.brighter(0.2) : root.tint;
+    vertical-alignment: center;
+    accessible-role: button;
+    accessible-label: self.text;
+    accessible-action-default => {
+        root.clicked();
+    }
+    lta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+// Empty card body.
+export component EmptyBody inherits VerticalLayout {
+    in property <image> icon;
+    in property <string> title;
+    in property <string> hint;
+    padding: 32px;
+    spacing: 4px;
+    alignment: center;
+    HorizontalLayout {
+        alignment: center;
+        Icon {
+            source: root.icon;
+            size: 20px;
+            tint: Theme.icon-subtlest;
+        }
+    }
+    Text {
+        text: root.title;
+        font-size: 13px;
+        color: Theme.foreground-subtle;
+        horizontal-alignment: center;
+    }
+    Text {
+        text: root.hint;
+        font-size: 12px;
+        color: Theme.icon-subtlest;
+        horizontal-alignment: center;
+    }
+}

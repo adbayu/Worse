@@ -1,0 +1,204 @@
+import { Theme } from "../../theme/tokens.slint";
+import { ConfigUi, DocUi, ResRow, FormField, SettingsUi, RecallUi, RecallRow, GraphUi } from "../globals.slint";
+import { ConfigCopy, AgentDot } from "./types.slint";
+
+export component Pill inherits Rectangle {
+    in property <string> text;
+    in property <color> tint: Theme.accent-fg;
+    in property <bool> small: false;
+    height: root.small ? 16px : 18px;
+    preferred-width: t.preferred-width + (root.small ? 12px : 16px);
+    horizontal-stretch: 0;
+    border-radius: self.height / 2;
+    background: root.tint.with-alpha(0.12);
+    t := Text {
+        text: root.text;
+        font-size: root.small ? 10px : 11px;
+        color: root.tint;
+        vertical-alignment: center;
+        horizontal-alignment: center;
+    }
+}
+
+// Button (design: height 28, pad [0,12], radius 8, 12px; primary = #EDEEF0 on #0B0C0E,
+// secondary = raised fill + #2A2D33 border). `compact` = 26 tall, pad 11, radius 7 (editor bar).
+export component Btn inherits Rectangle {
+    in property <string> text;
+    in property <bool> primary: false;
+    in property <bool> enabled: true;
+    in property <bool> compact: false;
+    in property <string> label: root.text;
+    callback clicked;
+    height: root.compact ? 26px : 28px;
+    preferred-width: t.preferred-width + (root.compact ? 22px : 24px);
+    horizontal-stretch: 0;
+    border-radius: root.compact ? 7px : 8px;
+    background: root.primary ? (ta.has-hover && root.enabled ? Theme.primary-hover : Theme.primary) : (ta.has-hover && root.enabled ? Theme.border-hover : Theme.surface-hover);
+    border-width: root.primary ? 0px : 1px;
+    border-color: Theme.border-hover;
+    opacity: root.enabled ? 1 : 0.45;
+    animate background { duration: Theme.dur-hover; }
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-enabled: root.enabled;
+    accessible-action-default => {
+        if root.enabled {
+            root.clicked();
+        }
+    }
+    t := Text {
+        text: root.text;
+        font-size: 12px;
+        color: root.primary ? Theme.foreground-inverse : Theme.foreground;
+        vertical-alignment: center;
+        horizontal-alignment: center;
+    }
+    ta := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+export component Dot inherits Rectangle {
+    in property <color> tint;
+    width: 6px;
+    height: 6px;
+    border-radius: 3px;
+    background: root.tint;
+}
+
+export component Hairline inherits Rectangle {
+    height: 1px;
+    background: Theme.border;
+}
+
+// Card shell (design: fill #111215, 1px #24272D, radius 12).
+export component DCard inherits Rectangle {
+    background: Theme.card;
+    border-width: 1px;
+    border-color: Theme.border;
+    border-radius: 12px;
+    clip: true;
+}
+
+// Card header (design: 44 tall, pad [0,16], title 13 #EDEEF0 over subtitle 11 #6B717C, gap 2; right slot).
+export component CardHead inherits Rectangle {
+    in property <string> title;
+    in property <string> sub;
+    in property <color> title-color: Theme.foreground;
+    height: 44px;
+    HorizontalLayout {
+        padding-left: 16px;
+        padding-right: 16px;
+        spacing: 10px;
+        VerticalLayout {
+            alignment: center;
+            spacing: 2px;
+            horizontal-stretch: 1;
+            Text {
+                text: root.title;
+                font-size: 13px;
+                color: root.title-color;
+                overflow: elide;
+            }
+            if root.sub != "": Text {
+                text: root.sub;
+                font-size: 11px;
+                color: Theme.icon-subtlest;
+                overflow: elide;
+            }
+        }
+        HorizontalLayout {
+            alignment: end;
+            spacing: 8px;
+            horizontal-stretch: 0;
+            @children
+        }
+    }
+}
+
+// Table column header text (design: caps 10 #5D636D).
+export component Th inherits Text {
+    font-size: 10px;
+    color: Theme.caps-label;
+    letter-spacing: 0.4px;
+    vertical-alignment: center;
+    overflow: elide;
+}
+
+export component Muted inherits Text {
+    font-size: 11px;
+    color: Theme.foreground-subtlest;
+    vertical-alignment: center;
+    overflow: elide;
+}
+
+// ---- agent switcher ------------------------------------------------------------------------------------------
+
+// One agent segment (design: 28 tall, radius 6, pad [0,12,0,10], gap 7; active = raised + #2A2D33 border,
+// agent-colour dot, #EDEEF0 label; inactive = grey dot, #8A909A label; 12px).
+export component AgentChip inherits Rectangle {
+    in property <string> agent-id;
+    in property <string> text;
+    in property <bool> active;
+    in property <color> dot: AgentDot.color-of(root.agent-id);
+    callback picked;
+    height: 28px;
+    preferred-width: row.preferred-width;
+    horizontal-stretch: 0;
+    border-radius: 6px;
+    background: root.active ? Theme.surface-hover : (ta.has-hover ? Theme.hover : Theme.hover.with-alpha(0));
+    border-width: root.active ? 1px : 0px;
+    border-color: Theme.border-hover;
+    animate background { duration: Theme.dur-hover; }
+    accessible-role: radio-button;
+    accessible-label: root.text;
+    accessible-checked: root.active;
+    accessible-action-default => {
+        root.picked();
+    }
+    row := HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 12px;
+        spacing: 7px;
+        alignment: center;
+        VerticalLayout {
+            alignment: center;
+            Dot {
+                tint: root.active ? root.dot : Theme.icon-subtlest;
+            }
+        }
+        Text {
+            text: root.text;
+            font-size: 12px;
+            color: root.active ? Theme.foreground : Theme.foreground-subtlest;
+            vertical-alignment: center;
+            accessible-role: none;
+        }
+    }
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.picked();
+        }
+    }
+}
+
+// Segmented container (design: 34 tall, pad 3, gap 2, fill #16181C, 1px #24272D, radius 8).
+export component ChipBar inherits Rectangle {
+    height: 34px;
+    preferred-width: chips.preferred-width;
+    horizontal-stretch: 0;
+    border-radius: 8px;
+    background: Theme.surface;
+    border-width: 1px;
+    border-color: Theme.border;
+    chips := HorizontalLayout {
+        padding: 3px;
+        spacing: 2px;
+        @children
+    }
+}

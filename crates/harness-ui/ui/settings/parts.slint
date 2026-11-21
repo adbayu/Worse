@@ -1,0 +1,11 @@
+// Settings building blocks (round 9.1, spec phase-9-parity.md §6.1): Slint counterparts of ZCode's
+// `SettingsPageParts.tsx` (SettingsRow, SettingsGroupCard, SettingsBadge) and the form controls the settings pages
+// need. Every visual value comes from `Theme`; spacing follows ZCode (row px-4 py-3, control column 192px).
+// This file is a barrel; the parts live in parts_*.slint.
+
+export { SegmentOption } from "../components/controls.slint";
+export { PageHeader, CardHeader, Group, RowDivider, SettingRow } from "./parts_layout.slint";
+export { Switch, Toggle, TextField, SearchField, TextArea } from "./parts_inputs.slint";
+export { RangeSlider, Stepper } from "./parts_range.slint";
+export { SelectOption, Dot, Select, SegmentedControl } from "./parts_select.slint";
+export { Kbd, Badge, UnsupportedNotice, StatusLine, ConfirmDialog, Pill, SetButton, CapsLabel } from "./parts_misc.slint";

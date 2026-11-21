@@ -1,0 +1,55 @@
+import { OrchNode, OrchEdge, OrchLink, OrchAgent, OrchConn } from "./types.slint";
+import { Theme } from "../../theme/tokens.slint";
+
+export global OrchestraUi {
+    in property <[OrchNode]> nodes;
+    in property <[OrchEdge]> edges;
+    in property <[OrchLink]> links;
+    in property <[OrchAgent]> addable;
+    in property <string> error;
+    in property <string> selected;
+    in property <string> selected-name;
+    in property <int> selected-role;
+    in-out property <string> instructions;
+    in property <float> bx;
+    in property <float> by;
+    in property <float> bw;
+    in property <float> bh;
+    callback select(string);
+    callback add-node(string, float, float);
+    callback move-node(int, float, float);
+    callback drop-node();
+    callback set-role(int, int);
+    callback connect-at(int, float, float);
+    callback remove-edge(int);
+    callback clear-links(int);
+    callback remove-node(int);
+    callback clear();
+    callback edit-instructions(string);
+    // Every known agent (default-subagent select), all routes, and the pairs that can still be connected.
+    in property <[OrchAgent]> agents;
+    in property <[OrchConn]> connections;
+    in property <[OrchConn]> candidates;
+    callback connect(string, string);
+    pure callback agent-name(string) -> string;
+    pure callback agent-color(string) -> color;
+    pure callback line-count(string) -> int;
+    pure public function route-label(role: int) -> string {
+        if role == 0 { return "orchestrate"; }
+        if role == 2 { return "review"; }
+        if role == 3 { return "research"; }
+        return "delegate";
+    }
+    pure public function role-color(role: int) -> color {
+        if role == 0 { return Theme.accent-fg; }
+        if role == 2 { return Theme.success; }
+        if role == 3 { return Theme.violet; }
+        return Theme.info;
+    }
+    pure public function role-label(role: int) -> string {
+        if role == 0 { return "Orchestrator"; }
+        if role == 2 { return "QC / Reviewer"; }
+        if role == 3 { return "Planner / Researcher"; }
+        return "Subagent";
+    }
+}
