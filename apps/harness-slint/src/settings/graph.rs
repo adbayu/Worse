@@ -101,9 +101,15 @@ pub fn install(window: &AppWindow, home: &Path, workspace: &Path) {
     let c = ctx.clone();
     ui.on_build(move || {
         let workspace = c.root();
+        let mut steps: Vec<Step> = if !graphify::own_installed() && graphify::uv().is_some() {
+            Installer::Uv.steps()
+        } else {
+            Vec::new()
+        };
+        steps.push(Box::new(move || build_command(&workspace)));
         run(
             &c,
-            vec![Box::new(move || build_command(&workspace))],
+            steps,
             "The graph is up to date.",
             "graphify update failed",
         );
@@ -159,17 +165,27 @@ fn spawn(work: impl FnOnce() + Send + 'static) {
         .spawn(work);
 }
 
-/// `graphify update <workspace>`: Graphify's code-only pass.
+/// `graphify update <workspace>`: Graphify's code-only pass, run through `graphify::SHIM` in Graphify's own
+/// Python so one unreadable file cannot abort the build.
 fn build_command(workspace: &Path) -> Result<Command, String> {
     let program = graphify::cli().ok_or(
         "graphify was installed but is not found yet. Restart Harness, then press Build graph.",
     )?;
-    let mut command = Command::new(program);
+    let mut command = match graphify::python_of(&program) {
+        Some(python) => {
+            let mut command = Command::new(python);
+            command.args(["-I", "-c", graphify::SHIM]);
+            command
+        }
+        None => Command::new(program),
+    };
     command
         .arg("update")
         .arg(workspace)
         .current_dir(workspace)
-        .env("GRAPHIFY_NO_TIPS", "1");
+        .env("GRAPHIFY_NO_TIPS", "1")
+        .env("PYTHONIOENCODING", "utf-8")
+        .env("PYTHONUTF8", "1");
     Ok(command)
 }
 
@@ -297,7 +313,7 @@ pub(super) fn open_path(path: &Path) {
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
-    use super::{grouped, summary, Installer};
+    use super::{graphify, grouped, summary, Installer};
     use harness_agent_hub::graphify::Stats;
 
     #[test]
@@ -327,10 +343,10 @@ mod tests {
         let winget = Installer::WingetThenUv("winget".into());
         assert_eq!(
             winget.plan(),
-            "winget install astral-sh.uv, then uv tool install \"graphifyy[mcp]\""
+            "winget install astral-sh.uv, then uv tool install \"graphifyy[mcp]==0.9.87\""
         );
         assert_eq!(winget.steps().len(), 2);
-        assert_eq!(Installer::Uv.plan(), "uv tool install \"graphifyy[mcp]\"");
+        assert_eq!(Installer::Uv.plan(), "uv tool install \"graphifyy[mcp]==0.9.87\"");
         for installer in [
             Installer::Pipx("pipx".into()),
             Installer::Pip("python".into()),
@@ -338,7 +354,7 @@ mod tests {
             assert!(installer.plan().contains("graphifyy[mcp]"));
             let mut steps = installer.steps();
             let command = steps.remove(0)().expect("command");
-            assert!(command.get_args().any(|a| a == "graphifyy[mcp]"));
+            assert!(command.get_args().any(|a| a == graphify::PACKAGE));
         }
     }
 }

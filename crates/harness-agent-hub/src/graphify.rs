@@ -1,7 +1,7 @@
 //! Built-in support for Graphify (<https://github.com/Graphify-Labs/graphify>, Apache-2.0): a command-line
 //! tool that turns a project into a knowledge graph an agent can query instead of grepping.
 //!
-//! Graphify is not bundled: it is a Python package the user installs (`uv tool install "graphifyy[mcp]"`).
+//! Graphify is a Python package; Harness installs a pinned copy into `<HARNESS_HOME>/tools` (uv) and prefers it.
 //! Harness only uses what it finds:
 //!
 //! - `<project>/graphify-out/graph.json` exists: a fresh agent session is told so, and how to ask the graph;
@@ -20,7 +20,7 @@ use serde_json::{json, Value};
 /// Output directory Graphify writes into the project.
 pub const OUT_DIR: &str = "graphify-out";
 /// The install command shown to the user (the `mcp` extra brings `graphify-mcp`'s dependencies).
-pub const INSTALL_COMMAND: &str = "uv tool install \"graphifyy[mcp]\"";
+pub const INSTALL_COMMAND: &str = "uv tool install \"graphifyy[mcp]==0.9.87\"";
 /// Env overrides of the two programs (a custom location; tests use stand-ins). An override naming a missing
 /// file means "not installed".
 pub const ENV_CLI: &str = "HARNESS_GRAPHIFY";
@@ -85,10 +85,89 @@ fn tool_dirs() -> Vec<PathBuf> {
     dirs
 }
 
+/// Version Harness installs into its own tool directory, so every computer runs the same Graphify.
+pub const VERSION: &str = "0.9.87";
+/// Package spec of the Harness-owned install.
+pub const PACKAGE: &str = "graphifyy[mcp]==0.9.87";
+
+/// Harness-owned uv tool directory (`UV_TOOL_DIR`): `<HARNESS_HOME>/tools/uv`.
+#[must_use]
+pub fn own_tool_dir() -> Option<PathBuf> {
+    harness_config::harness_home().map(|h| h.join("tools").join("uv"))
+}
+
+/// Harness-owned launcher directory (`UV_TOOL_BIN_DIR`): `<HARNESS_HOME>/tools/bin`.
+#[must_use]
+pub fn own_bin_dir() -> Option<PathBuf> {
+    harness_config::harness_home().map(|h| h.join("tools").join("bin"))
+}
+
+fn own_program(program: &str) -> Option<PathBuf> {
+    let file = format!("{program}{}", std::env::consts::EXE_SUFFIX);
+    own_bin_dir()
+        .map(|dir| dir.join(file))
+        .filter(|path| path.is_file())
+}
+
+/// Whether Harness's own pinned Graphify is installed.
+#[must_use]
+pub fn own_installed() -> bool {
+    std::env::var_os(ENV_CLI).is_none() && own_program("graphify").is_some()
+}
+
+/// The Python interpreter of the environment `cli` runs in: the venv's `Scripts`/`bin` holds both, a plain
+/// `pip install` puts the launcher in `<python>/Scripts`.
+#[must_use]
+pub fn python_of(cli: &Path) -> Option<PathBuf> {
+    let file = format!("python{}", std::env::consts::EXE_SUFFIX);
+    if let Some(dir) = own_tool_dir() {
+        if own_program("graphify").as_deref() == Some(cli) {
+            let scripts = if cfg!(windows) { "Scripts" } else { "bin" };
+            let path = dir.join("graphifyy").join(scripts).join(&file);
+            if path.is_file() {
+                return Some(path);
+            }
+        }
+    }
+    let here = cli.parent()?;
+    [Some(here), here.parent()]
+        .into_iter()
+        .flatten()
+        .map(|dir| dir.join(&file))
+        .find(|path| path.is_file())
+}
+
+/// Runs Graphify's command line with fixes for its crashes on hostile inputs: an encrypted or broken
+/// `.docx`/`.xlsx` raised `RuntimeError` past the zip checks and aborted the whole build ("File … is
+/// encrypted, password required for extraction"); such files are now skipped.
+pub const SHIM: &str = r"import sys
+import graphify.detect as _d
+_caps = _d._zip_within_caps
+def _safe_caps(path):
+    try:
+        return _caps(path)
+    except Exception:
+        return False
+_d._zip_within_caps = _safe_caps
+_conv = _d.convert_office_file
+def _safe_conv(path, out_dir, root=None):
+    try:
+        return _conv(path, out_dir, root=root)
+    except Exception:
+        return None
+_d.convert_office_file = _safe_conv
+from graphify.__main__ import main
+sys.argv = ['graphify'] + sys.argv[1:]
+sys.exit(main())
+";
+
 fn find(env: &str, program: &str) -> Option<PathBuf> {
     if let Some(custom) = std::env::var_os(env).filter(|v| !v.is_empty()) {
         let path = PathBuf::from(custom);
         return path.is_file().then_some(path);
+    }
+    if let Some(own) = own_program(program) {
+        return Some(own);
     }
     if let Some(found) = crate::agents::resolve_program(program) {
         return Some(found);

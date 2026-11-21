@@ -6,7 +6,7 @@ pub(super) type Step = Box<dyn FnOnce() -> Result<Command, String> + Send>;
 /// What can install Graphify on this computer, best first.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum Installer {
-    /// `uv tool install "graphifyy[mcp]"`.
+    /// `uv tool install "graphifyy[mcp]==<pinned>"` into `<HARNESS_HOME>/tools`.
     Uv,
     /// `pipx install "graphifyy[mcp]"`.
     Pipx(PathBuf),
@@ -41,14 +41,14 @@ impl Installer {
     pub(super) fn plan(&self) -> String {
         match self {
             Self::Uv => graphify::INSTALL_COMMAND.to_owned(),
-            Self::Pipx(_) => "pipx install \"graphifyy[mcp]\"".to_owned(),
+            Self::Pipx(_) => format!("pipx install \"{}\"", graphify::PACKAGE),
             Self::WingetThenUv(_) => {
                 format!(
                     "winget install astral-sh.uv, then {}",
                     graphify::INSTALL_COMMAND
                 )
             }
-            Self::Pip(_) => "python -m pip install --user \"graphifyy[mcp]\"".to_owned(),
+            Self::Pip(_) => format!("python -m pip install --user \"{}\"", graphify::PACKAGE),
         }
     }
 
@@ -58,14 +58,20 @@ impl Installer {
                 "uv was installed but is not found yet. Restart Harness, then press Set up again.",
             )?;
             let mut command = Command::new(uv);
-            command.args(["tool", "install", "graphifyy[mcp]"]);
+            command.args(["tool", "install", "--force", graphify::PACKAGE]);
+            if let (Some(tools), Some(bin)) = (graphify::own_tool_dir(), graphify::own_bin_dir()) {
+                command
+                    .env("UV_TOOL_DIR", tools)
+                    .env("UV_TOOL_BIN_DIR", bin)
+                    .env("UV_NO_MODIFY_PATH", "1");
+            }
             Ok(command)
         }
         match self {
             Self::Uv => vec![Box::new(with_uv)],
             Self::Pipx(pipx) => vec![Box::new(move || {
                 let mut command = Command::new(pipx);
-                command.args(["install", "graphifyy[mcp]", "--force"]);
+                command.args(["install", graphify::PACKAGE, "--force"]);
                 Ok(command)
             })],
             Self::WingetThenUv(winget) => vec![
@@ -86,7 +92,7 @@ impl Installer {
             ],
             Self::Pip(python) => vec![Box::new(move || {
                 let mut command = Command::new(python);
-                command.args(["-m", "pip", "install", "--user", "graphifyy[mcp]"]);
+                command.args(["-m", "pip", "install", "--user", graphify::PACKAGE]);
                 Ok(command)
             })],
         }
