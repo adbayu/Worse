@@ -45,6 +45,8 @@ static TOOLS: OnceLock<PathBuf> = OnceLock::new();
 static INSTALLING: AtomicBool = AtomicBool::new(false);
 
 const RELEASE_URL: &str = "https://api.github.com/repos/cli/cli/releases/latest";
+const LATEST_PAGE: &str = "https://github.com/cli/cli/releases/latest";
+const DOWNLOAD_BASE: &str = "https://github.com/cli/cli/releases/download";
 const INSTALL_LIMIT: Duration = Duration::from_secs(600);
 
 pub(crate) fn set_home(home: &Path) {
@@ -131,6 +133,75 @@ async fn fetch(client: &reqwest::Client, url: &str) -> Result<Vec<u8>, String> {
         .map_err(|e| format!("download failed: {e}"))
 }
 
+/// Release tag from the redirect of the public "latest release" page (`…/releases/tag/v2.105.0`).
+async fn latest_tag() -> Result<String, String> {
+    let client = reqwest::Client::builder()
+        .user_agent("Harness")
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|e| format!("cannot start download: {e}"))?;
+    let response = client
+        .get(LATEST_PAGE)
+        .send()
+        .await
+        .map_err(|e| format!("release lookup failed: {e}"))?;
+    let location = response
+        .headers()
+        .get(reqwest::header::LOCATION)
+        .and_then(|v| v.to_str().ok())
+        .ok_or_else(|| format!("release lookup failed: HTTP {}", response.status()))?;
+    tag_of(location).ok_or_else(|| format!("release lookup failed: unexpected redirect {location}"))
+}
+
+fn tag_of(location: &str) -> Option<String> {
+    let tag = location.rsplit_once("/tag/")?.1.trim_end_matches('/');
+    (tag.starts_with('v') && tag.len() > 1 && !tag.contains('/')).then(|| tag.to_owned())
+}
+
+/// (version, archive name, archive URL, checksums URL) of the latest GitHub CLI release.
+async fn locate(client: &reqwest::Client) -> Result<(String, String, String, String), String> {
+    let suffix = asset_suffix()?;
+    // 修复：api.github.com 未登录时每个 IP 每小时只有 60 次请求，共享 IP（运营商 NAT）很快用完并返回 403，
+    // 首次安装 gh 因此失败。先用公开 release 页面的跳转拿到版本号，按固定命名拼出下载地址，失败时才查 API。
+    let page = match latest_tag().await {
+        Ok(tag) => {
+            let version = tag.trim_start_matches('v').to_owned();
+            let name = format!("gh_{version}{suffix}");
+            let url = format!("{DOWNLOAD_BASE}/{tag}/{name}");
+            let sums = format!("{DOWNLOAD_BASE}/{tag}/gh_{version}_checksums.txt");
+            return Ok((tag, name, url, sums));
+        }
+        Err(error) => error,
+    };
+    let release: serde_json::Value = match fetch(client, RELEASE_URL).await {
+        Ok(bytes) => {
+            serde_json::from_slice(&bytes).map_err(|e| format!("unexpected release data: {e}"))?
+        }
+        Err(api) => {
+            let hint = if api.contains("403") || api.contains("429") {
+                " (GitHub API rate limit for this network; try again in an hour)"
+            } else {
+                ""
+            };
+            return Err(format!("{page}; {api}{hint}"));
+        }
+    };
+    let version = release["tag_name"].as_str().unwrap_or_default().to_owned();
+    let assets = release["assets"].as_array().cloned().unwrap_or_default();
+    let pick = |test: &dyn Fn(&str) -> bool| {
+        assets.iter().find_map(|asset| {
+            let name = asset["name"].as_str()?;
+            let url = asset["browser_download_url"].as_str()?;
+            test(name).then(|| (name.to_owned(), url.to_owned()))
+        })
+    };
+    let (name, url) = pick(&|n: &str| n.starts_with("gh_") && n.ends_with(&suffix))
+        .ok_or_else(|| format!("GitHub CLI {version} has no {suffix} build"))?;
+    let (_, sums) = pick(&|n: &str| n.ends_with("_checksums.txt"))
+        .ok_or_else(|| format!("GitHub CLI {version} has no checksums file"))?;
+    Ok((version, name, url, sums))
+}
+
 fn sha256_hex(bytes: &[u8]) -> String {
     use sha2::Digest;
     use std::fmt::Write as _;
@@ -207,23 +278,7 @@ pub(crate) async fn install(progress: impl Fn(String)) -> Result<PathBuf, String
             .build()
             .map_err(|e| format!("cannot start download: {e}"))?;
         progress("Looking up the latest GitHub CLI release".to_owned());
-        let release: serde_json::Value =
-            serde_json::from_slice(&fetch(&client, RELEASE_URL).await?)
-                .map_err(|e| format!("unexpected release data: {e}"))?;
-        let version = release["tag_name"].as_str().unwrap_or_default().to_owned();
-        let assets = release["assets"].as_array().cloned().unwrap_or_default();
-        let pick = |test: &dyn Fn(&str) -> bool| {
-            assets.iter().find_map(|asset| {
-                let name = asset["name"].as_str()?;
-                let url = asset["browser_download_url"].as_str()?;
-                test(name).then(|| (name.to_owned(), url.to_owned()))
-            })
-        };
-        let suffix = asset_suffix()?;
-        let (name, url) = pick(&|n: &str| n.starts_with("gh_") && n.ends_with(&suffix))
-            .ok_or_else(|| format!("GitHub CLI {version} has no {suffix} build"))?;
-        let (_, sums_url) = pick(&|n: &str| n.ends_with("_checksums.txt"))
-            .ok_or_else(|| format!("GitHub CLI {version} has no checksums file"))?;
+        let (_version, name, url, sums_url) = locate(&client).await?;
         progress(format!("Downloading {name}"));
         let bytes = fetch(&client, &url).await?;
         let sums = String::from_utf8_lossy(&fetch(&client, &sums_url).await?).into_owned();
@@ -355,4 +410,19 @@ pub(crate) async fn git(cwd: &Path, args: &[&str]) -> Result<String, String> {
     run(Path::new("git"), &full, Some(cwd), None)
         .await?
         .into_result(&what)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::tag_of;
+
+    #[test]
+    fn tag_comes_from_the_latest_release_redirect() {
+        assert_eq!(
+            tag_of("https://github.com/cli/cli/releases/tag/v2.105.0").as_deref(),
+            Some("v2.105.0")
+        );
+        assert_eq!(tag_of("https://github.com/cli/cli/releases"), None);
+        assert_eq!(tag_of("https://github.com/cli/cli/releases/tag/"), None);
+    }
 }

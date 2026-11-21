@@ -6,6 +6,8 @@ use std::sync::Mutex;
 use std::time::Duration;
 
 const LATEST_URL: &str = "https://api.github.com/repos/rraahh133/Worse/releases/latest";
+const LATEST_PAGE: &str = "https://github.com/rraahh133/Worse/releases/latest";
+const DOWNLOAD_BASE: &str = "https://github.com/rraahh133/Worse/releases/download";
 const NO_UPDATE_ENV: &str = "HARNESS_NO_UPDATE";
 const FIRST_CHECK: Duration = Duration::from_secs(20);
 const CHECK_EVERY: Duration = Duration::from_secs(3 * 60 * 60);
@@ -121,21 +123,33 @@ async fn check(package: &Package, target: &Path) -> Result<bool, String> {
         .user_agent(concat!("harness/", env!("CARGO_PKG_VERSION")))
         .build()
         .map_err(|e| format!("http client: {e}"))?;
-    let release: serde_json::Value = client
-        .get(LATEST_URL)
-        .header("Accept", "application/vnd.github+json")
-        .send()
-        .await
-        .and_then(reqwest::Response::error_for_status)
-        .map_err(|e| format!("latest release: {e}"))?
-        .json()
-        .await
-        .map_err(|e| format!("latest release: {e}"))?;
-    let tag = release
-        .get("tag_name")
-        .and_then(serde_json::Value::as_str)
-        .unwrap_or_default()
-        .to_owned();
+    // 修复：api.github.com 未登录时每个 IP 每小时只有 60 次，共享 IP 上常返回 403，更新永远检查不到。
+    // 先从公开 release 页面的跳转拿版本号，下载地址按固定命名拼出；跳转失败才查 API。
+    let (tag, url) = match latest_tag().await {
+        Ok(tag) => {
+            let url = format!("{DOWNLOAD_BASE}/{tag}/{}", package.asset);
+            (tag, Some(url))
+        }
+        Err(page) => {
+            let release: serde_json::Value = client
+                .get(LATEST_URL)
+                .header("Accept", "application/vnd.github+json")
+                .send()
+                .await
+                .and_then(reqwest::Response::error_for_status)
+                .map_err(|e| format!("latest release: {page}; {e}"))?
+                .json()
+                .await
+                .map_err(|e| format!("latest release: {e}"))?;
+            let tag = release
+                .get("tag_name")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or_default()
+                .to_owned();
+            let url = asset_url(&release, package.asset).map(str::to_owned);
+            (tag, url)
+        }
+    };
     if !is_newer(&tag, env!("CARGO_PKG_VERSION")) {
         return Ok(false);
     }
@@ -143,14 +157,19 @@ async fn check(package: &Package, target: &Path) -> Result<bool, String> {
         remember(target);
         return Ok(true);
     }
-    let Some(url) = asset_url(&release, package.asset) else {
+    let Some(url) = url else {
         return Ok(false);
     };
-    let bytes = client
-        .get(url)
+    let response = client
+        .get(&url)
         .send()
         .await
-        .and_then(reqwest::Response::error_for_status)
+        .map_err(|e| format!("download: {e}"))?;
+    if response.status() == reqwest::StatusCode::NOT_FOUND {
+        return Ok(false);
+    }
+    let bytes = response
+        .error_for_status()
         .map_err(|e| format!("download: {e}"))?
         .bytes()
         .await
@@ -162,6 +181,33 @@ async fn check(package: &Package, target: &Path) -> Result<bool, String> {
         .await
         .map_err(|e| format!("install: {e}"))??;
     Ok(true)
+}
+
+/// Release tag from the redirect of the public "latest release" page (`…/releases/tag/v0.1.10`).
+async fn latest_tag() -> Result<String, String> {
+    let client = reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(15))
+        .timeout(Duration::from_secs(30))
+        .user_agent(concat!("harness/", env!("CARGO_PKG_VERSION")))
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|e| format!("http client: {e}"))?;
+    let response = client
+        .get(LATEST_PAGE)
+        .send()
+        .await
+        .map_err(|e| format!("latest release page: {e}"))?;
+    response
+        .headers()
+        .get(reqwest::header::LOCATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(tag_of)
+        .ok_or_else(|| format!("latest release page: HTTP {}", response.status()))
+}
+
+fn tag_of(location: &str) -> Option<String> {
+    let tag = location.rsplit_once("/tag/")?.1.trim_end_matches('/');
+    (parse_version(tag).is_some() && !tag.contains('/')).then(|| tag.to_owned())
 }
 
 fn asset_url<'a>(release: &'a serde_json::Value, name: &str) -> Option<&'a str> {
@@ -226,7 +272,20 @@ fn install(
 
 #[cfg(test)]
 mod tests {
-    use super::{asset_url, is_dev_build, is_newer};
+    use super::{asset_url, is_dev_build, is_newer, tag_of};
+
+    #[test]
+    fn tag_comes_from_the_latest_release_redirect() {
+        assert_eq!(
+            tag_of("https://github.com/rraahh133/Worse/releases/tag/v0.1.10").as_deref(),
+            Some("v0.1.10")
+        );
+        assert_eq!(tag_of("https://github.com/rraahh133/Worse/releases"), None);
+        assert_eq!(
+            tag_of("https://github.com/rraahh133/Worse/releases/tag/nightly"),
+            None
+        );
+    }
     use std::path::Path;
 
     #[test]
