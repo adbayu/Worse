@@ -3,9 +3,45 @@ import { Icon, IconButton, Icons, MenuItem, MenuShell } from "../components/cont
 import { AsciiArt, GlyphAnim } from "../components/ascii.slint";
 import { BoardUi } from "../board/board.slint";
 import { OrchLiveUi } from "../orchestra/live.slint";
+import { PrdUi } from "../orchestra/prd_page.slint";
+import { DockUi } from "./dock_ui.slint";
 import { GraphUi } from "../settings/globals.slint";
 import { ChatUi } from "./globals.slint";
 import { TitleDrag } from "./title_drag.slint";
+import { WorkLibraryUi } from "../work/work_page.slint";
+
+// PRD (PRD mode plan, milestone 1): opens the PRD page; accent while PRD mode is on for this chat.
+export component PrdButton inherits Rectangle {
+    height: 28px;
+    width: prd-t.preferred-width + 20px;
+    border-radius: Theme.radius-md;
+    background: PrdUi.open ? Theme.raised : (prta.has-hover ? Theme.hover : transparent);
+    accessible-role: button;
+    accessible-label: "PRD";
+    accessible-action-default => {
+        BoardUi.open = false;
+        OrchLiveUi.open = false;
+        WorkLibraryUi.open = false;
+        PrdUi.open = true;
+    }
+    prd-t := Text {
+        text: "PRD";
+        font-size: Theme.ui-caption;
+        color: DockUi.prd ? Theme.accent-fg : (prta.has-hover || PrdUi.open ? Theme.foreground : Theme.muted);
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        accessible-role: none;
+    }
+    prta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            BoardUi.open = false;
+            OrchLiveUi.open = false;
+            WorkLibraryUi.open = false;
+            PrdUi.open = true;
+        }
+    }
+}
 
 export component OrchButton inherits Rectangle {
     in property <bool> narrow;
@@ -22,6 +58,8 @@ export component OrchButton inherits Rectangle {
     accessible-description: self.live + " running";
     accessible-action-default => {
         BoardUi.open = false;
+        PrdUi.open = false;
+        WorkLibraryUi.open = false;
         OrchLiveUi.open = true;
     }
     orch-row := HorizontalLayout {
@@ -58,6 +96,8 @@ export component OrchButton inherits Rectangle {
         mouse-cursor: pointer;
         clicked => {
             BoardUi.open = false;
+            PrdUi.open = false;
+            WorkLibraryUi.open = false;
             OrchLiveUi.open = true;
         }
     }

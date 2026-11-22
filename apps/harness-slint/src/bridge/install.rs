@@ -1,8 +1,8 @@
 use super::{
-    archive_session, board, dock, fleet, history, install_open_folder, mpsc, shown_row, thumbs,
-    turns, with_state, AgentId, AppWindow, ChatItem, ChatView, Command, ComponentHandle, FileReq,
-    FilterModel, HashMap, Model, ModelRc, PanelNav, Path, Rc, Settings, SharedString, Theme,
-    UiState, VecModel, CHAT_VIEW, STATE,
+    archive_session, board, dock, fleet, history, install_open_folder, mpsc, prd, shown_row,
+    thumbs, turns, with_state, work, AgentId, AppWindow, ChatItem, ChatView, Command,
+    ComponentHandle, FileReq, FilterModel, HashMap, Model, ModelRc, PanelNav, Path, Rc, Settings,
+    SharedString, Theme, UiState, VecModel, CHAT_VIEW, STATE,
 };
 
 /// Workspace path, name and initial shown in the side pane, the project chip and the title bar.
@@ -98,6 +98,7 @@ pub fn install(
         board: board::BoardState::default(),
         history: history::History::default(),
         fleet_view: fleet::FleetView::default(),
+        work: work::WorkState::default(),
     };
     STATE.with(|cell| {
         if let Ok(mut guard) = cell.try_borrow_mut() {
@@ -111,6 +112,8 @@ pub fn install(
     history::wire(window);
     dock::wire(window);
     board::wire(window);
+    prd::wire(window);
+    work::wire(window);
     with_state(|s| s.load_groups());
 }
 
@@ -138,12 +141,10 @@ fn wire_callbacks(window: &AppWindow) {
                 return;
             }
             if let Some(session) = s.active.clone() {
-                s.add_research(&session, &mut context);
-                s.add_code_mode(&session, &mut context);
+                s.add_modes(&session, &mut context);
                 s.send_message(session, text, context);
             } else {
-                s.take_draft_research(&mut context);
-                s.take_draft_code_mode(&mut context);
+                s.take_draft_modes(&mut context);
                 s.pending_send = Some((text, context));
                 s.new_session(false, None);
             }

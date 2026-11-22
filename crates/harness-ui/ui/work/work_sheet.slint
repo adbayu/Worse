@@ -1,0 +1,290 @@
+import { Theme } from "../theme/tokens.slint";
+import { Button, IconButton, Icons, Tag } from "../components/controls.slint";
+
+export struct SheetTab {
+    index: int,
+    name: string,
+}
+
+export struct SheetCellView {
+    coord: string,
+    display: string,
+    formula: string,
+    bold: bool,
+    number: bool,
+    error: bool,
+    // Look from the workbook (Excel fills, font colors, alignment, borders, sizes).
+    fill: color,
+    has-fill: bool,
+    fg: color,
+    has-fg: bool,
+    align: int, // 0 auto, 1 left, 2 center, 3 right
+    bt: length,
+    br: length,
+    bb: length,
+    bl: length,
+    scale: float,
+    width: length,
+    // Merged cells: every cell of a merge draws its slice of the anchor's text.
+    off-x: length,
+    off-y: length,
+    span-w: length,
+    span-h: length,
+    ghost: bool, // text spilled from the cell on the left
+    italic: bool,
+    wrap: bool,
+    bc: color,
+    has-bc: bool,
+    has-note: bool,
+}
+
+export struct SheetRowView {
+    row-num: int,
+    height: length,
+    cells: [SheetCellView],
+}
+
+export component WorkSheetView inherits VerticalLayout {
+    in property <[SheetTab]> sheets;
+    in property <int> active-sheet;
+    in property <[string]> col-headers;
+    in property <[length]> col-widths;
+    in property <length> grid-width;
+    in property <length> grid-height;
+    in property <[SheetRowView]> sheet-rows;
+    in property <string> selected-coord;
+    in-out property <string> formula-text;
+    in property <string> cell-note;
+    in property <[string]> validation-options;
+
+    callback select-sheet(int);
+    callback select-cell(string, string);
+    callback edit-cell(string, string);
+
+    spacing: 6px;
+
+    // Formula bar
+    HorizontalLayout {
+        height: 28px;
+        spacing: 6px;
+        Tag {
+            text: root.selected-coord != "" ? root.selected-coord : "A1";
+            tone: "accent";
+        }
+        Rectangle {
+            horizontal-stretch: 1;
+            border-radius: Theme.radius-sm;
+            background: Theme.input;
+            border-width: 1px;
+            border-color: Theme.input-border;
+            clip: true;
+            TextInput {
+                x: 8px;
+                width: parent.width - 16px;
+                height: parent.height;
+                text <=> root.formula-text;
+                font-size: Theme.ui-xs;
+                font-family: Theme.mono-font;
+                color: Theme.foreground;
+                vertical-alignment: center;
+                accepted => {
+                    if root.selected-coord != "" {
+                        root.edit-cell(root.selected-coord, root.formula-text);
+                    }
+                }
+            }
+        }
+        Button {
+            text: @tr("Set");
+            size: "xs";
+            enabled: root.selected-coord != "";
+            clicked => { root.edit-cell(root.selected-coord, root.formula-text); }
+        }
+    }
+
+    // Validation dropdown options when the selected cell has a list rule
+    if root.validation-options.length > 0 && root.selected-coord != "": HorizontalLayout {
+        height: 24px;
+        spacing: 4px;
+        alignment: start;
+        Text {
+            text: @tr("Options:");
+            font-size: Theme.ui-xs;
+            color: Theme.muted;
+            vertical-alignment: center;
+        }
+        for opt in root.validation-options: Button {
+            text: opt;
+            size: "xs";
+            active: opt == root.formula-text;
+            clicked => { root.edit-cell(root.selected-coord, opt); }
+        }
+    }
+
+    // Cell note or formula error tooltip
+    if root.cell-note != "": Rectangle {
+        height: 24px;
+        border-radius: Theme.radius-sm;
+        background: Theme.raised;
+        HorizontalLayout {
+            padding-left: 8px;
+            padding-right: 8px;
+            Text {
+                text: root.cell-note;
+                font-size: Theme.ui-xs;
+                color: Theme.foreground-subtle;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+        }
+    }
+
+    // Native Slint cell grid
+    Flickable {
+        vertical-stretch: 1;
+        min-height: 0px;
+        content-width: root.grid-width + 42px;
+        content-height: root.grid-height + 24px;
+
+        VerticalLayout {
+            spacing: 0px;
+            HorizontalLayout {
+                height: 24px;
+                Rectangle {
+                    width: 36px;
+                    background: Theme.raised;
+                    border-width: 1px;
+                    border-color: Theme.border;
+                }
+                for col[ci] in root.col-headers: Rectangle {
+                    width: root.col-widths[ci];
+                    background: Theme.raised;
+                    border-width: 1px;
+                    border-color: Theme.border;
+                    Text {
+                        text: col;
+                        font-size: Theme.ui-xs;
+                        font-weight: Theme.weight-semibold;
+                        color: Theme.foreground-subtle;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+            for row in root.sheet-rows: HorizontalLayout {
+                height: row.height;
+                Rectangle {
+                    width: 36px;
+                    background: Theme.raised;
+                    border-width: 1px;
+                    border-color: Theme.border;
+                    Text {
+                        text: row.row-num;
+                        font-size: Theme.ui-xs;
+                        color: Theme.muted;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
+                for cell in row.cells: Rectangle {
+                    width: cell.width;
+                    background: cell.coord == root.selected-coord ? Theme.accent-soft : cell.has-fill ? cell.fill : cell.error ? Theme.destructive-surface : Theme.surface;
+                    border-width: cell.coord == root.selected-coord ? 1.5px : 0.5px;
+                    border-color: cell.coord == root.selected-coord ? Theme.accent-line : cell.has-fill ? cell.fill : Theme.border;
+                    clip: true;
+                    TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { root.select-cell(cell.coord, cell.ghost ? "" : cell.formula != "" ? cell.formula : cell.display); }
+                    }
+                    Text {
+                        x: 4px - cell.off-x;
+                        y: -cell.off-y;
+                        width: cell.span-w - 8px;
+                        height: cell.span-h;
+                        text: cell.display;
+                        font-size: Theme.ui-xs * cell.scale;
+                        font-weight: cell.bold ? 700 : Theme.weight-normal;
+                        font-italic: cell.italic;
+                        wrap: cell.wrap ? word-wrap : no-wrap;
+                        color: cell.error ? (cell.has-fill ? #c00000 : Theme.destructive-surface-foreground) : cell.has-fg ? cell.fg : Theme.foreground;
+                        horizontal-alignment: cell.align == 2 ? center : cell.align == 3 ? right : cell.align == 1 ? left : cell.number ? right : left;
+                        vertical-alignment: center;
+                        overflow: elide;
+                    }
+                    // Note indicator in top-right corner
+                    if cell.has-note: Rectangle {
+                        x: parent.width - 5px;
+                        y: 1px;
+                        width: 4px;
+                        height: 4px;
+                        background: Theme.warning-surface-foreground;
+                    }
+                    // Workbook borders (thin or thick per side, with border color).
+                    property <color> bcol: cell.has-bc ? cell.bc : cell.has-fill ? #262626 : Theme.foreground-subtle;
+                    if cell.bt > 0: Rectangle { y: 0px; height: cell.bt; background: parent.bcol; }
+                    if cell.bb > 0: Rectangle { y: parent.height - cell.bb; height: cell.bb; background: parent.bcol; }
+                    if cell.bl > 0: Rectangle { x: 0px; width: cell.bl; background: parent.bcol; }
+                    if cell.br > 0: Rectangle { x: parent.width - cell.br; width: cell.br; background: parent.bcol; }
+                }
+            }
+        }
+    }
+
+    // Sheet tabs (horizontally scrollable so workbooks with many sheets never overlap)
+    if root.sheets.length > 0: HorizontalLayout {
+        height: 28px;
+        spacing: 4px;
+
+        if root.sheets.length > 1: IconButton {
+            y: (parent.height - self.height) / 2;
+            icon: Icons.chevron-left;
+            label: @tr("Scroll sheet tabs left");
+            size: 22px;
+            icon-size: 13px;
+            enabled: tabs-flick.content-x < 0px;
+            clicked => {
+                tabs-flick.content-x = min(0px, tabs-flick.content-x + 140px);
+            }
+        }
+
+        Rectangle {
+            horizontal-stretch: 1;
+            min-width: 0px;
+            clip: true;
+
+            tabs-flick := Flickable {
+                width: parent.width;
+                height: parent.height;
+                content-width: tabs-row.preferred-width;
+                content-height: self.height;
+
+                tabs-row := HorizontalLayout {
+                    x: 0px;
+                    y: (parent.height - self.preferred-height) / 2;
+                    width: self.preferred-width;
+                    spacing: 4px;
+                    alignment: start;
+
+                    for st in root.sheets: Button {
+                        text: st.name;
+                        size: "xs";
+                        active: st.index == root.active-sheet;
+                        clicked => { root.select-sheet(st.index); }
+                    }
+                }
+            }
+        }
+
+        if root.sheets.length > 1: IconButton {
+            y: (parent.height - self.height) / 2;
+            icon: Icons.chevron-right;
+            label: @tr("Scroll sheet tabs right");
+            size: 22px;
+            icon-size: 13px;
+            enabled: tabs-flick.content-x > tabs-flick.width - tabs-flick.content-width + 1px;
+            clicked => {
+                tabs-flick.content-x = max(min(0px, tabs-flick.width - tabs-flick.content-width), tabs-flick.content-x - 140px);
+            }
+        }
+    }
+}

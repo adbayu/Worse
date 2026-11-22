@@ -1,0 +1,15 @@
+{
+  "format": "harness-deck/1",
+  "title": "Pitch deck",
+  "theme": { "background": "#ffffff", "foreground": "#1f2328", "accent": "#3b6cf6", "muted": "#6b7280", "font": "Segoe UI" },
+  "slides": [
+    { "id": "title", "layout": "title", "title": "Company name", "subtitle": "One line that says what you do and for whom", "notes": "Introduce yourself and the company in one sentence." },
+    { "id": "problem", "layout": "bullets", "title": "The problem", "bullets": ["Who has the problem and how often", "What it costs them today", "Why current options fall short"] },
+    { "id": "solution", "layout": "bullets", "title": "Our solution", "bullets": ["What the product does", "The key insight behind it", "Proof that it works"] },
+    { "id": "market", "layout": "big-number", "title": "Market", "number": "$4.2B", "label": "Serviceable market in our first three regions" },
+    { "id": "traction", "layout": "chart", "title": "Traction", "chart": { "type": "column", "categories": ["Q1", "Q2", "Q3", "Q4"], "series": [{ "name": "Revenue (k$)", "values": [40, 75, 130, 210] }] } },
+    { "id": "model", "layout": "two-column", "title": "Business model", "left": ["**Pricing**", "Per seat, billed yearly", "Free tier for teams under 5"], "right": ["**Go to market**", "Self-serve signup", "Sales for teams over 100"] },
+    { "id": "team", "layout": "table", "title": "Team", "table": { "header": ["Name", "Role", "Background"], "rows": [["Name", "CEO", "Previous company"], ["Name", "CTO", "Previous company"]] } },
+    { "id": "ask", "layout": "quote", "quote": "We are raising $2M to reach 1,000 paying teams in 18 months.", "by": "The ask" }
+  ]
+}

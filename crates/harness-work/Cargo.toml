@@ -1,0 +1,31 @@
+[package]
+name = "harness-work"
+version = "0.1.0"
+description = "Harness Work items: deck/book/doc/chart source formats, validation, Typst rendering, IronCalc sheets, Office export and import, and the harness-work MCP server (spec work-edition.md)."
+edition.workspace = true
+# Typst 0.15 needs Rust 1.92.
+rust-version = "1.92"
+license.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+base64 = { workspace = true }
+typst = "0.15.1"
+typst-render = "0.15.1"
+typst-pdf = "0.15.1"
+typst-layout = "0.15.1"
+typst-kit = { version = "0.15.1", default-features = false, features = ["scan-fonts"] }
+ironcalc = "0.9.1"
+docx-rs = "0.4.22"
+zip = { version = "9", default-features = false, features = ["deflate-flate2"] }
+pulldown-cmark = { version = "0.13", default-features = false }
+roxmltree = "0.21"
+sha2 = "0.10"
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[lints]
+workspace = true

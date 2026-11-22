@@ -178,6 +178,12 @@ pub enum ContextItem {
     Research,
     /// Code mode for this turn: the agent runs with its code-mode variant (one script calling many tools).
     CodeMode,
+    /// PRD mode for this turn (0.25.0): the hub adds the PRD discovery instructions (interview, spec file,
+    /// quality gate, plan-first task list).
+    Prd,
+    /// Work item context for this turn (0.26.0): the hub adds the Work edition instructions.
+    #[serde(rename_all = "camelCase")]
+    WorkItem { path: String },
 }
 
 impl ContextItem {

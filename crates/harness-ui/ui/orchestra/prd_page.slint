@@ -1,0 +1,175 @@
+// PRD page (PRD mode plan, milestones 1 and 3): opened from the top bar "PRD" button and from the Orchestra header.
+// Shows the PRDs the agent wrote in PRD mode (docs/specs/<slug>/prd.json) as phase columns of feature groups and
+// task cards (status, REQ id, assigned agent, target files, Done when). Reloads every few seconds while open, so
+// status changes the agent writes into prd.json show up live.
+import { Theme } from "../theme/tokens.slint";
+import { Icon, Icons, IconButton } from "../components/controls.slint";
+import { DockUi } from "../chat/dock_ui.slint";
+import { LiveButton } from "./live_parts.slint";
+import { PrdUi, PrdSpec, PrdPhase, PrdNode } from "./prd_ui.slint";
+import { PrdColumn, PrdHeaderPill } from "./prd_parts.slint";
+export { PrdUi, PrdSpec, PrdPhase, PrdNode }
+
+export component PrdPage inherits Rectangle {
+    callback close();
+    // Switch to the Orchestra live view (which agent works on which part of the PRD).
+    callback open-orchestra();
+    background: Theme.canvas;
+    accessible-role: AccessibleRole.groupbox;
+    accessible-label: "PRD";
+    TouchArea { }
+    init => {
+        PrdUi.refresh();
+    }
+    Timer {
+        interval: 3s;
+        running: true;
+        triggered => {
+            PrdUi.refresh();
+        }
+    }
+
+    VerticalLayout {
+        Rectangle {
+            height: 56px;
+            HorizontalLayout {
+                padding-left: 12px;
+                padding-right: 16px;
+                spacing: 10px;
+                VerticalLayout {
+                    alignment: center;
+                    IconButton {
+                        icon: Icons.chevron-left;
+                        label: @tr("Back to chat");
+                        clicked => {
+                            root.close();
+                        }
+                    }
+                }
+                Text {
+                    text: PrdUi.title == "" ? "PRD" : "PRD · " + PrdUi.title;
+                    font-family: Theme.display-font;
+                    font-size: 15px;
+                    font-weight: 700;
+                    color: Theme.foreground;
+                    vertical-alignment: center;
+                    overflow: elide;
+                    min-width: 60px;
+                }
+                if PrdUi.total > 0: PrdHeaderPill {
+                    text: PrdUi.done + " / " + PrdUi.total + " done";
+                    tint: PrdUi.done == PrdUi.total ? Theme.success : Theme.accent-fg;
+                }
+                if PrdUi.gate-mode != "": PrdHeaderPill {
+                    text: (PrdUi.gate-mode == "strict" ? "Strict gate" : "Advisory gate") + (PrdUi.gate-passed ? " · passed" : " · " + PrdUi.gate-issues + " issues");
+                    tint: PrdUi.gate-passed ? Theme.success : (PrdUi.gate-mode == "strict" ? Theme.destructive : Theme.warning);
+                }
+                Rectangle {
+                    horizontal-stretch: 1;
+                }
+                // PRD picker when the workspace has several.
+                if PrdUi.specs.length > 1: HorizontalLayout {
+                    spacing: 4px;
+                    for s[i] in PrdUi.specs: VerticalLayout {
+                        alignment: center;
+                        LiveButton {
+                            text: s.title;
+                            variant: i == PrdUi.selected ? "accent" : "secondary";
+                            clicked => {
+                                PrdUi.select(i);
+                            }
+                        }
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    LiveButton {
+                        text: @tr("Orchestra");
+                        clicked => {
+                            root.open-orchestra();
+                        }
+                    }
+                }
+            }
+            Rectangle {
+                y: parent.height - 1px;
+                height: 1px;
+                background: Theme.border;
+            }
+        }
+        if PrdUi.error != "": Rectangle {
+            height: 30px;
+            background: Theme.destructive.with-alpha(0.1);
+            Text {
+                text: PrdUi.error;
+                font-size: Theme.ui-sm;
+                color: Theme.destructive;
+                overflow: elide;
+            }
+        }
+        // Canvas: one column per phase, scrolled sideways.
+        if PrdUi.phases.length > 0: Flickable {
+            vertical-stretch: 1;
+            content-width: max(self.width, columns.preferred-width);
+            content-height: max(self.height, columns.preferred-height);
+            columns := HorizontalLayout {
+                padding: 16px;
+                spacing: 14px;
+                alignment: start;
+                for p[pi] in PrdUi.phases: PrdColumn {
+                    phase: p;
+                    index: pi;
+                    width: 300px;
+                }
+            }
+        }
+        // Empty state: no prd.json in this workspace yet.
+        if PrdUi.phases.length == 0: Rectangle {
+            vertical-stretch: 1;
+            VerticalLayout {
+                alignment: center;
+                spacing: 12px;
+                HorizontalLayout {
+                    alignment: center;
+                    Icon {
+                        source: Icons.list-todo;
+                        size: 28px;
+                        tint: Theme.muted;
+                    }
+                }
+                Text {
+                    text: PrdUi.specs.length == 0 ? "No PRD in this workspace yet" : "This PRD has no tasks yet";
+                    font-size: 15px;
+                    font-weight: Theme.weight-semibold;
+                    color: Theme.foreground;
+                    horizontal-alignment: center;
+                }
+                HorizontalLayout {
+                    alignment: center;
+                    padding-left: 24px;
+                    padding-right: 24px;
+                    Text {
+                        text: "Turn on PRD mode and describe what you want to build. The agent asks a few questions, writes docs/specs/<feature>/prd.md, runs the review gate (Strict or Advisory) and plans conflict-free tasks in tasks.md and prd.json, which this page shows.";
+                        font-size: Theme.ui-sm;
+                        color: Theme.muted;
+                        wrap: word-wrap;
+                        horizontal-alignment: center;
+                        max-width: 520px;
+                    }
+                }
+                HorizontalLayout {
+                    alignment: center;
+                    LiveButton {
+                        text: DockUi.prd ? "PRD mode is on" : "Start a PRD";
+                        variant: "accent";
+                        enabled: !DockUi.prd;
+                        clicked => {
+                            DockUi.pick-option("mode", "harness:prd");
+                            root.close();
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

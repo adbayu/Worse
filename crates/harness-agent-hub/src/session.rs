@@ -113,6 +113,8 @@ pub(crate) enum ActorMsg {
     Wake,
     AgentExited(AgentId, u64),
     IdleEnd(u64, u64),
+    /// Poll agy's background task folder (`background/agy.rs`).
+    AgyPoll,
 }
 
 pub(crate) type ActorTx = mpsc::UnboundedSender<ActorMsg>;
@@ -168,6 +170,7 @@ pub(crate) struct SessionActor {
     prefs: HashMap<AgentId, Prefs>,
     steering: Option<queue::SteerFlight>,
     tasks: Vec<background::Tracked>,
+    agy: Option<background::AgyTrack>,
 }
 
 const ACTOR_IDLE: std::time::Duration = std::time::Duration::from_secs(10 * 60);
@@ -233,6 +236,7 @@ impl SessionActor {
             prefs,
             steering: None,
             tasks: Vec::new(),
+            agy: None,
         };
         tokio::spawn(actor.run(rx));
         Ok(tx)
@@ -294,6 +298,10 @@ impl SessionActor {
                 }
                 ActorMsg::IdleEnd(key, stamp) => {
                     self.on_idle_end(key, stamp).await;
+                    false
+                }
+                ActorMsg::AgyPoll => {
+                    self.on_agy_poll().await;
                     false
                 }
             };

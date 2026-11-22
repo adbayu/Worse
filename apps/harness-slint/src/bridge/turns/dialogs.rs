@@ -20,12 +20,16 @@ impl UiState {
             DialogTarget::NewGroup => "new-group",
             DialogTarget::RenameGroup(_) => "rename-group",
             DialogTarget::DeleteGroup(_) => "delete-group",
+            DialogTarget::RemoveProject(_) => "remove-project",
             DialogTarget::NewSchedule => "new-schedule",
         };
         // 确认类对话框（回退、删除）没有输入框：用一个只读说明 + 勾选/确认按钮。
         let confirm_only = matches!(
             target,
-            DialogTarget::Rewind { .. } | DialogTarget::Delete(_) | DialogTarget::DeleteGroup(_)
+            DialogTarget::Rewind { .. }
+                | DialogTarget::Delete(_)
+                | DialogTarget::DeleteGroup(_)
+                | DialogTarget::RemoveProject(_)
         );
         let destructive = confirm_only;
         self.turn.dialog = target;
@@ -117,6 +121,15 @@ impl UiState {
                     |reply| ChatCall::DeleteGroup(id, reply),
                     |s, ()| s.load_groups(),
                 );
+            }
+            DialogTarget::RemoveProject(key) => {
+                let ids = self
+                    .summaries
+                    .iter()
+                    .filter(|s| s.project == key)
+                    .map(|s| s.id.clone())
+                    .collect();
+                self.archive_sessions(ids);
             }
             DialogTarget::NewSchedule => self.create_schedule(&text, &text2),
         }

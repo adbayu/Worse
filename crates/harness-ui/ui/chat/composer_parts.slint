@@ -8,6 +8,54 @@ import { Button, Icon, IconButton, Icons, IconsFill, MenuItem, MenuShell, Tag } 
 import { SettingsUi } from "../settings/globals.slint";
 import { Theme } from "../theme/tokens.slint";
 
+// A sticky Harness mode that is on (Deep research, PRD mode): click turns it off.
+component ModeChip inherits Rectangle {
+    in property <string> label;
+    in property <image> icon;
+    // Mode picker id the click toggles.
+    in property <string> option;
+    height: 28px;
+    width: mode-row.preferred-width;
+    border-radius: Theme.radius-md;
+    background: mta.has-hover ? Theme.accent-soft.darker(0.1) : Theme.accent-soft;
+    border-width: 1px;
+    border-color: Theme.accent-line;
+    accessible-role: button;
+    accessible-label: root.label + " on, turn off";
+    accessible-action-default => {
+        DockUi.pick-option("mode", root.option);
+    }
+    mode-row := HorizontalLayout {
+        padding-left: 8px;
+        padding-right: 8px;
+        spacing: 6px;
+        Icon {
+            y: (parent.height - self.height) / 2;
+            source: root.icon;
+            size: Theme.icon-sm;
+            tint: Theme.accent-fg;
+        }
+        Text {
+            text: root.label;
+            font-size: Theme.ui-sm;
+            color: Theme.accent-fg;
+            vertical-alignment: center;
+        }
+        Icon {
+            y: (parent.height - self.height) / 2;
+            source: Icons.x;
+            size: 12px;
+            tint: Theme.accent-fg;
+        }
+    }
+    mta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            DockUi.pick-option("mode", root.option);
+        }
+    }
+}
+
 export component ChipStrip inherits Rectangle {
     height: 28px;
     min-width: 0px;
@@ -127,50 +175,22 @@ export component ComposerToolbar inherits HorizontalLayout {
     Rectangle {
         width: 4px;
     }
-    if DockUi.research: Rectangle {
+    if DockUi.research: ModeChip {
         y: (parent.height - self.height) / 2;
-        height: 28px;
-        width: research-row.preferred-width;
-        border-radius: Theme.radius-md;
-        background: rta.has-hover ? Theme.accent-soft.darker(0.1) : Theme.accent-soft;
-        border-width: 1px;
-        border-color: Theme.accent-line;
-        accessible-role: button;
-        accessible-label: "Deep research on, turn off";
-        accessible-action-default => {
-            DockUi.pick-option("mode", "harness:research");
-        }
-        research-row := HorizontalLayout {
-            padding-left: 8px;
-            padding-right: 8px;
-            spacing: 6px;
-            Icon {
-                y: (parent.height - self.height) / 2;
-                source: Icons.globe;
-                size: Theme.icon-sm;
-                tint: Theme.accent-fg;
-            }
-            Text {
-                text: "Deep research";
-                font-size: Theme.ui-sm;
-                color: Theme.accent-fg;
-                vertical-alignment: center;
-            }
-            Icon {
-                y: (parent.height - self.height) / 2;
-                source: Icons.x;
-                size: 12px;
-                tint: Theme.accent-fg;
-            }
-        }
-        rta := TouchArea {
-            mouse-cursor: pointer;
-            clicked => {
-                DockUi.pick-option("mode", "harness:research");
-            }
-        }
+        label: "Deep research";
+        icon: Icons.globe;
+        option: "harness:research";
     }
     if DockUi.research: Rectangle {
+        width: 4px;
+    }
+    if DockUi.prd: ModeChip {
+        y: (parent.height - self.height) / 2;
+        label: "PRD mode";
+        icon: Icons.list-todo;
+        option: "harness:prd";
+    }
+    if DockUi.prd: Rectangle {
         width: 4px;
     }
     // Agent picker chip: agent-colour dot + name + chevron (design 01).

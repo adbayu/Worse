@@ -111,6 +111,12 @@ impl UiState {
             }
             return;
         }
+        if action == "remove-project" {
+            if let Some(key) = id.strip_prefix("project:") {
+                self.open_dialog(DialogTarget::RemoveProject(key.to_string()), "", "", false);
+            }
+            return;
+        }
         let name = self
             .turn
             .groups

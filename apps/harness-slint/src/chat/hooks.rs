@@ -84,6 +84,19 @@ pub fn toast_label(id: &str) {
     });
 }
 
+/// Short confirmation toast with an already-formatted message.
+pub fn toast_text(message: &str) {
+    with_state(|s| s.toast(message));
+}
+
+/// Attaches a Work-item element comment chip to the composer (W6).
+pub fn add_work_comment(path: &str, comment: &str) {
+    with_state(|s| {
+        s.add_work_comment(path, comment);
+        s.toast("Comment added to composer");
+    });
+}
+
 /// "Open in editor" of a tool-card path (`path` or `path:line`): the OS default app on its own thread.
 /// `HARNESS_OPENER_LOG` (gates only) appends the resolved path to that file instead of launching an app.
 pub fn open_path(raw: &str) {

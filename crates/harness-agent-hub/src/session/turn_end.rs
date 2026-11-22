@@ -142,6 +142,8 @@ impl SessionActor {
     ) {
         self.cancel_pending_permissions();
         self.flush_thought().await;
+        // agy 把超时的命令转到自己的后台任务里，ACP 上看不到；在回合结束前登记，交给后台任务列表跟踪。
+        self.note_agy_async();
         let Some(running) = self.running.take() else {
             return;
         };

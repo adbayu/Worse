@@ -273,6 +273,7 @@ pub(super) fn helper_mode() -> Option<ExitCode> {
         helpers::FLAG_DELEGATE => Some(helpers::run_delegate_mcp()),
         helpers::FLAG_API_AGENT => Some(harness_api_agent::run()),
         helpers::FLAG_COMPUTER_MCP => Some(computer_mcp::run()),
+        helpers::FLAG_WORK_MCP => Some(harness_work::run_mcp()),
         _ => None,
     }
 }

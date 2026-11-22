@@ -226,6 +226,16 @@ impl HubCtx {
                     {"name": "HARNESS_MACHINE_SESSION", "value": session.as_str()}
                 ]
             }));
+            let work_helper = crate::helpers::Helper::Work;
+            servers.push(json!({
+                "name": "harness-work",
+                "command": self.config.helpers.program(work_helper).to_string_lossy(),
+                "args": self.config.helpers.args(work_helper),
+                "env": [
+                    {"name": "HARNESS_HOME", "value": self.config.home.to_string_lossy()},
+                    {"name": "HARNESS_WORK_PROJECT", "value": cwd}
+                ]
+            }));
         }
         let caps = harness_agent_config::overlay::AcpMcpCapabilities {
             http: caps.0,

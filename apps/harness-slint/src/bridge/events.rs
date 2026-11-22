@@ -104,6 +104,7 @@ impl UiState {
                     if let Some((row, label)) = crate::speed::finish(&self.window) {
                         self.update_row(row, |r| r.speed = label.as_str().into());
                     }
+                    self.work_turn_finished();
                 }
             }
             Event::ToolUpdated {
@@ -128,10 +129,17 @@ impl UiState {
                         .into_iter()
                         .collect();
                     let (images, more) = self.row_images(id, &image);
+                    let work = self.work_detect_tool(&title);
                     self.update_row(id, |row| {
                         row.title = one_line(&title).into();
                         row.images = images;
                         row.images_more = more;
+                        if let Some((slug, wtitle, kind, details)) = work {
+                            row.work_slug = slug.into();
+                            row.work_title = wtitle.into();
+                            row.work_kind = kind.into();
+                            row.work_details = details.into();
+                        }
                     });
                 }
             }

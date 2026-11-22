@@ -8,6 +8,7 @@ import { Button, Icon, IconButton, Icons, IconsFill, MenuItem, MenuShell, Tag } 
 import { SettingsUi } from "../settings/globals.slint";
 import { Theme } from "../theme/tokens.slint";
 import { ChipStrip, ComposerToolbar } from "./composer_parts.slint";
+import { WorkLibraryUi } from "../work/work_page.slint";
 
 export component Composer inherits VerticalLayout {
     in property <[AgentRow]> agents;
@@ -226,6 +227,63 @@ export component Composer inherits VerticalLayout {
                 clicked => {
                     plus-menu.close();
                     DockUi.pick-option("mode", "harness:research");
+                }
+            }
+            MenuItem {
+                text: "PRD mode";
+                description: "Interview, write a reviewed PRD and a task plan before coding";
+                has-icon: true;
+                icon: Icons.list-todo;
+                checked: DockUi.prd;
+                clicked => {
+                    plus-menu.close();
+                    DockUi.pick-option("mode", "harness:prd");
+                }
+            }
+            MenuItem {
+                text: @tr("Create slides");
+                description: @tr("Start a new slide deck with the agent");
+                show-check: false;
+                has-icon: true;
+                icon: Icons.monitor;
+                clicked => {
+                    plus-menu.close();
+                    root.draft = "Create a slide deck using the harness-work tools about: ";
+                    root.focus-input();
+                }
+            }
+            MenuItem {
+                text: @tr("Create spreadsheet");
+                description: @tr("Start a formula-backed sheet with the agent");
+                show-check: false;
+                has-icon: true;
+                icon: Icons.folders;
+                clicked => {
+                    plus-menu.close();
+                    root.draft = "Create a spreadsheet using the harness-work tools for: ";
+                    root.focus-input();
+                }
+            }
+            MenuItem {
+                text: @tr("Create document");
+                description: @tr("Draft a formatted report or proposal");
+                show-check: false;
+                has-icon: true;
+                icon: Icons.file-text;
+                clicked => {
+                    plus-menu.close();
+                    root.draft = "Create a formatted document using the harness-work tools for: ";
+                    root.focus-input();
+                }
+            }
+            MenuItem {
+                text: @tr("Work library & templates");
+                show-check: false;
+                has-icon: true;
+                icon: Icons.scan;
+                clicked => {
+                    plus-menu.close();
+                    WorkLibraryUi.show();
                 }
             }
         }

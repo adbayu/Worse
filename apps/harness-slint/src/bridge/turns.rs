@@ -67,6 +67,8 @@ pub(super) enum DialogTarget {
     NewGroup,
     RenameGroup(String),
     DeleteGroup(String),
+    /// Remove a workspace (sidebar project, by its key) from the sidebar: archives all its sessions.
+    RemoveProject(String),
     NewSchedule,
 }
 

@@ -1,3 +1,5 @@
+use std::fmt::Write as _;
+
 use super::{
     image_mime, sv, ChatState, ChatUi, Chip, ChipRow, ComponentHandle, ContextItem,
     MentionCandidate, Path, SharedString, LONG_PASTE_CHARS, MAX_HISTORY,
@@ -70,6 +72,20 @@ impl ChatState {
             detail: SharedString::new(),
         });
         self.chip_data.push(Chip::Skill(skill.item.clone()));
+    }
+
+    pub(super) fn add_work_comment(&mut self, path: &str, comment: &str) {
+        let short_path = path.rsplit('/').next().unwrap_or(path);
+        let detail: String = comment.chars().take(36).collect();
+        self.chips.push(ChipRow {
+            kind: sv("file"),
+            label: sv(short_path),
+            detail: sv(&detail),
+        });
+        self.chip_data.push(Chip::Work {
+            path: path.to_string(),
+            comment: comment.to_string(),
+        });
     }
 
     pub(super) fn draft_edited(&mut self, draft: &str) {
@@ -179,6 +195,17 @@ impl ChatState {
                     session_id: harness_core_api::SessionId::new(id.as_str()),
                 }),
                 Chip::Skill(item) => context.push(item.clone()),
+                Chip::Work { path, comment } => {
+                    let base = path.split('#').next().unwrap_or(path).to_string();
+                    let work_item = ContextItem::WorkItem { path: base };
+                    if !context.contains(&work_item) {
+                        context.push(work_item);
+                    }
+                    if !out.is_empty() {
+                        out.push_str("\n\n");
+                    }
+                    let _ = write!(out, "[Work comment on {path}]: {comment}");
+                }
             }
         }
         self.chips.set_vec(Vec::new());
@@ -210,7 +237,11 @@ impl ChatState {
                 }
                 ContextItem::Image { path: None, .. }
                 | ContextItem::Research
-                | ContextItem::CodeMode => {}
+                | ContextItem::CodeMode
+                | ContextItem::Prd => {}
+                ContextItem::WorkItem { path } => {
+                    self.add_work_comment(&path, "attached");
+                }
                 ContextItem::Text { text, .. } => {
                     let lines = text.lines().count();
                     self.chips.push(ChipRow {

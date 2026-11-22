@@ -60,6 +60,12 @@ impl UiState {
                     .into_iter()
                     .collect();
                 (row.images, row.images_more) = self.row_images(id, &image);
+                if let Some((slug, wtitle, kind, details)) = self.work_detect_tool(title) {
+                    row.work_slug = slug.into();
+                    row.work_title = wtitle.into();
+                    row.work_kind = kind.into();
+                    row.work_details = details.into();
+                }
             }
             Item::Notice {
                 notice: Notice::Failover { from, to, reset },

@@ -33,9 +33,9 @@ use crate::ui::{AppWindow, ChatUi, ChipRow, Labels, PaletteRow};
 
 pub use commands::{command, skill_count};
 pub use hooks::{
-    agent_commands, agent_mentions, drop_hover, dropped, exported, files_walked, open_path,
-    paste_image, pick_files, prepare_send, restore_composer, save_attachment, sessions_changed,
-    set_workspace, toast_label,
+    add_work_comment, agent_commands, agent_mentions, drop_hover, dropped, exported, files_walked,
+    open_path, paste_image, pick_files, prepare_send, restore_composer, save_attachment,
+    sessions_changed, set_workspace, toast_label, toast_text,
 };
 use hooks::{attachments_dir, chip_image, remove_image_chip};
 pub use wire::install;
@@ -122,6 +122,8 @@ enum Chip {
     Session(String),
     /// Skill of the active agent: its `SKILL.md` as an ACP resource (R13).
     Skill(ContextItem),
+    /// Comment pinned to a Work item element path (`work/<slug>#...`).
+    Work { path: String, comment: String },
 }
 
 /// File extension → image MIME type of the formats the agents accept.

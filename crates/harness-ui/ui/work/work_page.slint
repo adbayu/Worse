@@ -1,0 +1,278 @@
+import { Theme } from "../theme/tokens.slint";
+import { Icon, Icons, IconButton, Spinner, MenuItem, MenuShell } from "../components/controls.slint";
+
+export struct WorkItemCard {
+    slug: string,
+    title: string,
+    kind: string,
+    updated: string,
+    summary: string,
+}
+
+// Work library shown inside the side panel Work tab when no item is open.
+export global WorkLibraryUi {
+    in-out property <bool> open: false;
+    in-out property <string> search-query: "";
+    in-out property <string> filter-kind: "all"; // "all" | "deck" | "sheet" | "doc" | "chart"
+    in-out property <[WorkItemCard]> items: [];
+    in-out property <bool> loading: false;
+
+    callback close();
+    // Shows the library in the side panel (Work tab) and rescans the workspace.
+    callback show();
+    callback open-item(string);
+    callback new-from-template(string); // "pitch-deck" | "weekly-report" | "budget" | "kpi-tracker" | "meeting-notes" | "proposal"
+    callback import-file();
+    callback filter-changed(string, string); // kind, search
+    callback refresh();
+}
+
+component KindIcon inherits Rectangle {
+    in property <string> kind;
+    property <color> tone: kind == "sheet" ? #1f9d55 : kind == "deck" ? #d9622b : kind == "doc" ? #2b6cd9 : #8b5cf6;
+    width: 30px;
+    height: 30px;
+    border-radius: Theme.radius-md;
+    background: tone.with-alpha(0.16);
+    Icon {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        source: kind == "sheet" ? Icons.table : kind == "deck" ? Icons.monitor : kind == "doc" ? Icons.file-text : Icons.scan;
+        size: Theme.icon-sm;
+        tint: tone;
+    }
+}
+
+component ItemTile inherits Rectangle {
+    in property <WorkItemCard> item;
+    height: 48px;
+    border-radius: Theme.radius-md;
+    background: ta.has-hover ? Theme.hover : Theme.surface;
+    border-width: 1px;
+    border-color: Theme.border;
+    accessible-role: button;
+    accessible-label: item.title != "" ? item.title : item.slug;
+    accessible-action-default => { WorkLibraryUi.open-item(item.slug); }
+    HorizontalLayout {
+        padding-left: 8px;
+        padding-right: 8px;
+        spacing: 8px;
+        KindIcon {
+            y: (parent.height - self.height) / 2;
+            kind: item.kind;
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            Text {
+                text: item.title != "" ? item.title : item.slug;
+                font-size: Theme.ui-xs;
+                font-weight: Theme.weight-semibold;
+                color: Theme.foreground;
+                overflow: elide;
+            }
+            Text {
+                text: item.summary != "" ? item.summary : item.kind;
+                font-size: Theme.ui-xs;
+                color: Theme.foreground-subtle;
+                overflow: elide;
+            }
+        }
+    }
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { WorkLibraryUi.open-item(item.slug); }
+    }
+}
+
+// Dashed "+ Add" button (Slint has no dashed borders: dashes are small rectangles).
+component AddButton inherits Rectangle {
+    callback clicked();
+    height: 40px;
+    border-radius: Theme.radius-md;
+    background: ta.has-hover ? Theme.hover : transparent;
+    accessible-role: button;
+    accessible-label: "Add";
+    accessible-action-default => { root.clicked(); }
+    for i in floor(root.width / 8px): Rectangle {
+        x: i * 8px + 2px;
+        y: 0;
+        width: 4px;
+        height: 1px;
+        background: Theme.foreground-subtle;
+    }
+    for i in floor(root.width / 8px): Rectangle {
+        x: i * 8px + 2px;
+        y: root.height - 1px;
+        width: 4px;
+        height: 1px;
+        background: Theme.foreground-subtle;
+    }
+    for i in floor(root.height / 8px): Rectangle {
+        x: 0;
+        y: i * 8px + 2px;
+        width: 1px;
+        height: 4px;
+        background: Theme.foreground-subtle;
+    }
+    for i in floor(root.height / 8px): Rectangle {
+        x: root.width - 1px;
+        y: i * 8px + 2px;
+        width: 1px;
+        height: 4px;
+        background: Theme.foreground-subtle;
+    }
+    HorizontalLayout {
+        alignment: center;
+        spacing: 6px;
+        Icon {
+            y: (parent.height - self.height) / 2;
+            source: Icons.plus;
+            size: Theme.icon-xs;
+            tint: Theme.foreground-subtle;
+        }
+        Text {
+            text: @tr("Add");
+            font-size: Theme.ui-xs;
+            color: Theme.foreground-subtle;
+            vertical-alignment: center;
+        }
+    }
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+export component WorkLibraryPanel inherits Rectangle {
+    property <bool> see-all: false;
+    property <int> recent: 6;
+    property <int> shown: root.see-all ? WorkLibraryUi.items.length : min(root.recent, WorkLibraryUi.items.length);
+    property <length> gap: 8px;
+    property <length> tile-w: (root.width - 20px - root.gap) / 2;
+    property <length> tile-h: 48px;
+    property <int> grid-rows: ceil(root.shown / 2);
+
+    init => { WorkLibraryUi.refresh(); }
+
+    add-menu := PopupWindow {
+        x: 10px;
+        y: 40px;
+        width: min(root.width - 20px, 280px);
+        MenuShell {
+            MenuItem {
+                text: @tr("Import Office file…");
+                show-check: false;
+                has-icon: true;
+                icon: Icons.upload;
+                clicked => { add-menu.close(); WorkLibraryUi.import-file(); }
+            }
+            MenuItem {
+                text: @tr("Pitch Deck");
+                show-check: false;
+                has-icon: true;
+                icon: Icons.monitor;
+                clicked => { add-menu.close(); WorkLibraryUi.new-from-template("pitch-deck"); }
+            }
+            MenuItem {
+                text: @tr("Weekly Report");
+                show-check: false;
+                has-icon: true;
+                icon: Icons.file-text;
+                clicked => { add-menu.close(); WorkLibraryUi.new-from-template("weekly-report"); }
+            }
+            MenuItem {
+                text: @tr("Budget");
+                show-check: false;
+                has-icon: true;
+                icon: Icons.table;
+                clicked => { add-menu.close(); WorkLibraryUi.new-from-template("budget"); }
+            }
+            MenuItem {
+                text: @tr("KPI Tracker");
+                show-check: false;
+                has-icon: true;
+                icon: Icons.table;
+                clicked => { add-menu.close(); WorkLibraryUi.new-from-template("kpi-tracker"); }
+            }
+            MenuItem {
+                text: @tr("Meeting Notes");
+                show-check: false;
+                has-icon: true;
+                icon: Icons.file-text;
+                clicked => { add-menu.close(); WorkLibraryUi.new-from-template("meeting-notes"); }
+            }
+            MenuItem {
+                text: @tr("Proposal");
+                show-check: false;
+                has-icon: true;
+                icon: Icons.file-text;
+                clicked => { add-menu.close(); WorkLibraryUi.new-from-template("proposal"); }
+            }
+        }
+    }
+
+    VerticalLayout {
+        padding: 10px;
+        spacing: 8px;
+
+        // Header: section title, "See all (N)" toggle, refresh.
+        HorizontalLayout {
+            height: 28px;
+            spacing: 6px;
+            Text {
+                text: root.see-all ? @tr("ALL ITEMS") : @tr("RECENT");
+                font-size: Theme.ui-xs;
+                font-weight: Theme.weight-semibold;
+                color: Theme.foreground-subtle;
+                vertical-alignment: center;
+            }
+            if WorkLibraryUi.loading: Spinner {
+                y: (parent.height - self.height) / 2;
+                size: 12px;
+            }
+            Rectangle { horizontal-stretch: 1; }
+            if WorkLibraryUi.items.length > root.recent || root.see-all: Text {
+                text: root.see-all ? @tr("Show less") : @tr("See all ({0})", WorkLibraryUi.items.length);
+                font-size: Theme.ui-xs;
+                color: see-ta.has-hover ? Theme.foreground : Theme.accent-fg;
+                vertical-alignment: center;
+                see-ta := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { root.see-all = !root.see-all; }
+                }
+            }
+            IconButton {
+                icon: Icons.rotate-ccw;
+                label: @tr("Refresh");
+                clicked => { WorkLibraryUi.refresh(); }
+            }
+        }
+
+        if WorkLibraryUi.items.length == 0 && !WorkLibraryUi.loading: Text {
+            text: @tr("No Work items yet. Add an Office file or a template, or ask the agent to create a deck, sheet, or doc.");
+            font-size: Theme.ui-xs;
+            color: Theme.muted;
+            wrap: word-wrap;
+        }
+
+        Flickable {
+            vertical-stretch: 1;
+            content-height: root.grid-rows * (root.tile-h + root.gap) + 40px;
+            for item[i] in WorkLibraryUi.items: ItemTile {
+                visible: i < root.shown;
+                x: mod(i, 2) * (root.tile-w + root.gap);
+                y: floor(i / 2) * (root.tile-h + root.gap);
+                width: root.tile-w;
+                height: root.tile-h;
+                item: item;
+            }
+            AddButton {
+                x: 0;
+                y: root.grid-rows * (root.tile-h + root.gap);
+                width: root.width - 20px;
+                clicked => { add-menu.show(); }
+            }
+        }
+    }
+}

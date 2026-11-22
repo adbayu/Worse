@@ -1,0 +1,50 @@
+// Thin overlay scrollbar for lists whose built-in Fluent bar is turned off: no track, a slim rounded
+// thumb at the right edge that shows on hover or while dragging, widens under the pointer, and can be
+// dragged or clicked to jump. Bind `content-y` two-way to the list's `content-y`.
+import { Theme } from "../theme/tokens.slint";
+
+export component ThinScrollbar inherits Rectangle {
+    in-out property <length> content-y;
+    in property <length> content-height;
+    in property <length> visible-height;
+    /// The list is hovered: the thumb fades in.
+    in property <bool> active;
+    property <length> max-scroll: max(1px, root.content-height - root.visible-height);
+    property <length> thumb-h: max(32px, root.height * root.visible-height / max(1px, root.content-height));
+    property <length> travel: max(1px, root.height - root.thumb-h);
+    property <length> thumb-y: root.travel * max(0, min(1, -root.content-y / root.max-scroll));
+    property <bool> hot: ta.has-hover || ta.pressed;
+    width: 12px;
+    visible: root.content-height > root.visible-height + 1px;
+
+    ta := TouchArea {
+        property <length> start;
+        mouse-cursor: default;
+        changed pressed => {
+            if self.pressed {
+                // 点在滑块外：先把滑块中心移到点击处，再从这里开始拖动。
+                if self.pressed-y < root.thumb-y || self.pressed-y > root.thumb-y + root.thumb-h {
+                    root.content-y = -root.max-scroll * max(0, min(1, (self.pressed-y - root.thumb-h / 2) / root.travel));
+                }
+                self.start = root.content-y;
+            }
+        }
+        moved => {
+            if self.pressed {
+                root.content-y = max(-root.max-scroll, min(0px, self.start - (self.mouse-y - self.pressed-y) * root.max-scroll / root.travel));
+            }
+        }
+    }
+
+    Rectangle {
+        x: parent.width - self.width - 3px;
+        y: root.thumb-y;
+        width: root.hot ? 6px : 4px;
+        height: root.thumb-h;
+        border-radius: self.width / 2;
+        background: Theme.foreground.with-alpha(ta.pressed ? 0.42 : root.hot ? 0.32 : 0.2);
+        opacity: root.active || root.hot ? 1 : 0;
+        animate width, background { duration: 120ms; }
+        animate opacity { duration: 220ms; }
+    }
+}

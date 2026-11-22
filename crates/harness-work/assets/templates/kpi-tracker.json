@@ -1,0 +1,25 @@
+{
+  "format": "harness-book/1",
+  "title": "KPI tracker",
+  "sheets": [
+    {
+      "name": "KPIs",
+      "cells": {
+        "A1": "KPI", "B1": "Target", "C1": "Jan", "D1": "Feb", "E1": "Mar", "F1": "Latest", "G1": "Status",
+        "A2": "Active users", "B2": 5000, "C2": 3900, "D2": 4300, "E2": 4800, "F2": "=E2", "G2": "=IF(F2>=B2,\"on track\",\"behind\")",
+        "A3": "Churn %", "B3": 0.03, "C3": 0.041, "D3": 0.036, "E3": 0.029, "F3": "=E3", "G3": "=IF(F3<=B3,\"on track\",\"behind\")",
+        "A4": "NPS", "B4": 40, "C4": 31, "D4": 35, "E4": 38, "F4": "=E4", "G4": "=IF(F4>=B4,\"on track\",\"behind\")",
+        "A5": "Revenue (k$)", "B5": 120, "C5": 96, "D5": 104, "E5": 121, "F5": "=E5", "G5": "=IF(F5>=B5,\"on track\",\"behind\")"
+      },
+      "formats": { "B3:F3": "0.0%" },
+      "widths": { "A": 18, "G": 12 },
+      "fills": { "A1:G1": "#E5E7EB" },
+      "bold": ["A1:G1"],
+      "freeze": "B2",
+      "conditional": [
+        { "range": "G2:G5", "when": "=behind", "fill": "#FEE2E2" },
+        { "range": "G2:G5", "when": "=on track", "fill": "#DCFCE7" }
+      ]
+    }
+  ]
+}

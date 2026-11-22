@@ -1,0 +1,105 @@
+// PRD page state (PRD mode plan, milestone 3). Rust (apps/harness-slint/src/bridge/prd.rs) reads
+// docs/specs/*/prd.json of the workspace and fills these; the page asks for a reload while it is open.
+import { Theme } from "../theme/tokens.slint";
+
+// One PRD found under docs/specs/<slug>/prd.json.
+export struct PrdSpec {
+    slug: string,
+    title: string,
+}
+
+// One phase column.
+export struct PrdPhase {
+    id: string,
+    title: string,
+    status: string,
+    done: int,
+    total: int,
+}
+
+// One feature header ("feature") or task card ("sub") of a phase column.
+export struct PrdNode {
+    phase: int,
+    kind: string,
+    id: string,
+    title: string,
+    // planned | running | done | blocked (anything else shows as planned).
+    status: string,
+    req: string,
+    task: string,
+    agent: string,
+    files: string,
+    done-when: string,
+    depends: string,
+    // The subagent working on this task, matched by its TASK id in the subagent title (-1 = none; else the
+    // SubagentRow status: 0 running, 1 needs approval, 2 done, 3 failed, 4 cancelled, 5 interrupted).
+    live: int,
+    live-agent: string,
+    live-activity: string,
+    // First letter of the agent shown on the card.
+    initial: string,
+}
+
+export global PrdUi {
+    in-out property <bool> open;
+    in property <[PrdSpec]> specs;
+    in property <int> selected;
+    in property <string> title;
+    in property <string> spec-path;
+    // "strict" | "advisory" | "".
+    in property <string> gate-mode;
+    in property <bool> gate-passed;
+    in property <int> gate-issues;
+    in property <int> done;
+    in property <int> total;
+    in property <[PrdPhase]> phases;
+    in property <[PrdNode]> nodes;
+    in property <string> error;
+    // Reload the PRD list and the selected PRD from disk.
+    callback refresh();
+    callback select(int);
+    // Put "run this phase" into the composer with PRD mode on, and close the page.
+    callback run-phase(string);
+    // Run one task (its TASK id): the main agent delegates it to a subagent.
+    callback run-task(string);
+
+    pure public function status-color(status: string) -> color {
+        if status == "done" {
+            return Theme.success;
+        }
+        if status == "running" {
+            return Theme.accent-fg;
+        }
+        if status == "blocked" {
+            return Theme.destructive;
+        }
+        return Theme.muted;
+    }
+    public pure function live-text(live: int) -> string {
+        if live == 0 {
+            return "working";
+        }
+        if live == 1 {
+            return "needs approval";
+        }
+        if live == 2 {
+            return "finished";
+        }
+        if live == 3 {
+            return "failed";
+        }
+        return "stopped";
+    }
+    public pure function live-color(live: int) -> color {
+        if live == 0 {
+            return Theme.accent-fg;
+        }
+        if live == 1 {
+            return Theme.warning;
+        }
+        if live == 2 {
+            return Theme.success;
+        }
+        return Theme.destructive;
+    }
+}

@@ -68,8 +68,9 @@ export component SidePane inherits Rectangle {
                     { id: "terminal", label: "Terminal" },
                     { id: "files", label: "Files" },
                     { id: "live", label: "Live" },
+                    { id: "work", label: "Work" },
                 ];
-                chip-pad: 12px;
+                chip-pad: 8px;
                 current: root.tab;
                 select(id) => {
                     root.tab = id;

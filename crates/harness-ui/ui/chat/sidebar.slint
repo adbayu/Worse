@@ -4,6 +4,7 @@ import { ChatUi } from "./globals.slint";
 import { AsciiArt, GlyphAnim } from "../components/ascii.slint";
 import { Button, Icon, IconButton, Icons, MenuItem, MenuShell, SectionLabel, StatusDot } from "../components/controls.slint";
 import { ListView } from "std-widgets.slint";
+import { ThinScrollbar } from "../components/thin_scrollbar.slint";
 import { Theme } from "../theme/tokens.slint";
 import { AccountCard, SessionSearch } from "./account_card.slint";
 import { SessionItem } from "./session_item.slint";
@@ -106,28 +107,41 @@ export component Sidebar inherits Rectangle {
                 }
             }
         }
-        ListView {
+        list-area := TouchArea {
             vertical-stretch: 1;
-            for s in root.sessions: SessionItem {
-                s: s;
-                origin-y: root.absolute-position.y;
-                drop-row: root.drop-row;
-                drop-top: root.drop-top;
-                drag-id <=> root.drag-id;
-                dragged <=> root.dragged;
-                drag-y <=> root.drag-y;
-                open-session(id) => {
-                    root.open-session(id);
+            lv := ListView {
+                width: parent.width;
+                height: parent.height;
+                vertical-scrollbar-policy: always-off;
+                for s in root.sessions: SessionItem {
+                    s: s;
+                    origin-y: root.absolute-position.y;
+                    drop-row: root.drop-row;
+                    drop-top: root.drop-top;
+                    drag-id <=> root.drag-id;
+                    dragged <=> root.dragged;
+                    drag-y <=> root.drag-y;
+                    open-session(id) => {
+                        root.open-session(id);
+                    }
+                    archive-session(id) => {
+                        root.archive-session(id);
+                    }
+                    menu(id, x, y) => {
+                        root.menu(id, x, y);
+                    }
+                    group-menu(id, x, y) => {
+                        root.group-menu(id, x, y);
+                    }
                 }
-                archive-session(id) => {
-                    root.archive-session(id);
-                }
-                menu(id, x, y) => {
-                    root.menu(id, x, y);
-                }
-                group-menu(id, x, y) => {
-                    root.group-menu(id, x, y);
-                }
+            }
+            ThinScrollbar {
+                x: parent.width - self.width;
+                height: parent.height;
+                content-y <=> lv.content-y;
+                content-height: lv.content-height;
+                visible-height: lv.visible-height;
+                active: list-area.has-hover;
             }
         }
         Rectangle {

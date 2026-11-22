@@ -21,6 +21,7 @@ pub const FLAG_DELEGATE: &str = "--delegate";
 /// Mode flag of the API provider ACP agent (`<exe> --api-agent`).
 pub const FLAG_API_AGENT: &str = "--api-agent";
 pub const FLAG_COMPUTER_MCP: &str = "--computer-mcp";
+pub const FLAG_WORK_MCP: &str = "--work-mcp";
 
 /// A helper process Harness starts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -32,6 +33,8 @@ pub enum Helper {
     /// ACP agent of one OpenAI-compatible provider (§9.7).
     ApiAgent,
     Computer,
+    /// Work edition MCP server (`work_*` tools).
+    Work,
 }
 
 /// How helpers are launched.
@@ -105,7 +108,7 @@ impl HelperLaunch {
             (Self::SelfExe { program }, _) => program,
             (
                 Self::Separate { memory_mcp, .. },
-                Helper::MemoryMcp | Helper::Delegate | Helper::Computer,
+                Helper::MemoryMcp | Helper::Delegate | Helper::Computer | Helper::Work,
             ) => memory_mcp,
             (Self::Separate { api_agent, .. }, Helper::ApiAgent) => api_agent,
         }
@@ -119,7 +122,8 @@ impl HelperLaunch {
             (_, Helper::Delegate) => Some(FLAG_DELEGATE),
             (Self::SelfExe { .. }, Helper::ApiAgent) => Some(FLAG_API_AGENT),
             (_, Helper::Computer) => Some(FLAG_COMPUTER_MCP),
-            (Self::Separate { .. }, Helper::MemoryMcp | Helper::ApiAgent) => None,
+            (Self::SelfExe { .. }, Helper::Work) => Some(FLAG_WORK_MCP),
+            (Self::Separate { .. }, Helper::MemoryMcp | Helper::ApiAgent | Helper::Work) => None,
         };
         flag.into_iter().map(str::to_owned).collect()
     }

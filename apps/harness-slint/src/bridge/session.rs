@@ -41,8 +41,7 @@ impl UiState {
         self.session_opened(items, summary.unread);
         self.reset_dock();
         if let Some((text, mut context)) = self.pending_send.take() {
-            self.add_research(&summary.id, &mut context);
-            self.add_code_mode(&summary.id, &mut context);
+            self.add_modes(&summary.id, &mut context);
             self.send_message(summary.id.clone(), text, context);
         }
     }

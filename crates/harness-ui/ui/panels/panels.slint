@@ -7,6 +7,7 @@ import { GitPanel } from "git.slint";
 import { SearchPanel } from "search.slint";
 import { TerminalPanel } from "terminal.slint";
 import { LivePanel } from "live.slint";
+import { WorkPanel } from "../work/work_panel.slint";
 
 export { PanelTabs }
 
@@ -30,6 +31,10 @@ export component PanelHost inherits Rectangle {
         height: parent.height;
     }
     if root.tab == "live": LivePanel {
+        width: parent.width;
+        height: parent.height;
+    }
+    if root.tab == "work": WorkPanel {
         width: parent.width;
         height: parent.height;
     }

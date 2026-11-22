@@ -6,7 +6,7 @@ import { OrchLiveUi } from "../orchestra/live.slint";
 import { GraphUi } from "../settings/globals.slint";
 import { ChatUi } from "./globals.slint";
 import { TitleDrag } from "./title_drag.slint";
-import { OrchButton, WindowControls, PanelsMenu } from "./top_bar_parts.slint";
+import { OrchButton, PrdButton, WindowControls, PanelsMenu } from "./top_bar_parts.slint";
 
 export component TopBar inherits Rectangle {
     in property <bool> narrow;
@@ -225,6 +225,9 @@ export component TopBar inherits Rectangle {
                     root.open-memory-graph();
                 }
             }
+        }
+        PrdButton {
+            y: (parent.height - self.height) / 2;
         }
         // Orchestra · N (design 01: accent pill with a dot; N = running subagents + tasks). Opens Settings > Orchestra.
         OrchButton {

@@ -34,10 +34,12 @@ mod groups;
 mod history;
 mod install;
 mod items;
+mod prd;
 mod pump;
 mod session;
 mod thumbs;
 mod turns;
+mod work;
 
 use api::archive_session;
 pub use api::{
@@ -84,6 +86,7 @@ struct UiState {
     thumbs: thumbs::Thumbs,
     history: history::History,
     fleet_view: fleet::FleetView,
+    work: work::WorkState,
 }
 
 thread_local! {

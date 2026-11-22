@@ -8,7 +8,6 @@ license.workspace = true
 
 [dependencies]
 serde = { workspace = true }
-serde_json = { workspace = true }
 thiserror = { workspace = true }
 # Only the sync primitives: the API stays runtime-light for the UI crate.
 tokio = { version = "1", default-features = false, features = ["sync"] }

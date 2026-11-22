@@ -78,6 +78,11 @@ export struct ChatItem {
     member: bool,
     turn-end: bool,
     head: bool,
+    // Work item card shown under tool rows that create/edit/export `work/<slug>/`.
+    work-slug: string,
+    work-title: string,
+    work-kind: string,
+    work-details: string,
 }
 
 // header: on the first row of a section: "pinned", a timeline group id ("today", "yesterday", "week", "month",

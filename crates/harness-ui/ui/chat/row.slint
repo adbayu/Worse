@@ -6,6 +6,8 @@ import { ChangesCard, ImageStrip, ThinkingRow, ToolCard } from "./turns.slint";
 import { Icon, Icons, Spinner } from "../components/controls.slint";
 import { Theme } from "../theme/tokens.slint";
 import { UserBubble, AssistantBubble, RowGroupHeader } from "./row_parts.slint";
+import { WorkCard } from "../work/work_card.slint";
+import { WorkUi } from "../work/work_panel.slint";
 
 export component ChatRow inherits VerticalLayout {
     in property <ChatItem> item;
@@ -77,6 +79,16 @@ export component ChatRow inherits VerticalLayout {
         added: root.item.added;
         removed: root.item.removed;
         member: root.item.member;
+    }
+    if root.item.kind == 2 && !root.hide && root.item.work-slug != "": WorkCard {
+        slug: root.item.work-slug;
+        title: root.item.work-title;
+        kind: root.item.work-kind;
+        details: root.item.work-details;
+        agent: root.item.agent;
+        open-item(slug) => { WorkUi.open-item(slug); }
+        export-item(slug) => { WorkUi.export-format(slug, ""); }
+        present-item(slug) => { WorkUi.present-deck(slug); }
     }
     // Thinking (live agent thought): collapsed line, expands to the text.
     if root.item.kind == 5 && !root.hide: ThinkingRow {

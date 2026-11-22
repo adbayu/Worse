@@ -1,0 +1,116 @@
+import { Theme } from "../theme/tokens.slint";
+import { Icon, Icons, IconButton, Button } from "../components/controls.slint";
+import { WorkUi } from "./work_panel.slint";
+
+// Full-window deck presentation overlay: arrow keys / Space advance slides, Esc exits.
+export component WorkPresent inherits Rectangle {
+    property <bool> show-notes: false;
+
+    background: #050608;
+    init => {
+        key-scope.focus();
+    }
+
+    key-scope := FocusScope {
+        width: parent.width;
+        height: parent.height;
+        key-pressed(event) => {
+            if event.text == Key.Escape {
+                WorkUi.stop-present();
+                return accept;
+            }
+            if event.text == Key.RightArrow || event.text == Key.DownArrow || event.text == " " {
+                if WorkUi.active-index + 1 < WorkUi.item-count {
+                    WorkUi.select-index(WorkUi.active-index + 1);
+                }
+                return accept;
+            }
+            if event.text == Key.LeftArrow || event.text == Key.UpArrow {
+                if WorkUi.active-index > 0 {
+                    WorkUi.select-index(WorkUi.active-index - 1);
+                }
+                return accept;
+            }
+            reject
+        }
+
+        VerticalLayout {
+            padding: 20px;
+            spacing: 12px;
+
+            // Slide canvas
+            Rectangle {
+                vertical-stretch: 1;
+                clip: true;
+
+                if WorkUi.has-preview: Image {
+                    width: parent.width;
+                    height: parent.height;
+                    source: WorkUi.preview-image;
+                    image-fit: contain;
+                }
+            }
+
+            // Optional speaker notes bar
+            if root.show-notes && WorkUi.notes != "": Rectangle {
+                height: 64px;
+                border-radius: Theme.radius-md;
+                background: #14161a;
+                border-width: 1px;
+                border-color: #ffffff24;
+                Text {
+                    x: 14px;
+                    y: 8px;
+                    width: parent.width - 28px;
+                    height: parent.height - 16px;
+                    text: WorkUi.notes;
+                    font-size: Theme.ui-sm;
+                    color: #d4d4d8;
+                    wrap: word-wrap;
+                    overflow: elide;
+                }
+            }
+
+            // Bottom controls bar
+            HorizontalLayout {
+                height: 36px;
+                spacing: 10px;
+                alignment: center;
+
+                IconButton {
+                    icon: Icons.chevron-left;
+                    label: @tr("Previous slide");
+                    enabled: WorkUi.active-index > 0;
+                    clicked => { WorkUi.select-index(WorkUi.active-index - 1); }
+                }
+
+                Text {
+                    text: (WorkUi.active-index + 1) + " / " + max(1, WorkUi.item-count);
+                    font-size: Theme.ui-sm;
+                    font-weight: Theme.weight-medium;
+                    color: #e4e4e7;
+                    vertical-alignment: center;
+                }
+
+                IconButton {
+                    icon: Icons.chevron-right;
+                    label: @tr("Next slide");
+                    enabled: WorkUi.active-index + 1 < WorkUi.item-count;
+                    clicked => { WorkUi.select-index(WorkUi.active-index + 1); }
+                }
+
+                if WorkUi.notes != "": Button {
+                    text: root.show-notes ? @tr("Hide notes") : @tr("Notes");
+                    size: "sm";
+                    clicked => { root.show-notes = !root.show-notes; }
+                }
+
+                Button {
+                    text: @tr("Exit (Esc)");
+                    size: "sm";
+                    clicked => { WorkUi.stop-present(); }
+                }
+            }
+        }
+    }
+}

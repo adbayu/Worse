@@ -1,0 +1,110 @@
+import { Theme } from "../theme/tokens.slint";
+import { Icon, Icons, Button, IconButton } from "../components/controls.slint";
+
+export component WorkCard inherits Rectangle {
+    in property <string> title: "Untitled";
+    in property <string> slug: "";
+    in property <string> kind: "deck"; // "deck" | "sheet" | "doc" | "chart"
+    in property <string> details: "";
+    in property <string> agent: "";
+    in property <image> preview;
+    in property <bool> has-preview: false;
+
+    callback open-item(string);
+    callback export-item(string);
+    callback present-item(string);
+
+    height: 76px;
+    border-radius: Theme.radius-lg;
+    background: Theme.surface;
+    border-width: 1px;
+    border-color: Theme.border;
+
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        padding-top: 10px;
+        padding-bottom: 10px;
+        spacing: 12px;
+        alignment: center;
+
+        // Preview thumbnail or icon
+        Rectangle {
+            width: 80px;
+            height: 54px;
+            border-radius: Theme.radius-md;
+            background: Theme.canvas;
+            border-width: 1px;
+            border-color: Theme.border;
+            clip: true;
+
+            if root.has-preview: Image {
+                width: parent.width;
+                height: parent.height;
+                source: root.preview;
+                image-fit: contain;
+            }
+
+            if !root.has-preview: Icon {
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                source: root.kind == "deck" ? Icons.monitor : root.kind == "sheet" ? Icons.folders : root.kind == "doc" ? Icons.file-text : Icons.scan;
+                size: Theme.icon-size;
+                tint: Theme.accent-fg;
+            }
+        }
+
+        // Info
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 3px;
+
+            Text {
+                text: root.title != "" ? root.title : root.slug;
+                font-size: Theme.ui-base;
+                font-weight: Theme.weight-semibold;
+                color: Theme.foreground;
+                overflow: elide;
+            }
+
+            HorizontalLayout {
+                spacing: 8px;
+                Text {
+                    text: root.details != "" ? root.details : (root.kind == "deck" ? @tr("Slide deck") : root.kind == "sheet" ? @tr("Spreadsheet") : root.kind == "doc" ? @tr("Document") : @tr("Chart"));
+                    font-size: Theme.ui-xs;
+                    color: Theme.foreground-subtle;
+                }
+                if root.agent != "": Text {
+                    text: "· " + root.agent;
+                    font-size: Theme.ui-xs;
+                    color: Theme.muted;
+                }
+            }
+        }
+
+        // Action buttons
+        HorizontalLayout {
+            spacing: 6px;
+            alignment: center;
+
+            if root.kind == "deck": IconButton {
+                icon: Icons.monitor;
+                label: @tr("Present");
+                clicked => { root.present-item(root.slug); }
+            }
+
+            IconButton {
+                icon: Icons.copy;
+                label: @tr("Export");
+                clicked => { root.export-item(root.slug); }
+            }
+
+            Button {
+                text: @tr("Open");
+                size: "sm";
+                clicked => { root.open-item(root.slug); }
+            }
+        }
+    }
+}

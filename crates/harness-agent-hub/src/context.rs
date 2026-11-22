@@ -91,6 +91,7 @@ pub(crate) async fn check(
     out
 }
 
+#[allow(clippy::too_many_lines)]
 async fn check_one(
     ctx: &HubCtx,
     workspace: &str,
@@ -186,12 +187,21 @@ async fn check_one(
                 _ => Some(format!("session {session_id} does not exist")),
             }
         }
-        ContextItem::Research => {
-            row.label = crate::research::LABEL.into();
+        ContextItem::Research | ContextItem::CodeMode | ContextItem::Prd => {
+            row.label = match item {
+                ContextItem::Research => crate::research::LABEL,
+                ContextItem::Prd => crate::prd::LABEL,
+                _ => "Code mode",
+            }
+            .into();
             None
         }
-        ContextItem::CodeMode => {
-            row.label = "Code mode".into();
+        ContextItem::WorkItem { path } => {
+            row.label = path
+                .split('/')
+                .next_back()
+                .unwrap_or(crate::work::LABEL)
+                .to_string();
             None
         }
     }
@@ -340,6 +350,13 @@ pub(crate) async fn blocks(
                 }
             }
             ContextItem::CodeMode => {}
+            ContextItem::Prd => {
+                out.push(json!({"type": "text", "text": crate::prd::INSTRUCTIONS}));
+            }
+            ContextItem::WorkItem { path } => {
+                out.push(json!({"type": "text", "text": crate::work::INSTRUCTIONS}));
+                out.push(json!({"type": "text", "text": format!("Active work item path: {path}")}));
+            }
         }
     }
     out

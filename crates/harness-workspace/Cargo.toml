@@ -14,7 +14,6 @@ harness-pty = { path = "../harness-pty" }
 harness-search = { path = "../harness-search" }
 harness-watch = { path = "../harness-watch" }
 tokio = { workspace = true, features = ["fs"] }
-tracing = { workspace = true }
 
 [lints]
 workspace = true

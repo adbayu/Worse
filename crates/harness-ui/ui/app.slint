@@ -54,6 +54,12 @@ import { SecurityUi, VulnRow } from "./settings/globals.slint";
 import { PerformanceUi } from "./settings/performance.slint";
 import { BoardUi, BoardPage, BoardCard, BoardColumn } from "./board/board.slint";
 import { OrchLiveUi, OrchestraLive } from "./orchestra/live.slint";
+import { PrdUi, PrdPage, PrdSpec, PrdPhase, PrdNode } from "./orchestra/prd_page.slint";
+export { PrdUi, PrdSpec, PrdPhase, PrdNode }
+import { WorkUi, SlideThumb, SheetTab, SheetCellView, SheetRowView } from "./work/work_panel.slint";
+import { WorkLibraryUi, WorkItemCard } from "./work/work_page.slint";
+import { WorkPresent } from "./work/work_present.slint";
+export { WorkUi, SlideThumb, SheetTab, SheetCellView, SheetRowView, WorkLibraryUi, WorkItemCard }
 export { SecurityUi, VulnRow }
 export { PerformanceUi }
 export { BoardUi, BoardCard, BoardColumn }
@@ -74,7 +80,7 @@ import { TopBar } from "./chat/top_bar.slint";
 import { ChatDock } from "./chat/chat_dock.slint";
 import { ChatTranscript } from "./chat/transcript.slint";
 import { MenuLayer } from "./chat/menu_layer.slint";
-import { SidebarResizer } from "./components/sidebar_resizer.slint";
+import { SidebarResizer, SidePaneResizer } from "./components/sidebar_resizer.slint";
 
 export component AppWindow inherits Window {
     title: "Harness";
@@ -148,6 +154,12 @@ export component AppWindow inherits Window {
     in-out property <bool> drawer-open;
     in-out property <bool> files-open: true;
     in-out property <length> sidebar-w: Theme.sidebar-width;
+    // 0px = automatic width per tab; set when the user drags the SidePaneResizer handle.
+    in-out property <length> side-pane-w: 0px;
+    in-out property <bool> side-pane-wide: false;
+    property <length> main-area-w: root.win-w - (root.show-sidebar ? root.sidebar-w + Theme.frame-gap : 0px) - Theme.frame-gap * 2;
+    property <length> side-pane-max-w: max(360px, root.main-area-w - 280px);
+    property <length> side-pane-actual-w: root.side-pane-wide ? max(Theme.side-pane-width, root.main-area-w * 0.7) : root.side-pane-w > 0px ? clamp(root.side-pane-w, 320px, root.side-pane-max-w) : root.side-tab == "diff" ? max(Theme.side-pane-width, root.main-area-w * 0.5) : root.side-tab == "work" ? max(460px, root.main-area-w * 0.48) : root.side-tab == "live" ? max(Theme.side-pane-width, root.main-area-w * 0.4) : Theme.side-pane-width;
 
     callback new-session();
     callback new-worktree-session();
@@ -246,6 +258,7 @@ export component AppWindow inherits Window {
         }
         BoardUi.open = false;
         OrchLiveUi.open = false;
+        PrdUi.open = false;
         if !GraphUi.has-graph {
             GraphUi.refresh();
         }
@@ -336,6 +349,10 @@ export component AppWindow inherits Window {
                 }
                 if BoardUi.open && !root.settings-open {
                     BoardUi.open = false;
+                    return accept;
+                }
+                if PrdUi.open && !root.settings-open {
+                    PrdUi.open = false;
                     return accept;
                 }
                 if WhiteboardUi.open {
@@ -499,8 +516,8 @@ export component AppWindow inherits Window {
                     }
                 }
                 if root.files-open && !root.narrow: SidePane {
-                    property <length> main-w: root.win-w - (root.show-sidebar ? root.sidebar-w + Theme.frame-gap : 0px) - Theme.frame-gap * 2;
-                    width: self.wide ? max(Theme.side-pane-width, self.main-w * 0.7) : root.side-tab == "diff" ? max(Theme.side-pane-width, self.main-w * 0.5) : root.side-tab == "live" ? max(Theme.side-pane-width, self.main-w * 0.4) : Theme.side-pane-width;
+                    width: root.side-pane-actual-w;
+                    wide <=> root.side-pane-wide;
                     tab <=> root.side-tab;
                     files: root.files;
                     workspace: root.workspace;
@@ -521,6 +538,16 @@ export component AppWindow inherits Window {
             y: Theme.topbar-height;
             height: parent.height - Theme.topbar-height * 2;
             sidebar-w <=> root.sidebar-w;
+        }
+        // Right side-pane resize handle: sits in the gap so dragging never hits the chat scrollbar.
+        if root.files-open && !root.narrow: SidePaneResizer {
+            x: parent.width - Theme.frame-gap - root.side-pane-actual-w - Theme.frame-gap / 2 - 5px;
+            y: Theme.topbar-height;
+            height: parent.height - Theme.topbar-height - Theme.frame-gap;
+            pane-w <=> root.side-pane-w;
+            wide <=> root.side-pane-wide;
+            current-w: root.side-pane-actual-w;
+            max-w: root.side-pane-max-w;
         }
 
         if !root.win-maximized && !root.native-frame: ResizeFrame {
@@ -645,6 +672,19 @@ export component AppWindow inherits Window {
                 OrchLiveUi.open = false;
                 root.draft = @tr("Delegate to subagents: ");
             }
+        }
+        if PrdUi.open: PrdPage {
+            close => {
+                PrdUi.open = false;
+            }
+            open-orchestra => {
+                PrdUi.open = false;
+                OrchLiveUi.open = true;
+            }
+        }
+        if WorkUi.presenting: WorkPresent {
+            width: 100%;
+            height: 100%;
         }
         // Settings is a centred modal over a dimmed backdrop (click outside or Esc closes); full window only when
         // the window is too small for a dialog.

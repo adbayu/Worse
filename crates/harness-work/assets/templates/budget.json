@@ -1,0 +1,25 @@
+{
+  "format": "harness-book/1",
+  "title": "Budget",
+  "sheets": [
+    {
+      "name": "Budget",
+      "cells": {
+        "A1": "Category", "B1": "Planned", "C1": "Actual", "D1": "Difference", "E1": "% used",
+        "A2": "Salaries", "B2": 52000, "C2": 51200, "D2": "=B2-C2", "E2": "=C2/B2",
+        "A3": "Rent", "B3": 9000, "C3": 9000, "D3": "=B3-C3", "E3": "=C3/B3",
+        "A4": "Software", "B4": 3500, "C4": 4100, "D4": "=B4-C4", "E4": "=C4/B4",
+        "A5": "Marketing", "B5": 8000, "C5": 6300, "D5": "=B5-C5", "E5": "=C5/B5",
+        "A6": "Travel", "B6": 2500, "C6": 2900, "D6": "=B6-C6", "E6": "=C6/B6",
+        "A7": "Total", "B7": "=SUM(B2:B6)", "C7": "=SUM(C2:C6)", "D7": "=B7-C7", "E7": "=C7/B7"
+      },
+      "formats": { "B2:D7": "#,##0", "E2:E7": "0.0%" },
+      "widths": { "A": 18, "B": 12, "C": 12, "D": 12, "E": 10 },
+      "fills": { "A1:E1": "#E5E7EB", "A7:E7": "#F3F4F6" },
+      "bold": ["A1:E1", "A7:E7"],
+      "freeze": "A2",
+      "conditional": [{ "range": "D2:D6", "when": "<0", "fill": "#FEE2E2" }],
+      "charts": [{ "id": "c1", "anchor": "G2", "chart": { "type": "column", "title": "Planned vs actual", "data": { "range": "Budget!A1:C6" } } }]
+    }
+  ]
+}

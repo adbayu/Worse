@@ -105,26 +105,31 @@ pub fn archive(id: String) {
 
 /// Archives one session from the sidebar (hub `archive_sessions`).
 pub(super) fn archive_session(id: String) {
-    let (reply, answer) = tokio::sync::oneshot::channel();
-    with_state(|s| {
-        s.send(Command::Settings(SettingsCall::ArchiveSessions(
-            vec![id],
-            reply,
-        )));
-    });
-    // 归档结果经 Event::Sessions 刷新列表；这里只把失败（运行中 Busy 等）显示出来。
-    let spawned = slint::spawn_local(async move {
-        let error = match answer.await {
-            Ok(Ok(())) => None,
-            Ok(Err(error)) => Some(error.to_string()),
-            Err(_) => Some(harness_core_api::ApiError::ShutDown.to_string()),
-        };
-        if let Some(error) = error {
-            with_state(|s| s.window.set_error_text(error.into()));
+    with_state(|s| s.archive_sessions(vec![id]));
+}
+
+impl super::UiState {
+    /// Archives sessions (one from the sidebar, or all of a workspace); restorable in Settings › Archived.
+    pub(super) fn archive_sessions(&self, ids: Vec<String>) {
+        if ids.is_empty() {
+            return;
         }
-    });
-    if spawned.is_err() {
-        with_state(|s| s.window.set_error_text("event loop unavailable".into()));
+        let (reply, answer) = tokio::sync::oneshot::channel();
+        self.send(Command::Settings(SettingsCall::ArchiveSessions(ids, reply)));
+        // 归档结果经 Event::Sessions 刷新列表；这里只把失败（运行中 Busy 等）显示出来。
+        let spawned = slint::spawn_local(async move {
+            let error = match answer.await {
+                Ok(Ok(())) => None,
+                Ok(Err(error)) => Some(error.to_string()),
+                Err(_) => Some(harness_core_api::ApiError::ShutDown.to_string()),
+            };
+            if let Some(error) = error {
+                with_state(|s| s.window.set_error_text(error.into()));
+            }
+        });
+        if spawned.is_err() {
+            self.window.set_error_text("event loop unavailable".into());
+        }
     }
 }
 

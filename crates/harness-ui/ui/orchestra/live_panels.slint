@@ -16,6 +16,8 @@ export component LiveHeader inherits Rectangle {
     callback close();
     callback delegate();
     callback open-settings();
+    // Open the PRD page (which agent works on which part of the PRD).
+    callback open-prd();
     height: 56px;
     border-width: 0px;
     HorizontalLayout {
@@ -87,6 +89,15 @@ export component LiveHeader inherits Rectangle {
                 label: @tr("Orchestra settings");
                 clicked => {
                     root.open-settings();
+                }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            LiveButton {
+                text: "PRD";
+                clicked => {
+                    root.open-prd();
                 }
             }
         }

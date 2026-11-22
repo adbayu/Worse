@@ -48,6 +48,10 @@ pub(super) struct DockState {
     draft_research: bool,
     code_mode: std::collections::HashSet<SessionId>,
     draft_code_mode: bool,
+    /// Sessions in PRD mode: each composer message gets `ContextItem::Prd`.
+    prd: std::collections::HashSet<SessionId>,
+    /// PRD mode chosen before the first message of a new chat.
+    draft_prd: bool,
 }
 
 /// Picker values of one `Event::SessionOptions`.
@@ -139,25 +143,6 @@ fn toggle_session(set: &mut std::collections::HashSet<SessionId>, session: &Sess
 
 fn code_mode_item(enabled: bool, agy: bool) -> Option<ContextItem> {
     (enabled && !agy).then_some(ContextItem::CodeMode)
-}
-
-fn mode_name(label: &str, research: bool, code: bool) -> String {
-    let mut name = label.to_owned();
-    let suffixes = [
-        (research, "Deep research", " · Research"),
-        (code, "Code mode", " · Code"),
-    ];
-    for (on, bare, suffix) in suffixes {
-        if !on {
-            continue;
-        }
-        if name.is_empty() {
-            name.push_str(bare);
-        } else {
-            name.push_str(suffix);
-        }
-    }
-    name
 }
 
 impl UiState {
@@ -278,8 +263,7 @@ impl UiState {
         if text.trim().is_empty() && context.is_empty() {
             return;
         }
-        self.add_research(&session, &mut context);
-        self.add_code_mode(&session, &mut context);
+        self.add_modes(&session, &mut context);
         self.window.set_draft(SharedString::new());
         self.send(Command::Steer {
             session,
@@ -316,32 +300,9 @@ pub(super) fn wire(window: &crate::ui::AppWindow) {
 
 #[cfg(test)]
 mod tests {
-    use super::{agy_agent, code_mode_item, mode_name, toggle_session};
+    use super::{agy_agent, code_mode_item, toggle_session};
 
     use harness_core_api::ContextItem;
-
-    const DOT: char = '·';
-
-    #[test]
-    fn mode_name_lists_the_sticky_modes() {
-        assert_eq!(mode_name("Agent", false, false), "Agent");
-        assert_eq!(
-            mode_name("Agent", true, false),
-            format!("Agent {DOT} Research")
-        );
-        assert_eq!(mode_name("Agent", false, true), format!("Agent {DOT} Code"));
-        assert_eq!(
-            mode_name("Agent", true, true),
-            format!("Agent {DOT} Research {DOT} Code")
-        );
-        assert_eq!(mode_name("", false, false), "");
-        assert_eq!(mode_name("", true, false), "Deep research");
-        assert_eq!(mode_name("", false, true), "Code mode");
-        assert_eq!(
-            mode_name("", true, true),
-            format!("Deep research {DOT} Code")
-        );
-    }
 
     #[test]
     fn only_agy_agents_lack_code_mode() {

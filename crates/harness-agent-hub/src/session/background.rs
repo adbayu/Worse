@@ -13,7 +13,10 @@ use crate::acp::AcpConnection;
 use crate::store;
 use crate::util::{new_id, now_ms};
 
+mod agy;
 mod autonomous;
+
+pub(super) use agy::AgyTrack;
 
 const MAX_TASKS: usize = 50;
 const IDLE_END: Duration = Duration::from_secs(20);

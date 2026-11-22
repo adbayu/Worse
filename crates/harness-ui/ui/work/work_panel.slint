@@ -1,0 +1,336 @@
+import { Theme } from "../theme/tokens.slint";
+import { Icon, Icons, IconButton, Button, Spinner } from "../components/controls.slint";
+import { SheetTab, SheetCellView, SheetRowView, WorkSheetView } from "./work_sheet.slint";
+import { WorkLibraryPanel } from "./work_page.slint";
+
+export { SheetTab, SheetCellView, SheetRowView }
+
+export struct SlideThumb {
+    index: int,
+    title: string,
+    image: image,
+    has-image: bool,
+}
+
+export global WorkUi {
+    in-out property <bool> open: false;
+    in-out property <string> item-slug: "";
+    in-out property <string> item-title: "";
+    in-out property <string> item-kind: "deck"; // "deck" | "sheet" | "doc" | "chart"
+    in-out property <int> active-index: 0;
+    in-out property <int> item-count: 0;
+    in-out property <image> preview-image;
+    in-out property <bool> has-preview: false;
+    in-out property <string> notes: "";
+    in-out property <string> status-text: "";
+    in-out property <string> warning-text: "";
+    in-out property <string> selected-path: "";
+    in-out property <bool> presenting: false;
+    in-out property <bool> loading: false;
+    in-out property <[SlideThumb]> slides: [];
+    in-out property <[SheetTab]> sheets: [];
+    in-out property <int> active-sheet: 0;
+    in-out property <[string]> col-headers: [];
+    in-out property <[length]> col-widths: [];
+    in-out property <length> grid-width: 0px;
+    in-out property <length> grid-height: 0px;
+    in-out property <[SheetRowView]> sheet-rows: [];
+    in-out property <string> selected-coord: "";
+    in-out property <string> formula-text: "";
+    in-out property <string> cell-note: "";
+    in-out property <[string]> validation-options: [];
+
+    callback open-item(string);
+    callback close();
+    // Closes the open item and goes back to the Work library.
+    callback back();
+    callback select-index(int);
+    callback select-sheet(int);
+    callback select-cell(string, string);
+    callback edit-cell(string, string);
+    callback export-format(string, string);
+    callback present-deck(string);
+    callback stop-present();
+    callback add-comment(string, string);
+    callback refresh();
+    callback open-folder(string);
+}
+
+export component WorkPanel inherits Rectangle {
+    property <string> comment-text: "";
+
+    background: Theme.panel;
+    clip: true;
+
+    if WorkUi.item-slug == "": WorkLibraryPanel {
+        width: parent.width;
+        height: parent.height;
+    }
+
+    if WorkUi.item-slug != "": VerticalLayout {
+        width: parent.width;
+        height: parent.height;
+        padding: 10px;
+        spacing: 8px;
+
+        // Header
+        HorizontalLayout {
+            height: 36px;
+            alignment: center;
+            spacing: 6px;
+
+            IconButton {
+                icon: Icons.chevron-left;
+                label: @tr("Back to Work library");
+                clicked => { WorkUi.back(); }
+            }
+
+            Icon {
+                y: (parent.height - self.height) / 2;
+                source: WorkUi.item-kind == "deck" ? Icons.monitor : WorkUi.item-kind == "sheet" ? Icons.folders : WorkUi.item-kind == "doc" ? Icons.file-text : Icons.scan;
+                size: Theme.icon-sm;
+                tint: Theme.accent-fg;
+            }
+
+            VerticalLayout {
+                horizontal-stretch: 1;
+                alignment: center;
+                Text {
+                    text: WorkUi.item-title != "" ? WorkUi.item-title : (WorkUi.item-slug != "" ? WorkUi.item-slug : @tr("Work"));
+                    font-size: Theme.ui-sm;
+                    font-weight: Theme.weight-semibold;
+                    color: Theme.foreground;
+                    overflow: elide;
+                }
+                Text {
+                    text: WorkUi.status-text != "" ? WorkUi.status-text : (WorkUi.item-count > 0 ? (WorkUi.active-index + 1) + " / " + WorkUi.item-count : @tr("Open an item from Work library or chat"));
+                    font-size: Theme.ui-xs;
+                    color: Theme.foreground-subtle;
+                    overflow: elide;
+                }
+            }
+
+            if WorkUi.item-kind == "deck" && WorkUi.item-slug != "": IconButton {
+                icon: Icons.monitor;
+                label: @tr("Present");
+                clicked => { WorkUi.present-deck(WorkUi.item-slug); }
+            }
+
+            if WorkUi.item-slug != "": IconButton {
+                icon: Icons.folder-open;
+                label: @tr("Reveal folder");
+                clicked => { WorkUi.open-folder(WorkUi.item-slug); }
+            }
+
+            if WorkUi.item-slug != "": IconButton {
+                icon: Icons.rotate-ccw;
+                label: @tr("Refresh");
+                clicked => { WorkUi.refresh(); }
+            }
+
+            if WorkUi.item-slug != "": Button {
+                text: WorkUi.item-kind == "deck" ? ".pptx" : WorkUi.item-kind == "sheet" ? ".xlsx" : WorkUi.item-kind == "doc" ? ".docx" : ".svg";
+                size: "xs";
+                clicked => { WorkUi.export-format(WorkUi.item-slug, ""); }
+            }
+
+            if WorkUi.item-slug != "": Button {
+                text: ".pdf";
+                size: "xs";
+                clicked => { WorkUi.export-format(WorkUi.item-slug, "pdf"); }
+            }
+        }
+
+        if WorkUi.warning-text != "": Rectangle {
+            height: 28px;
+            border-radius: Theme.radius-sm;
+            background: Theme.warning-surface;
+            HorizontalLayout {
+                padding-left: 8px;
+                padding-right: 8px;
+                spacing: 6px;
+                Icon {
+                    y: (parent.height - self.height) / 2;
+                    source: Icons.triangle-alert;
+                    size: Theme.icon-xs;
+                    tint: Theme.warning-surface-foreground;
+                }
+                Text {
+                    text: WorkUi.warning-text;
+                    font-size: Theme.ui-xs;
+                    color: Theme.warning-surface-foreground;
+                    vertical-alignment: center;
+                    overflow: elide;
+                    horizontal-stretch: 1;
+                }
+            }
+        }
+
+        // Sheet view (native Slint grid + formula bar + tabs)
+        if WorkUi.item-kind == "sheet" && WorkUi.item-slug != "": WorkSheetView {
+            vertical-stretch: 1;
+            sheets: WorkUi.sheets;
+            active-sheet: WorkUi.active-sheet;
+            col-headers: WorkUi.col-headers;
+            col-widths: WorkUi.col-widths;
+            grid-width: WorkUi.grid-width;
+            grid-height: WorkUi.grid-height;
+            sheet-rows: WorkUi.sheet-rows;
+            selected-coord: WorkUi.selected-coord;
+            formula-text <=> WorkUi.formula-text;
+            cell-note: WorkUi.cell-note;
+            validation-options: WorkUi.validation-options;
+            select-sheet(idx) => { WorkUi.select-sheet(idx); }
+            select-cell(coord, raw) => { WorkUi.select-cell(coord, raw); }
+            edit-cell(coord, raw) => { WorkUi.edit-cell(coord, raw); }
+        }
+
+        // Deck / Doc / Chart preview area
+        if WorkUi.item-kind != "sheet" || WorkUi.item-slug == "": HorizontalLayout {
+            vertical-stretch: 1;
+            spacing: 8px;
+
+            if WorkUi.slides.length > 1: Flickable {
+                width: 92px;
+                content-height: WorkUi.slides.length * 64px;
+
+                VerticalLayout {
+                    spacing: 6px;
+                    for slide in WorkUi.slides: Rectangle {
+                        height: 58px;
+                        border-radius: Theme.radius-sm;
+                        background: slide.index == WorkUi.active-index ? Theme.raised : Theme.surface;
+                        border-width: slide.index == WorkUi.active-index ? 2px : 1px;
+                        border-color: slide.index == WorkUi.active-index ? Theme.accent-line : Theme.border;
+                        clip: true;
+
+                        if slide.has-image: Image {
+                            width: parent.width;
+                            height: parent.height;
+                            source: slide.image;
+                            image-fit: contain;
+                        }
+
+                        if !slide.has-image: Text {
+                            text: (slide.index + 1) + ". " + slide.title;
+                            font-size: Theme.ui-xs;
+                            color: Theme.foreground-subtle;
+                            overflow: elide;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+
+                        TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => { WorkUi.select-index(slide.index); }
+                        }
+                    }
+                }
+            }
+
+            Rectangle {
+                horizontal-stretch: 1;
+                border-radius: Theme.radius-md;
+                background: Theme.canvas;
+                border-width: 1px;
+                border-color: Theme.border;
+                clip: true;
+
+                if WorkUi.has-preview: Image {
+                    width: parent.width - 12px;
+                    height: parent.height - 12px;
+                    x: 6px;
+                    y: 6px;
+                    source: WorkUi.preview-image;
+                    image-fit: contain;
+                }
+
+                if !WorkUi.has-preview: VerticalLayout {
+                    alignment: center;
+                    spacing: 8px;
+                    if WorkUi.loading: Spinner {
+                        x: (parent.width - self.width) / 2;
+                        size: 24px;
+                    }
+                    Text {
+                        text: WorkUi.loading ? @tr("Rendering preview…") : WorkUi.item-slug == "" ? @tr("No Work item open") : @tr("No preview available");
+                        font-size: Theme.ui-sm;
+                        color: Theme.muted;
+                        horizontal-alignment: center;
+                    }
+                }
+            }
+        }
+
+        // Speaker notes
+        if WorkUi.notes != "": Rectangle {
+            height: 44px;
+            border-radius: Theme.radius-sm;
+            background: Theme.surface;
+            border-width: 1px;
+            border-color: Theme.border;
+            Text {
+                x: 8px;
+                y: 4px;
+                width: parent.width - 16px;
+                height: parent.height - 8px;
+                text: WorkUi.notes;
+                font-size: Theme.ui-xs;
+                color: Theme.foreground-subtle;
+                overflow: elide;
+                wrap: word-wrap;
+            }
+        }
+
+        // Comment to composer input
+        if WorkUi.item-slug != "": HorizontalLayout {
+            height: 30px;
+            spacing: 6px;
+
+            Rectangle {
+                horizontal-stretch: 1;
+                border-radius: Theme.radius-sm;
+                background: Theme.input;
+                border-width: 1px;
+                border-color: Theme.input-border;
+                clip: true;
+
+                TextInput {
+                    x: 8px;
+                    width: parent.width - 16px;
+                    height: parent.height;
+                    text <=> root.comment-text;
+                    font-size: Theme.ui-xs;
+                    color: Theme.foreground;
+                    vertical-alignment: center;
+                    accepted => {
+                        if root.comment-text != "" {
+                            WorkUi.add-comment(WorkUi.selected-path != "" ? WorkUi.selected-path : WorkUi.item-slug, root.comment-text);
+                            root.comment-text = "";
+                        }
+                    }
+                }
+
+                if root.comment-text == "": Text {
+                    x: 8px;
+                    y: (parent.height - self.height) / 2;
+                    text: WorkUi.selected-path != "" ? @tr("Comment on {0}…", WorkUi.selected-path) : @tr("Type comment for agent…");
+                    font-size: Theme.ui-xs;
+                    color: Theme.muted;
+                    accessible-role: none;
+                }
+            }
+
+            Button {
+                text: @tr("Comment");
+                size: "sm";
+                clicked => {
+                    if root.comment-text != "" {
+                        WorkUi.add-comment(WorkUi.selected-path != "" ? WorkUi.selected-path : WorkUi.item-slug, root.comment-text);
+                        root.comment-text = "";
+                    }
+                }
+            }
+        }
+    }
+}

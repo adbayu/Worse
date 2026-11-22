@@ -27,3 +27,50 @@ export component SidebarResizer inherits Rectangle {
         }
     }
 }
+
+// Right side-pane resize handle: sits in the gap between transcript and SidePane; drag left to widen,
+// double-click to reset to automatic per-tab width.
+export component SidePaneResizer inherits Rectangle {
+    in-out property <length> pane-w;
+    in-out property <bool> wide;
+    in property <length> current-w;
+    in property <length> min-w: 320px;
+    in property <length> max-w: 900px;
+    width: 10px;
+    accessible-role: AccessibleRole.slider;
+    accessible-label: @tr("Resize side panel");
+    accessible-value: round(root.current-w / 1px);
+    accessible-value-minimum: round(root.min-w / 1px);
+    accessible-value-maximum: round(root.max-w / 1px);
+    accessible-value-step: 24;
+    accessible-action-increment => {
+        root.wide = false;
+        root.pane-w = clamp(root.current-w + 24px, root.min-w, root.max-w);
+    }
+    accessible-action-decrement => {
+        root.wide = false;
+        root.pane-w = clamp(root.current-w - 24px, root.min-w, root.max-w);
+    }
+    Rectangle {
+        x: (parent.width - self.width) / 2;
+        y: 24px;
+        width: spra.pressed ? 4px : 3px;
+        height: max(0px, parent.height - 48px);
+        border-radius: 2px;
+        background: spra.pressed ? Theme.accent-fg : spra.has-hover ? Theme.resize-handle : transparent;
+        animate background, width { duration: Theme.dur-hover; easing: ease-out-quint; }
+    }
+    spra := TouchArea {
+        mouse-cursor: ew-resize;
+        double-clicked => {
+            root.wide = false;
+            root.pane-w = 0px;
+        }
+        moved => {
+            if self.pressed {
+                root.wide = false;
+                root.pane-w = clamp(root.current-w - (self.mouse-x - self.pressed-x), root.min-w, root.max-w);
+            }
+        }
+    }
+}

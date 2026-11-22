@@ -1,6 +1,7 @@
 import { ListView } from "std-widgets.slint";
 import { Theme } from "../theme/tokens.slint";
 import { Icon, Icons } from "../components/controls.slint";
+import { ThinScrollbar } from "../components/thin_scrollbar.slint";
 import { ChatItem } from "../models.slint";
 import { ChatUi } from "./globals.slint";
 import { FindBar } from "./find.slint";
@@ -38,9 +39,13 @@ export component ChatTranscript inherits Rectangle {
             root.draft = text;
         }
     }
-    chat-list := ListView {
+    list-area := TouchArea {
         width: parent.width;
         height: parent.height;
+        chat-list := ListView {
+            width: parent.width;
+            height: parent.height;
+            vertical-scrollbar-policy: always-off;
         property <length> bottom-y: min(0px, self.visible-height - self.content-height);
         function follow() {
             if root.stick-bottom {
@@ -110,6 +115,15 @@ export component ChatTranscript inherits Rectangle {
                     root.open-link(url);
                 }
             }
+        }
+        }
+        ThinScrollbar {
+            x: parent.width - self.width - 4px;
+            height: parent.height;
+            content-y <=> chat-list.content-y;
+            content-height: chat-list.content-height;
+            visible-height: chat-list.visible-height;
+            active: list-area.has-hover;
         }
     }
     if ChatUi.find-open: FindBar {

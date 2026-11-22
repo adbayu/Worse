@@ -37,6 +37,8 @@ export global DockUi {
     in-out property <string> picker-open;
     in property <bool> machine;
     in property <bool> research;
+    // PRD mode: each message carries the PRD discovery instructions (interview, spec, review gate, tasks).
+    in property <bool> prd;
     in property <bool> code-mode;
     in property <bool> code-mode-supported;
     in-out property <length> menu-x;

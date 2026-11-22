@@ -1,6 +1,6 @@
 [package]
 name = "harness-slint"
-version = "0.1.11"
+version = "0.1.12"
 edition.workspace = true
 # Slint 1.18 itself requires Rust 1.92 (enforced through its own rust-version).
 rust-version.workspace = true
@@ -40,6 +40,7 @@ pulldown-cmark = { version = "0.13", default-features = false }
 harness-core-api = { path = "../../crates/harness-core-api" }
 harness-ui = { path = "../../crates/harness-ui" }
 harness-agent-hub = { path = "../../crates/harness-agent-hub" }
+harness-work = { path = "../../crates/harness-work" }
 # The picture of the project graph, drawn on the CPU (Settings › Memory › Graph).
 harness-graph-view = { path = "../../crates/harness-graph-view" }
 # §9.9: the API provider agent runs as `harness-slint --api-agent` (one shipped executable).

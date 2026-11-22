@@ -43,9 +43,21 @@ export component NewSessionMenu inherits MenuShell {
 export component GroupMenu inherits MenuShell {
     in property <string> target-id;
     callback close();
+    // A sidebar workspace header ("project:<key>") instead of a user group.
+    property <bool> project: root.target-id.starts-with("project:");
     accessible-role: AccessibleRole.groupbox;
     accessible-label: @tr("Group menu");
-    MenuItem {
+    if root.project: MenuItem {
+        text: @tr("Remove workspace");
+        show-check: false;
+        has-icon: true;
+        icon: Icons.trash-2;
+        clicked => {
+            root.close();
+            ChatUi.group-action("remove-project", root.target-id);
+        }
+    }
+    if !root.project: MenuItem {
         text: @tr("Rename group");
         show-check: false;
         has-icon: true;
@@ -55,7 +67,7 @@ export component GroupMenu inherits MenuShell {
             ChatUi.group-action("rename", root.target-id);
         }
     }
-    HorizontalLayout {
+    if !root.project: HorizontalLayout {
         padding: 6px;
         padding-left: 10px;
         spacing: 6px;
@@ -79,7 +91,7 @@ export component GroupMenu inherits MenuShell {
             }
         }
     }
-    MenuItem {
+    if !root.project: MenuItem {
         text: @tr("Move group up");
         show-check: false;
         has-icon: true;
@@ -89,7 +101,7 @@ export component GroupMenu inherits MenuShell {
             ChatUi.group-action("up", root.target-id);
         }
     }
-    MenuItem {
+    if !root.project: MenuItem {
         text: @tr("Move group down");
         show-check: false;
         has-icon: true;
@@ -99,7 +111,7 @@ export component GroupMenu inherits MenuShell {
             ChatUi.group-action("down", root.target-id);
         }
     }
-    MenuItem {
+    if !root.project: MenuItem {
         text: @tr("Delete group");
         show-check: false;
         has-icon: true;

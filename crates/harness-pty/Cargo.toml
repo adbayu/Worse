@@ -20,7 +20,6 @@ win32job = { workspace = true }
 nix = { workspace = true }
 
 [dev-dependencies]
-serde_json = { workspace = true }
 tempfile = { workspace = true }
 
 [lints]

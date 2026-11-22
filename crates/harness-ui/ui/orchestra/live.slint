@@ -14,6 +14,7 @@ export { LiveStatus, StatusPill, Avatar, Progress, LiveButton, Caps }
 import { SubNode, SessionGroup } from "./live_session.slint";
 export { SubNode, SessionGroup }
 import { LiveHeader, LiveDetail } from "./live_panels.slint";
+import { PrdUi } from "./prd_page.slint";
 
 export global OrchLiveUi {
     in-out property <bool> open;
@@ -73,6 +74,10 @@ export component OrchestraLive inherits Rectangle {
             }
             open-settings => {
                 root.open-settings();
+            }
+            open-prd => {
+                OrchLiveUi.open = false;
+                PrdUi.open = true;
             }
         }
         HorizontalLayout {

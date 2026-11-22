@@ -270,6 +270,11 @@ export global ChatUi {
             if part == "label" { return @tr("Its sessions move back to the session list."); }
             if part == "confirm" { return @tr("Delete"); }
         }
+        if kind == "remove-project" {
+            if part == "title" { return @tr("Remove workspace"); }
+            if part == "label" { return @tr("All sessions of this workspace are archived and it leaves the sidebar. Restore them in Settings › Archived. Files on disk are not touched."); }
+            if part == "confirm" { return @tr("Remove"); }
+        }
         if kind == "new-schedule" {
             if part == "title" { return @tr("New schedule"); }
             if part == "label" { return @tr("Prompt sent on every run (to the open session, or to a new session when none is open)."); }
