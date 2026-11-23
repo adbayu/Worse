@@ -282,7 +282,7 @@ impl GitRepo {
     /// `GitError::App("Path is outside repository scope: <path>")`.
     pub fn normalize_input_path(resolution: &Resolution, path: &str) -> Result<String, GitError> {
         let raw = resolve_input_path(&resolution.workspace_path, path);
-        let absolute = harness_fs::realpath(&raw).unwrap_or(raw);
+        let absolute = real_or_parent(raw);
         let relative = normalize_git_path(&node_relative(&resolution.repo_root, &absolute));
         if relative.is_empty() || relative == "." || relative == ".." || relative.starts_with("../")
         {
@@ -291,6 +291,27 @@ impl GitRepo {
             )));
         }
         Ok(relative)
+    }
+}
+
+/// `realpath` of `raw`; for a path that does not exist yet, `realpath` of its parent plus the file name.
+// 修复：Windows 上临时目录可能是 8.3 短名（C:\Users\RUNNER~1）。不存在的文件无法 realpath，
+// 保留短名后与已展开的仓库根比较会得到 `../`，被误判为“仓库范围之外”（CI 的 diffs_for_each_source）。
+fn real_or_parent(raw: String) -> String {
+    if let Ok(real) = harness_fs::realpath(&raw) {
+        return real;
+    }
+    let path = std::path::Path::new(&raw);
+    match (path.parent(), path.file_name()) {
+        (Some(parent), Some(name)) if !parent.as_os_str().is_empty() => {
+            harness_fs::realpath(&parent.to_string_lossy()).map_or(raw.clone(), |real| {
+                std::path::Path::new(&real)
+                    .join(name)
+                    .to_string_lossy()
+                    .into_owned()
+            })
+        }
+        _ => raw,
     }
 }
 
