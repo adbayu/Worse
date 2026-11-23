@@ -5,6 +5,8 @@ use harness_settings::Settings;
 use serde::Serialize;
 use serde_json::{json, Value};
 
+use super::settings_rows::{choice, number, toggle as edit};
+
 static MIRROR: RwLock<Option<Arc<Settings>>> = RwLock::new(None);
 
 pub fn mirror(settings: Option<Arc<Settings>>) {
@@ -64,10 +66,6 @@ fn row(title: &str, value: impl Into<String>) -> Value {
     json!({ "title": title, "value": value.into() })
 }
 
-fn toggle(title: &str, on: bool) -> Value {
-    json!({ "title": title, "kind": "toggle", "on": on })
-}
-
 #[allow(clippy::needless_pass_by_value)]
 fn section(title: &str, rows: Vec<Value>) -> Value {
     json!({ "title": title, "rows": rows })
@@ -88,6 +86,19 @@ fn enabled_agents(s: &Settings) -> usize {
 }
 
 impl SettingsView for DesktopSettings {
+    fn set(&self, path: &str, value: &Value) -> Result<(), String> {
+        let s = current().ok_or_else(|| "settings are still loading".to_owned())?;
+        if !super::settings_rows::editable(&s, path) {
+            return Err(format!("{path} can only be changed on the desktop"));
+        }
+        super::settings_rows::check_range(path, value)?;
+        crate::settings::patch_remote(&s, path, value.clone())
+    }
+
+    fn limits(&self) -> Value {
+        super::settings_rows::limits()
+    }
+
     fn overview(&self) -> Value {
         let Some(s) = current() else {
             return json!({ "host": host(), "items": {} });
@@ -120,22 +131,22 @@ impl SettingsView for DesktopSettings {
                     section(
                         "Basics",
                         vec![
-                            row("Language", label(&s.general.language)),
-                            row("Send with", label(&s.general.composer_send)),
-                            row("Follow-up", label(&s.general.follow_up)),
-                            toggle("Launch at startup", s.general.launch_at_startup),
+                            choice("Language", "general.language", &json!(s.general.language), &[(json!("system"), "System"), (json!("en-US"), "English"), (json!("zh-CN"), "中文")]),
+                            choice("Send with", "general.composerSend", &json!(s.general.composer_send), &[(json!("enter"), "Enter"), (json!("modEnter"), "Ctrl + Enter")]),
+                            choice("Follow-up", "general.followUp", &json!(s.general.follow_up), &[(json!("queue"), "Queue"), (json!("steer"), "Steer")]),
+                            edit("Launch at startup", "general.launchAtStartup", s.general.launch_at_startup),
                         ],
                     ),
                     section(
                         "Conversation",
                         vec![
-                            toggle("Show reasoning", s.general.show_reasoning),
-                            toggle("Show todos", s.general.show_todos),
-                            toggle("Group exploration", s.general.group_exploration),
-                            toggle("Group terminal", s.general.group_terminal),
-                            toggle("Group file changes", s.general.group_file_changes),
-                            toggle("Auto compact", s.general.auto_compact),
-                            toggle("Auto archive", s.general.auto_archive),
+                            edit("Show reasoning", "general.showReasoning", s.general.show_reasoning),
+                            edit("Show todos", "general.showTodos", s.general.show_todos),
+                            edit("Group exploration", "general.groupExploration", s.general.group_exploration),
+                            edit("Group terminal", "general.groupTerminal", s.general.group_terminal),
+                            edit("Group file changes", "general.groupFileChanges", s.general.group_file_changes),
+                            edit("Auto compact", "general.autoCompact", s.general.auto_compact),
+                            edit("Auto archive", "general.autoArchive", s.general.auto_archive),
                         ],
                     ),
                 ],
@@ -147,22 +158,22 @@ impl SettingsView for DesktopSettings {
                     section(
                         "Theme",
                         vec![
-                            row("Theme", label(&s.appearance.theme)),
+                            choice("Theme", "appearance.theme", &json!(s.appearance.theme), &[(json!("system"), "System"), (json!("light"), "Light"), (json!("dark"), "Dark")]),
                             row("Accent", s.appearance.accent_color.clone()),
-                            row("Density", s.appearance.density.clone()),
+                            choice("Density", "appearance.density", &json!(s.appearance.density), &[(json!("compact"), "Compact"), (json!("comfortable"), "Comfortable")]),
                         ],
                     ),
                     section(
                         "Text",
                         vec![
                             row("Interface font", s.appearance.ui_font.clone()),
-                            row("Font size", format!("{} px", s.appearance.ui_font_size)),
-                            row("Zoom", format!("{}%", s.appearance.zoom_percent)),
-                            row("Code font size", format!("{} px", s.appearance.code_font_size)),
-                            toggle("Line numbers", s.appearance.line_numbers),
-                            toggle("Wrap lines", s.appearance.wrap_lines),
-                            toggle("Reduce motion", s.appearance.reduce_motion),
-                            toggle("Show token usage", s.appearance.show_token_usage),
+                            number("Font size", "appearance.uiFontSize", i64::from(s.appearance.ui_font_size), "px"),
+                            number("Zoom", "appearance.zoomPercent", i64::from(s.appearance.zoom_percent), "%"),
+                            number("Code font size", "appearance.codeFontSize", i64::from(s.appearance.code_font_size), "px"),
+                            edit("Line numbers", "appearance.lineNumbers", s.appearance.line_numbers),
+                            edit("Wrap lines", "appearance.wrapLines", s.appearance.wrap_lines),
+                            edit("Reduce motion", "appearance.reduceMotion", s.appearance.reduce_motion),
+                            edit("Show token usage", "appearance.showTokenUsage", s.appearance.show_token_usage),
                         ],
                     ),
                 ],
@@ -173,12 +184,12 @@ impl SettingsView for DesktopSettings {
                 vec![section(
                     "Alerts",
                     vec![
-                        toggle("Task done", s.notifications.task_done),
-                        toggle("Build done", s.notifications.build_done),
-                        toggle("PR review", s.notifications.pr_review),
-                        toggle("Sound", s.notifications.sound),
-                        toggle("Keep awake", s.notifications.keep_awake),
-                        toggle("Close to tray", s.notifications.close_to_tray),
+                        edit("Task done", "notifications.taskDone", s.notifications.task_done),
+                        edit("Build done", "notifications.buildDone", s.notifications.build_done),
+                        edit("PR review", "notifications.prReview", s.notifications.pr_review),
+                        edit("Sound", "notifications.sound", s.notifications.sound),
+                        edit("Keep awake", "notifications.keepAwake", s.notifications.keep_awake),
+                        edit("Close to tray", "notifications.closeToTray", s.notifications.close_to_tray),
                     ],
                 )],
             ),
@@ -203,12 +214,13 @@ impl SettingsView for DesktopSettings {
                     s.agents
                         .iter()
                         .map(|(id, prefs)| {
-                            json!({
-                                "title": agent_name(id),
-                                "detail": prefs.default_model.clone().unwrap_or_default(),
-                                "badge": if prefs.enabled { "Enabled" } else { "Disabled" },
-                                "tone": if prefs.enabled { "success" } else { "muted" },
-                            })
+                            let mut row = edit(
+                                &agent_name(id),
+                                &format!("agents.{id}.enabled"),
+                                prefs.enabled,
+                            );
+                            row["detail"] = json!(prefs.default_model.clone().unwrap_or_default());
+                            row
                         })
                         .collect(),
                 )],
@@ -220,11 +232,11 @@ impl SettingsView for DesktopSettings {
                     "Defaults",
                     vec![
                         row("Default agent", agent_name(&s.orchestra.default_agent)),
-                        row("Default mode", s.orchestra.default_mode.clone()),
-                        row("Max concurrent", s.orchestra.max_concurrent.to_string()),
+                        choice("Default mode", "orchestra.defaultMode", &json!(s.orchestra.default_mode), &[(json!("ask"), "Ask"), (json!("acceptEdits"), "Accept edits"), (json!("machine"), "Machine")]),
+                        number("Max concurrent", "orchestra.maxConcurrent", i64::from(s.orchestra.max_concurrent), ""),
                         row("Max per subagent", s.orchestra.max_nested_per_subagent.to_string()),
-                        toggle("Auto claim", s.orchestra.auto_claim),
-                        toggle("Snap to grid", s.orchestra.snap_to_grid),
+                        edit("Auto claim", "orchestra.autoClaim", s.orchestra.auto_claim),
+                        edit("Snap to grid", "orchestra.snapToGrid", s.orchestra.snap_to_grid),
                     ],
                 )],
             ),
@@ -233,7 +245,7 @@ impl SettingsView for DesktopSettings {
                 "What agents remember between sessions",
                 vec![section(
                     "Memory",
-                    vec![toggle("Workspace memory", s.memory.workspace_memory_enabled)],
+                    vec![edit("Workspace memory", "memory.workspaceMemoryEnabled", s.memory.workspace_memory_enabled)],
                 )],
             ),
             "remote" => (

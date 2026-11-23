@@ -61,7 +61,12 @@ object PairStore {
         val host = uri.host?.trim().orEmpty()
         if (host.isEmpty()) return null
         val port = if (uri.port > 0 && uri.port != 443) ":${uri.port}" else ""
-        val origin = "https://$host$port"
+        // 中继链接 `https://<relay>/<device-id>#k=…` 必须保留设备路径，否则重启后会打开中继首页。
+        val device = uri.path.orEmpty().trim('/').takeIf { RELAY_ID.matches(it) }
+        val origin = if (device != null) "https://$host$port/$device" else "https://$host$port"
         return PairLink(origin = origin, url = text)
     }
+
+    /** Device id path of a Remote Control relay link (docs/plans/remote-relay.md §1). */
+    private val RELAY_ID = Regex("^[a-z2-7]{16}$")
 }

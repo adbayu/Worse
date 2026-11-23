@@ -1,0 +1,23 @@
+# Remote Control relay (docs/plans/remote-relay.md). Deploy with your own Cloudflare account:
+#   npx wrangler login && npm run deploy
+# No API key is stored here or in the app; wrangler keeps the login on the deploying machine.
+name = "worse-relay"
+main = "src/index.ts"
+compatibility_date = "2025-10-01"
+
+# Custom Domain of the official relay (Cloudflare creates the DNS record and certificate). Forks change or drop this.
+routes = [{ pattern = "worse.digidaw.site", custom_domain = true }]
+
+[assets]
+directory = "./public"
+binding = "ASSETS"
+run_worker_first = true
+
+[[durable_objects.bindings]]
+name = "DEVICE"
+class_name = "Device"
+
+# The Workers Free plan only allows SQLite-backed Durable Objects (no rows are written, see src/device.ts).
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Device"]

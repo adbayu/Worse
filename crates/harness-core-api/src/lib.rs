@@ -11,6 +11,7 @@ pub mod diff;
 mod error;
 mod events;
 mod inbox;
+mod insights;
 mod options;
 mod orchestra;
 pub mod time;
@@ -52,6 +53,7 @@ pub use inbox::{
     DEFAULT_INBOX_HANDLE, DEFAULT_INBOX_INTERVAL, DEFAULT_INBOX_MAX_TURNS, MAX_INBOX_INTERVAL,
     MAX_INBOX_SOURCES, MIN_INBOX_INTERVAL,
 };
+pub use insights::{PullError, PullInfo, PullList, UsageCost, UsageRow, UsageStats};
 pub use options::{
     AgentDefaults, AgentOptions, ConfigOption, ConfigValue, ModeInfo, ModelInfo,
     SessionConfigOptions, SessionModels, SessionModes,
@@ -70,7 +72,7 @@ pub use types::{
 };
 
 /// API version string; bumped (minor) on every additive change.
-pub const API_VERSION: &str = "0.26.0";
+pub const API_VERSION: &str = "0.27.0";
 
 /// Default body of the methods added in 0.4.0 and later.
 fn unsupported<T: Send + 'static>(name: &'static str) -> BoxFuture<'static, ApiResult<T>> {
@@ -698,6 +700,17 @@ pub trait HarnessCore: Send + Sync {
     fn sync_board(&self, workspace_key: String) -> BoxFuture<'_, ApiResult<Board>> {
         let _ = workspace_key;
         unsupported("sync_board")
+    }
+
+    /// Token use per agent and UTC day over the last `days` days (1..=366).
+    fn usage_stats(&self, days: u32) -> BoxFuture<'_, ApiResult<UsageStats>> {
+        let _ = days;
+        unsupported("usage_stats")
+    }
+
+    /// Open pull requests of the known projects.
+    fn list_pulls(&self) -> BoxFuture<'_, ApiResult<PullList>> {
+        unsupported("list_pulls")
     }
 
     fn inbox_status(&self) -> BoxFuture<'_, ApiResult<InboxStatus>> {

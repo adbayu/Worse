@@ -1,0 +1,252 @@
+// "Remote Control" card, like Antigravity's: one switch, the device name, a QR code (click for a large one with
+// the link), all through the relay (docs/plans/remote-relay.md). The tunnel and manual pairing stay in Advanced.
+import { Theme } from "../theme/tokens.slint";
+import { Icon, IconButton, Icons } from "../components/controls.slint";
+import { Switch, TextField } from "parts.slint";
+import { SettingsUi } from "globals.slint";
+import { RemoteUi } from "./remote_ui.slint";
+import { RemoteLook, RCard, Sep, RButton, ToggleRow, FieldRow } from "./remote_parts.slint";
+
+component QrBox inherits Rectangle {
+    in property <length> size;
+    width: root.size;
+    height: root.size;
+    border-radius: 10px;
+    background: RemoteUi.has-relay-qr ? white : Theme.raised;
+    border-width: 1px;
+    border-color: Theme.border;
+    clip: true;
+    if RemoteUi.has-relay-qr: Image {
+        x: root.size * 0.06;
+        y: root.size * 0.06;
+        width: root.size * 0.88;
+        height: root.size * 0.88;
+        source: RemoteUi.relay-qr;
+        image-rendering: pixelated;
+    }
+    if !RemoteUi.has-relay-qr: Text {
+        text: RemoteUi.relay-state == 1 ? "…" : "QR";
+        color: Theme.icon-subtlest;
+        font-size: 12px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}
+
+export component ControlCard inherits RCard {
+    in property <bool> running;
+    property <string> stored-name: SettingsUi.get-string("remote.deviceName", SettingsUi.rev);
+    property <color> tone: RemoteUi.relay-state == 2 ? Theme.success : RemoteUi.relay-state == 1 ? Theme.warning : RemoteUi.relay-state == 3 ? RemoteLook.danger : Theme.icon-subtlest;
+    title: "Remote Control";
+    note: RemoteUi.relay-state == 0 ? "" : "● " + RemoteUi.relay-text;
+    ToggleRow {
+        title: "Enable Remote Control";
+        description: "Work with local agents from another device.";
+        Switch {
+            label: "Enable Remote Control";
+            checked: root.running;
+            toggled(on) => {
+                RemoteUi.set-enabled(on);
+            }
+        }
+    }
+    Sep { }
+    HorizontalLayout {
+        padding: 16px;
+        spacing: 16px;
+        VerticalLayout {
+            horizontal-stretch: 1;
+            spacing: 8px;
+            alignment: center;
+            Text {
+                text: "Device Name";
+                font-size: 13px;
+                color: Theme.foreground;
+            }
+            name := TextField {
+                text: root.stored-name;
+                label: "Device Name";
+                placeholder: RemoteUi.device-name-default;
+                accepted(value) => {
+                    SettingsUi.set-string("remote.deviceName", value);
+                    RemoteUi.new-relay-qr();
+                }
+            }
+            HorizontalLayout {
+                spacing: 4px;
+                alignment: start;
+                Text {
+                    text: RemoteUi.relay-link != "" ? "Scan the code to open this device in Remote Control, or" : root.running ? RemoteUi.relay-text : "Turn on Remote Control to get a code for your phone.";
+                    font-size: 12px;
+                    color: RemoteUi.relay-state == 3 ? RemoteLook.danger : Theme.muted;
+                    wrap: word-wrap;
+                }
+                if RemoteUi.relay-link != "": Text {
+                    text: copy-ta.pressed ? "copied" : "copy link";
+                    font-size: 12px;
+                    color: Theme.accent;
+                    copy-ta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => {
+                            RemoteUi.copy(RemoteUi.relay-link);
+                        }
+                    }
+                }
+            }
+            if RemoteUi.relay-code != "": HorizontalLayout {
+                spacing: 6px;
+                alignment: start;
+                Text {
+                    text: "Pairing code";
+                    font-size: 12px;
+                    color: Theme.muted;
+                    vertical-alignment: center;
+                }
+                Text {
+                    text: RemoteUi.relay-code;
+                    font-size: 14px;
+                    font-weight: 600;
+                    letter-spacing: 2px;
+                    color: Theme.foreground;
+                    vertical-alignment: center;
+                }
+                Text {
+                    text: code-ta.pressed ? "copied" : "copy";
+                    font-size: 12px;
+                    color: Theme.accent;
+                    vertical-alignment: center;
+                    code-ta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => {
+                            RemoteUi.copy(RemoteUi.relay-code);
+                        }
+                    }
+                }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            QrBox {
+                size: 88px;
+                TouchArea {
+                    enabled: RemoteUi.has-relay-qr;
+                    mouse-cursor: RemoteUi.has-relay-qr ? pointer : default;
+                    clicked => {
+                        RemoteUi.new-relay-qr();
+                        popup.show();
+                    }
+                }
+            }
+        }
+    }
+    popup := PopupWindow {
+        x: (root.width - 400px) / 2;
+        y: 24px;
+        width: 400px;
+        close-policy: close-on-click-outside;
+        Rectangle {
+            background: Theme.card;
+            border-radius: 14px;
+            border-width: 1px;
+            border-color: Theme.border-hover;
+            drop-shadow-blur: 24px;
+            drop-shadow-offset-y: 8px;
+            drop-shadow-color: #00000080;
+            clip: true;
+            VerticalLayout {
+                Rectangle {
+                    height: 260px;
+                    background: Theme.raised;
+                    QrBox {
+                        size: 220px;
+                    }
+                    IconButton {
+                        x: parent.width - self.width - 10px;
+                        y: 10px;
+                        icon: Icons.x;
+                        label: "Close";
+                        clicked => {
+                            popup.close();
+                        }
+                    }
+                }
+                VerticalLayout {
+                    padding: 18px;
+                    spacing: 10px;
+                    Text {
+                        text: "Open in Remote Control";
+                        font-size: 16px;
+                        font-weight: Theme.weight-semibold;
+                        color: Theme.foreground;
+                    }
+                    Text {
+                        text: "Continue your work from another device. Scan the QR code or open the link below; the code also pairs the device and is valid for 10 minutes.";
+                        font-size: 12px;
+                        color: Theme.muted;
+                        wrap: word-wrap;
+                    }
+                    Rectangle {
+                        height: 34px;
+                        border-radius: 8px;
+                        background: Theme.raised;
+                        border-width: 1px;
+                        border-color: Theme.border;
+                        HorizontalLayout {
+                            padding-left: 10px;
+                            padding-right: 4px;
+                            spacing: 6px;
+                            Text {
+                                text: RemoteUi.relay-link;
+                                font-family: Theme.mono-font;
+                                font-size: 11px;
+                                color: Theme.muted;
+                                vertical-alignment: center;
+                                overflow: elide;
+                                horizontal-stretch: 1;
+                            }
+                            IconButton {
+                                icon: Icons.copy;
+                                label: "Copy link";
+                                clicked => {
+                                    RemoteUi.copy(RemoteUi.relay-link);
+                                }
+                            }
+                        }
+                    }
+                    HorizontalLayout {
+                        spacing: 10px;
+                        Text {
+                            text: "Reset the link if it was shared by mistake: every device has to scan again.";
+                            font-size: 11px;
+                            color: Theme.icon-subtlest;
+                            wrap: word-wrap;
+                            vertical-alignment: center;
+                            horizontal-stretch: 1;
+                        }
+                        RButton {
+                            text: "Reset link";
+                            danger: true;
+                            clicked => {
+                                RemoteUi.reset-link();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// Relay URL for forks that deploy their own relay (relay/ in the repository).
+export component RelayCard inherits RCard {
+    in property <bool> stacked;
+    title: "Relay";
+    FieldRow {
+        first: true;
+        stacked: root.stacked;
+        key: "remote.relayUrl";
+        title: "Relay URL";
+        description: "Where phones meet this computer. Applies the next time Remote Control is turned on. Empty = no relay.";
+        placeholder: "https://worse.digidaw.site";
+    }
+}

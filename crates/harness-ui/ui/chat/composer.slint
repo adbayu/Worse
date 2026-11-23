@@ -9,6 +9,7 @@ import { SettingsUi } from "../settings/globals.slint";
 import { Theme } from "../theme/tokens.slint";
 import { ChipStrip, ComposerToolbar } from "./composer_parts.slint";
 import { WorkLibraryUi } from "../work/work_page.slint";
+import { DraftChips, DraftUi } from "./draft_chips.slint";
 
 export component Composer inherits VerticalLayout {
     in property <[AgentRow]> agents;
@@ -24,16 +25,16 @@ export component Composer inherits VerticalLayout {
     public function focus-input() {
         input.focus();
     }
-    // Composer: floating glass slab. Near-opaque so the transcript does not show through; light rim, inner
-    // glow, and a brighter rim while the input has focus.
+    // Composer box, modelled on the Antigravity desktop composer: a flat card with a quiet border that
+    // brightens on focus, the new-session chips (project, checkout) on top, the input, then the toolbar.
     pill := Rectangle {
-        border-radius: Theme.radius-2xl;
+        border-radius: Theme.radius-lg;
         background: Theme.composer;
         border-width: 1px;
-        border-color: Theme.glass-rim;
-        drop-shadow-blur: Theme.shadow-composer-blur;
-        drop-shadow-offset-y: 14px;
-        drop-shadow-color: Theme.shadow-composer-color;
+        border-color: Theme.composer-border;
+        drop-shadow-blur: 18px;
+        drop-shadow-offset-y: 6px;
+        drop-shadow-color: Theme.shadow-composer-color.with-alpha(0.25);
         Rectangle {
             border-radius: parent.border-radius;
             inner-shadow-blur: Theme.glass-inner-blur;
@@ -49,7 +50,8 @@ export component Composer inherits VerticalLayout {
             padding-left: 10px;
             padding-top: 10px;
             spacing: 6px;
-                if ChatUi.chips.length > 0: ChipStrip { }
+            if DraftUi.active: DraftChips { }
+            if ChatUi.chips.length > 0: ChipStrip { }
             HorizontalLayout {
                 padding-left: 4px;
                 padding-right: 4px;
@@ -139,7 +141,7 @@ export component Composer inherits VerticalLayout {
                     if root.draft == "": Text {
                         x: 0;
                         y: 6px;
-                        text: root.running ? @tr("Queue a follow-up, or Steer to run it next") : @tr("Ask anything. @ to mention, / for commands");
+                        text: root.running ? @tr("Queue a follow-up, or Steer to run it next") : @tr("Ask anything, @ to mention, / for actions");
                         color: Theme.icon-subtlest;
                         font-size: Theme.ui-caption;
                         accessible-role: none;

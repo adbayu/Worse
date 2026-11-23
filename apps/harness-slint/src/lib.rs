@@ -14,6 +14,7 @@ mod gitui;
 mod highlight;
 mod import;
 mod inbox;
+mod install;
 mod live;
 mod live_update;
 mod machine_view;
@@ -163,9 +164,14 @@ pub fn run() -> ExitCode {
     install_window_chrome(&window);
     window_frame::install(&window);
     install_restart_for_update(&window, &workspace_dir);
+    install::install_ui(&window, &workspace_dir);
     if live_update::is_shadow() {
         live_update::cleanup_old_copies();
         live_update::watch(window.as_weak());
+    } else if install::is_installed() {
+        // 从便携版迁移过来：删掉 ~/.harness/bin 里旧的影子副本。
+        live_update::cleanup_old_copies();
+        install::cleanup_replaced_exe();
     }
     release_update::watch(window.as_weak());
     let result = window.run();

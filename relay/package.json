@@ -1,0 +1,20 @@
+{
+  "name": "worse-relay",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Remote Control relay for Worse Harness (Cloudflare Worker + Durable Object)",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "sync-assets": "node scripts/sync-assets.mjs",
+    "dev": "npm run sync-assets && wrangler dev",
+    "deploy": "npm run sync-assets && wrangler deploy",
+    "check": "tsc --noEmit",
+    "test": "node test/client.mjs && node test/run.mjs"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261119.1",
+    "typescript": "^5.9.0",
+    "wrangler": "^4.166.0"
+  }
+}

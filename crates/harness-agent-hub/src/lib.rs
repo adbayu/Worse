@@ -39,6 +39,7 @@ mod hub;
 mod hub_chat;
 mod import;
 mod inbox;
+mod insights;
 mod journal;
 pub mod machine;
 pub mod mcp;

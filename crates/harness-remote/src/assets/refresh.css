@@ -1,0 +1,234 @@
+/* Glass refresh — loaded last. Soft aurora glows behind everything, translucent blurred panes on top, round agent
+   avatars, a floating tab bar and tinted icon tiles. Light mode keeps the same structure on paper. */
+:root {
+  --au-1: rgba(124, 140, 255, 0.34);
+  --au-2: rgba(176, 124, 255, 0.26);
+  --au-3: rgba(255, 140, 90, 0.18);
+  --au-4: rgba(70, 200, 170, 0.14);
+  --lg-pane: rgba(28, 29, 34, 0.5);
+  --lg-pane-strong: rgba(24, 25, 30, 0.72);
+  --lg-card: rgba(255, 255, 255, 0.055);
+  --lg-blur: blur(26px) saturate(170%);
+  --lg-rim: rgba(255, 255, 255, 0.1);
+  --lg-rim-top: rgba(255, 255, 255, 0.2);
+  --c-claude: #d97757;
+  --c-codex: #10a37f;
+  --c-deepseek: #4d6bfe;
+  --c-agy: #8b5cf6;
+  --c-api: #0ea5e9;
+  --c-other: #6b7280;
+}
+@media (prefers-color-scheme: light) {
+  :root {
+    --au-1: rgba(124, 140, 255, 0.26);
+    --au-2: rgba(176, 124, 255, 0.2);
+    --au-3: rgba(255, 150, 100, 0.2);
+    --au-4: rgba(70, 200, 170, 0.16);
+    --lg-pane: rgba(255, 255, 255, 0.55);
+    --lg-pane-strong: rgba(255, 255, 255, 0.78);
+    --lg-card: rgba(255, 255, 255, 0.62);
+    --lg-rim: rgba(255, 255, 255, 0.9);
+    --lg-rim-top: #fff;
+  }
+}
+
+/* Aurora: fixed soft glows under the dither field. */
+html {
+  background:
+    radial-gradient(60% 40% at 12% 0%, var(--au-1), transparent 70%),
+    radial-gradient(50% 35% at 100% 18%, var(--au-2), transparent 70%),
+    radial-gradient(55% 35% at 0% 85%, var(--au-4), transparent 70%),
+    radial-gradient(50% 30% at 100% 100%, var(--au-3), transparent 70%),
+    var(--bg);
+  background-attachment: fixed;
+  min-height: 100%;
+}
+body { background: transparent; }
+body::before { opacity: 0.45; }
+
+/* One glass recipe for every floating pane. */
+#view-list .sx-search, #view-list .sx-card, #view-list .sx-me, .app-nav, #view-list .sx-sec-add,
+#view-settings .set-card, #view-settings .set-head, #view-settings .set-searchbox,
+#view-session .session-bar, #view-session .composer, #view-pair .pair-bar, #view-pair .pair-card {
+  background: var(--lg-pane);
+  border: 1px solid var(--lg-rim);
+  box-shadow: inset 0 1px 0 var(--lg-rim-top), 0 10px 30px rgba(0, 0, 0, 0.28);
+  -webkit-backdrop-filter: var(--lg-blur);
+  backdrop-filter: var(--lg-blur);
+}
+#view-list .sx-card, #view-settings .set-card { background: var(--lg-card); box-shadow: inset 0 1px 0 var(--lg-rim-top); }
+#view-list .sx-search:focus-within { border-color: var(--border-hover); }
+
+/* Avatars. */
+.av {
+  position: relative;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  color: #fff;
+  font: 700 17px/1 var(--font);
+  background: var(--c-other);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28), inset 0 -8px 14px rgba(0, 0, 0, 0.18);
+}
+.av svg { display: block; }
+.av-claude { background: radial-gradient(circle at 30% 25%, #f0a283, var(--c-claude) 60%); }
+.av-codex { background: radial-gradient(circle at 30% 25%, #3a3d44, #0d0e10 70%); }
+.av-deepseek { background: radial-gradient(circle at 30% 25%, #8199ff, var(--c-deepseek) 65%); }
+.av-agy { background: conic-gradient(from 200deg, #6366f1, #a855f7, #ec4899, #f59e0b, #6366f1); }
+.av-api { background: radial-gradient(circle at 30% 25%, #67d0ff, var(--c-api) 65%); }
+.av-sm { width: 22px; height: 22px; font-size: 11px; box-shadow: none; }
+.av-sm svg { width: 13px; height: 13px; }
+.av-badge {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2.5px solid var(--bg);
+}
+.av-badge-running { background: var(--hi); animation: av-pulse 1.6s ease-out infinite; }
+.av-badge-unread { background: var(--acc); }
+@keyframes av-pulse {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--hi) 60%, transparent); }
+  100% { box-shadow: 0 0 0 8px transparent; }
+}
+
+/* Floating dock: compact tab pill on the left, round compose button on the right. */
+.app-dock {
+  position: absolute;
+  left: calc(16px + env(safe-area-inset-left));
+  right: calc(16px + env(safe-area-inset-right));
+  bottom: calc(12px + env(safe-area-inset-bottom));
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  pointer-events: none;
+}
+.app-dock > * { pointer-events: auto; }
+.app-dock .app-nav {
+  flex: 0 0 auto;
+  min-height: 0;
+  gap: 2px;
+  padding: 5px;
+  border-radius: var(--r-pill);
+  background: var(--lg-pane-strong);
+}
+.app-dock .app-nav-item {
+  flex: 0 0 auto;
+  flex-direction: row;
+  gap: 7px;
+  height: 46px;
+  padding: 0 16px 0 12px;
+  border-radius: var(--r-pill);
+  font-size: 14px;
+  letter-spacing: 0;
+}
+.app-dock .app-nav-icon { width: 24px; height: 24px; background: none !important; color: inherit !important; }
+.app-dock .app-nav-item:not(.on) .app-nav-label { display: none; }
+.app-dock .app-nav-item:not(.on) { padding: 0 12px; }
+.app-dock .app-nav-item.on { background: var(--raised); color: var(--text); }
+.app-fab {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 58px;
+  height: 58px;
+  border: 0;
+  border-radius: 50%;
+  background: linear-gradient(150deg, color-mix(in srgb, var(--acc) 82%, #fff), var(--acc));
+  color: var(--acc-fg);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 10px 26px rgba(0, 0, 0, 0.35);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 0.15s ease;
+}
+.app-fab:active { transform: scale(0.94); }
+#view-settings .set-body { padding-bottom: calc(110px + env(safe-area-inset-bottom)); }
+
+/* Settings: tinted icon tiles per group. */
+#view-settings .set-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 11px;
+  color: #fff;
+  background: var(--c-other);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+#view-settings .set-glyph svg { width: 19px; height: 19px; }
+#view-settings .set-row[data-group="connect"] .set-glyph { background: linear-gradient(160deg, #5b8cff, #3b5bdb); }
+#view-settings .set-row[data-group="app"] .set-glyph { background: linear-gradient(160deg, #8e8e98, #5c5c66); }
+#view-settings .set-row[data-group="agent"] .set-glyph { background: linear-gradient(160deg, #b07cff, #7c3aed); }
+#view-settings .set-row[data-group="data"] .set-glyph { background: linear-gradient(160deg, #34d399, #059669); }
+#view-settings .set-card { border-radius: 22px; }
+#view-settings .set-head:not(.set-head-page) {
+  background: none;
+  border: 0;
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  margin-top: calc(10px + env(safe-area-inset-top));
+}
+#view-settings .set-head:not(.set-head-page) .set-title { font-size: 32px; font-weight: 700; letter-spacing: -0.6px; }
+#view-settings .set-head:not(.set-head-page) .set-action {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--lg-pane);
+  border: 1px solid var(--lg-rim);
+  -webkit-backdrop-filter: var(--lg-blur);
+  backdrop-filter: var(--lg-blur);
+}
+#view-settings .set-caps { font-family: var(--font); letter-spacing: -0.1px; text-transform: none; font-size: 17px; font-weight: 700; color: var(--text); }
+
+/* Session: lighter glass bars, user bubble with a faint accent tint. */
+#view-session .session-bar { border-radius: 24px; }
+#view-session .composer { border-radius: 26px; background: var(--lg-pane-strong); }
+#view-session .bubble.user {
+  background: linear-gradient(160deg, color-mix(in srgb, var(--au-1) 70%, var(--raised)), var(--raised));
+  border: 1px solid var(--lg-rim);
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  #view-list .sx-search, #view-list .sx-card, .app-nav, #view-settings .set-card,
+  #view-session .session-bar, #view-session .composer {
+    background: var(--lg-pane-strong);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .av-badge-running { animation: none; }
+  .app-fab, .nc-sheet, .nc-backdrop { transition: none; }
+}
+
+/* Section header with its own "+" (new chat in this project). */
+#view-list .sx-sec-bar { display: flex; align-items: flex-end; gap: 8px; }
+#view-list .sx-sec-bar .sx-sec { flex: 1 1 auto; min-width: 0; }
+#view-list .sx-sec-add {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  margin-bottom: 6px;
+  border-radius: 50%;
+  color: var(--text-2);
+  cursor: pointer;
+}
+/* Agent tabs fade out at the edges instead of being cut off. */
+#view-list .sx-tabs {
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 14px, #000 calc(100% - 22px), transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 14px, #000 calc(100% - 22px), transparent);
+}

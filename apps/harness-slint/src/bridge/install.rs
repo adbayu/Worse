@@ -94,6 +94,7 @@ pub fn install(
         perm_choices: Vec::new(),
         dock_state: dock::DockState::default(),
         workspace: workspace.to_path_buf(),
+        draft: super::draft::Draft::new(workspace),
         turn: turns::TurnState::default(),
         board: board::BoardState::default(),
         history: history::History::default(),
@@ -114,13 +115,19 @@ pub fn install(
     board::wire(window);
     prd::wire(window);
     work::wire(window);
+    super::draft::wire(window);
     with_state(|s| s.load_groups());
 }
 
 #[allow(clippy::too_many_lines)]
 fn wire_callbacks(window: &AppWindow) {
-    window.on_new_session(|| with_state(|s| s.new_session(false, None)));
-    window.on_new_worktree_session(|| with_state(|s| s.new_session(true, None)));
+    // Antigravity 式：New session 先进入草稿（选项目/检出），第一条消息才创建会话。
+    window.on_new_session(|| {
+        with_state(|s| s.start_draft(false, super::draft::DraftTarget::Current));
+    });
+    window.on_new_worktree_session(|| {
+        with_state(|s| s.start_draft(true, super::draft::DraftTarget::Current));
+    });
     window.on_archive_session(|id| archive_session(id.to_string()));
     window.on_open_session(|id| {
         with_state(|s| {
@@ -146,7 +153,8 @@ fn wire_callbacks(window: &AppWindow) {
             } else {
                 s.take_draft_modes(&mut context);
                 s.pending_send = Some((text, context));
-                s.new_session(false, None);
+                let target = s.draft_target();
+                s.new_session(s.draft.worktree, Some(target));
             }
         });
     });

@@ -168,6 +168,7 @@ fn fetch(window: slint::Weak<AppWindow>, list: Vec<Account>, agy: Vec<crate::agy
                 .map(|a| failed(a, &format!("runtime: {error}")))
                 .collect(),
         };
+        crate::remote::publish_limits(rows.iter().map(remote_limit).collect());
         let _ = slint::invoke_from_event_loop(move || {
             STATE.with(|cell| {
                 if let Some(s) = cell.borrow_mut().as_mut() {
@@ -186,6 +187,23 @@ fn fetch(window: slint::Weak<AppWindow>, list: Vec<Account>, agy: Vec<crate::agy
             }
         });
     });
+}
+
+/// One account for the phone's Usage › Limits tab (percent used, 0–100).
+fn remote_limit(f: &Fetched) -> serde_json::Value {
+    let used = |slot: &Option<(f32, String)>| slot.as_ref().map(|(pct, _)| f64::from(*pct));
+    let reset = |slot: &Option<(f32, String)>| slot.as_ref().map(|(_, r)| r.clone());
+    serde_json::json!({
+        "id": f.id, "label": f.label, "plan": f.plan, "error": f.error,
+        "known": f.five.is_some() || f.week.is_some(),
+        "sessionUsed": used(&f.five), "sessionReset": reset(&f.five),
+        "weekUsed": used(&f.week), "weekReset": reset(&f.week),
+        "opusUsed": used(&f.opus),
+        "sessionLabel": f.labels[0], "weekLabel": f.labels[1], "opusLabel": f.labels[2],
+        "bars": f.bars.iter().map(|(label, used, reset)| serde_json::json!({
+            "label": label, "used": f64::from(*used), "reset": reset,
+        })).collect::<Vec<_>>(),
+    })
 }
 
 fn publish() {

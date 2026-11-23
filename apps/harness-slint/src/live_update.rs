@@ -120,6 +120,8 @@ pub fn shadow_launch() -> Option<ExitCode> {
         || env_present(NO_SHADOW_ENV)
         || env_present("HARNESS_UI_CORE")
         || env_present(SOURCE_ENV)
+        // 安装版由安装程序更新（退出后静默安装），不需要影子副本，也不再在 ~/.harness/bin 留 exe。
+        || crate::install::is_installed()
     {
         return None;
     }

@@ -13,32 +13,38 @@ pub(super) fn harness_home() -> PathBuf {
     user_home.join(".harness")
 }
 
+/// The workspace to open: `HARNESS_WORKSPACE`, else the folder Harness was started in from a
+/// terminal, else the last workspace, else the home folder. Like Antigravity, a start from the app
+/// menu, a shortcut, Finder or the installer never opens the folder holding the executable.
 pub(super) fn workspace(last: Option<&str>) -> PathBuf {
     if let Some(dir) = std::env::var_os("HARNESS_WORKSPACE").filter(|v| !v.is_empty()) {
         return PathBuf::from(dir);
     }
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let home = std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" })
+        .map(PathBuf::from)
+        .filter(|p| p.is_dir());
     // The exe that owns the shipped files: the source exe when this is a live-update shadow copy.
     let exe_dir = live_update::launch_exe().parent().map(Path::to_path_buf);
     let same = |a: &Path, b: &Path| match (std::fs::canonicalize(a), std::fs::canonicalize(b)) {
         (Ok(a), Ok(b)) => a == b,
         _ => false,
     };
-    let root = cwd.parent().is_none();
-    if root || exe_dir.is_some_and(|dir| same(&dir, &cwd)) {
-        if let Some(last) = last.map(PathBuf::from).filter(|p| p.is_dir()) {
-            return last;
-        }
+    let system = std::env::var_os("SystemRoot").map(PathBuf::from);
+    // 修复：从开始菜单/快捷方式/安装程序启动时，cwd 是安装目录或 System32，不能当成工作区。
+    let not_chosen = cwd.parent().is_none()
+        || [exe_dir, crate::install::install_dir(), home.clone()]
+            .iter()
+            .flatten()
+            .any(|dir| same(dir, &cwd))
+        || system.is_some_and(|dir| cwd.starts_with(dir));
+    if !not_chosen {
+        return cwd;
     }
-    if root {
-        if let Some(home) = std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" })
-            .map(PathBuf::from)
-            .filter(|p| p.is_dir())
-        {
-            return home;
-        }
+    if let Some(last) = last.map(PathBuf::from).filter(|p| p.is_dir()) {
+        return last;
     }
-    cwd
+    home.unwrap_or(cwd)
 }
 
 pub(super) fn prepare_process() {
@@ -122,8 +128,15 @@ pub(super) fn install_restart_for_update(window: &ui::AppWindow, workspace: &Pat
 
 pub(super) fn relaunch() {
     let Some(dir) = RELAUNCH.lock().ok().and_then(|mut slot| slot.take()) else {
+        // 同 Antigravity：已下载更新时，直接退出也会运行安装程序（装完自动重新打开）。
+        let dir = std::env::current_dir().unwrap_or_else(|_| std::env::temp_dir());
+        crate::install::run_pending(&dir);
         return;
     };
+    // A downloaded installer (Windows update / first install) or the freshly installed copy.
+    if crate::install::run_pending(&dir) {
+        return;
+    }
     // A shadow copy restarts the newest build (its source exe), not itself.
     let exe = release_update::installed_exe().unwrap_or_else(live_update::launch_exe);
     if let Err(error) = std::process::Command::new(exe)
@@ -274,6 +287,7 @@ pub(super) fn helper_mode() -> Option<ExitCode> {
         helpers::FLAG_API_AGENT => Some(harness_api_agent::run()),
         helpers::FLAG_COMPUTER_MCP => Some(computer_mcp::run()),
         helpers::FLAG_WORK_MCP => Some(harness_work::run_mcp()),
+        crate::install::FLAG_INSTALL => Some(crate::install::run_cli()),
         _ => None,
     }
 }

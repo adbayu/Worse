@@ -153,7 +153,8 @@ pub fn install_open_folder(window: &AppWindow) {
                 return;
             };
             let _ = slint::invoke_from_event_loop(move || {
-                with_state(|s| s.new_session(false, Some(dir)));
+                // Antigravity 式：选好的文件夹成为新会话草稿的项目，第一条消息时才创建会话。
+                with_state(|s| s.start_draft(false, super::draft::DraftTarget::Folder(dir)));
             });
         });
     });

@@ -1,0 +1,447 @@
+/* Solid themes — loaded after legacy layers. theme.js writes the base tokens (--bg, --bg2, --bg3, --fg, --fg2,
+   --line, --acc, --acc-fg) on <html> and sets data-scheme. No aurora, no blur, no outer card borders:
+   near-black canvas, dark-grey borderless cards, thin dividers only between rows inside a card, sparing accent. */
+html[data-scheme] {
+  --text: var(--fg);
+  --muted: var(--fg2);
+  --border: var(--line);
+  --surface: var(--bg2);
+  --raised: var(--bg3);
+  --accent: var(--acc);
+  --accent-2: var(--acc);
+  --accent-grad: var(--acc);
+  --lg-pane: var(--bg2);
+  --lg-pane-strong: var(--bg2);
+  --lg-card: var(--bg2);
+  --lg-rim: transparent;
+  --lg-rim-top: transparent;
+  --lg-glow: transparent;
+  --lg-blur: none;
+  --lg-shadow: none;
+  --au-1: transparent;
+  --au-2: transparent;
+  --au-3: transparent;
+  --au-4: transparent;
+  --glyph: transparent;
+  --md-surface-low: var(--bg2);
+  --md-surface-highest: var(--bg3);
+  --md-primary-container: color-mix(in srgb, var(--acc) 20%, var(--bg2));
+  --md-on-primary-container: var(--fg);
+  --md-secondary-container: var(--bg3);
+  --md-on-secondary-container: var(--fg);
+  --md-inverse-surface: var(--fg);
+  --md-inverse-on-surface: var(--bg);
+  --md-outline: var(--fg2);
+  --md-outline-variant: var(--line);
+  --border-hover: color-mix(in srgb, var(--fg) 22%, transparent);
+  --text-2: color-mix(in srgb, var(--fg) 90%, var(--fg2));
+  --subtle: color-mix(in srgb, var(--fg2) 90%, var(--bg));
+  --faint: color-mix(in srgb, var(--fg2) 72%, var(--bg));
+  --tab-h: 64px;
+}
+html[data-scheme="dark"] {
+  color-scheme: dark;
+  --hi: #4ade80;
+  --ok: #5cd48c;
+  --warn: #fdd663;
+  --err: #f06e6e;
+  --info: #6cb8ff;
+  --success-bg: rgba(92, 212, 140, 0.14);
+  --dot-claude: #e27d58;
+  --dot-deepseek: #6384ff;
+  --dot-codex: #7cd4b0;
+  --dot-agy: #b299ff;
+  --shadow-pop: 0 12px 32px rgba(0, 0, 0, 0.55);
+}
+html[data-scheme="light"] {
+  color-scheme: light;
+  --hi: #15803d;
+  --ok: #146c2e;
+  --warn: #8c5d00;
+  --err: #c92a2a;
+  --info: #0b57d0;
+  --success-bg: rgba(20, 108, 46, 0.12);
+  --dot-claude: #c2552d;
+  --dot-deepseek: #3657c9;
+  --dot-codex: #0b7a59;
+  --dot-agy: #6d28d9;
+  --shadow-pop: 0 10px 28px rgba(15, 15, 25, 0.14);
+}
+
+html[data-scheme], html[data-scheme] body { background: var(--bg); }
+html[data-scheme] body::before { display: none; }
+
+/* Flat borderless cards: clear away glass/blur/outer borders from legacy layers. */
+html[data-scheme] :is(
+  .bar, .toast, .app-nav, #view-pair .pair-bar, #view-pair .pair-card,
+  #view-list .hl-head, #view-list .hl-search, #view-list .sx-search, #view-list .sx-card, #view-list .sx-me,
+  #view-list .sx-sec-add, #view-settings .set-card, #view-settings .set-head, #view-settings .set-searchbox,
+  #view-session .session-bar, #view-session .composer, #view-session .sheet, #view-session .perm
+) {
+  background: var(--bg2);
+  border: 0;
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+html[data-scheme] .toast {
+  background: var(--bg3);
+  box-shadow: var(--shadow-pop);
+}
+
+/* Bottom navigation: full-width Material-3 bar with active pill behind icon + label underneath. */
+html[data-scheme] .app-dock {
+  left: 0;
+  right: 0;
+  bottom: 0;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 14px;
+}
+html[data-scheme] .app-dock .app-nav {
+  justify-content: space-around;
+  gap: 0;
+  padding: 8px 16px calc(10px + env(safe-area-inset-bottom));
+  border: 0;
+  border-top: 1px solid var(--line);
+  border-radius: 0;
+  background: var(--bg2);
+}
+html[data-scheme] .app-dock .app-nav-item,
+html[data-scheme] .app-dock .app-nav-item:not(.on) {
+  flex: 1 1 0;
+  flex-direction: column;
+  gap: 4px;
+  height: auto;
+  padding: 2px 0;
+  border-radius: 0;
+  background: none;
+  color: var(--fg2);
+  font: 500 12px/1.2 var(--font);
+}
+html[data-scheme] .app-dock .app-nav-item:not(.on) .app-nav-label { display: block; }
+html[data-scheme] .app-dock .app-nav-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 58px !important;
+  height: 30px !important;
+  border-radius: 15px;
+}
+html[data-scheme] .app-dock .app-nav-icon svg { width: 21px; height: 21px; }
+html[data-scheme] .app-dock .app-nav-item.on { color: var(--fg); font-weight: 600; }
+html[data-scheme] .app-dock .app-nav-item.on .app-nav-icon {
+  background: color-mix(in srgb, var(--acc) 20%, transparent) !important;
+  color: var(--fg) !important;
+}
+html[data-scheme="light"] .app-dock .app-nav-item.on .app-nav-icon {
+  color: var(--acc) !important;
+}
+
+/* Compose FAB: accent rounded rect sitting cleanly above the bottom bar on the right. */
+html[data-scheme] .app-fab {
+  order: -1;
+  align-self: flex-end;
+  gap: 8px;
+  width: auto;
+  height: 48px;
+  margin-right: calc(16px + env(safe-area-inset-right));
+  padding: 0 18px 0 15px;
+  border-radius: 15px;
+  background: var(--acc);
+  color: var(--acc-fg);
+  font: 600 14.5px/1 var(--font);
+  box-shadow: var(--shadow-pop);
+}
+html[data-scheme] .app-fab svg { width: 19px; height: 19px; }
+html[data-scheme] #view-list .sx-list { padding-bottom: calc(156px + env(safe-area-inset-bottom)); }
+html[data-scheme] #view-settings .set-body { padding-bottom: calc(108px + env(safe-area-inset-bottom)); }
+
+/* Chat list: quiet borderless cards, thin internal dividers, understated flat agent badges. */
+html[data-scheme] #view-list .sx-h1 { font-size: 26px; line-height: 32px; letter-spacing: -0.4px; }
+html[data-scheme] #view-list .sx-me { background: transparent; color: var(--fg2); }
+html[data-scheme] #view-list .sx-me:active { background: var(--bg2); }
+html[data-scheme] #view-list .sx-search { height: 44px; border-radius: 999px; }
+html[data-scheme] #view-list .sx-tab {
+  border: 0;
+  background: var(--bg2);
+  color: var(--fg2);
+  font-weight: 500;
+}
+html[data-scheme] #view-list .sx-tab.on { background: var(--acc); color: var(--acc-fg); font-weight: 600; }
+html[data-scheme] #view-list .sx-card { border-radius: 18px; padding: 0; }
+html[data-scheme] .av {
+  background: var(--bg3);
+  color: var(--fg2);
+  box-shadow: none;
+}
+html[data-scheme] .av-claude { background: color-mix(in srgb, var(--dot-claude) 16%, var(--bg3)); color: var(--dot-claude); }
+html[data-scheme] .av-codex { background: color-mix(in srgb, var(--dot-codex) 16%, var(--bg3)); color: var(--dot-codex); }
+html[data-scheme] .av-deepseek { background: color-mix(in srgb, var(--dot-deepseek) 16%, var(--bg3)); color: var(--dot-deepseek); }
+html[data-scheme] .av-agy { background: color-mix(in srgb, var(--dot-agy) 16%, var(--bg3)); color: var(--dot-agy); }
+html[data-scheme] .av-api { background: color-mix(in srgb, var(--info) 16%, var(--bg3)); color: var(--info); }
+html[data-scheme] #view-list .sx-row .av { width: 34px; height: 34px; font-size: 14px; }
+html[data-scheme] #view-list .sx-row .av svg { width: 18px; height: 18px; }
+html[data-scheme] #view-list .sx-row { min-height: 60px; gap: 12px; padding: 10px 14px; }
+html[data-scheme] #view-list .sx-card li + li .sx-row::before { left: 60px; right: 14px; background: var(--line); }
+html[data-scheme] #view-list .sx-title { font-size: 15px; font-weight: 500; }
+html[data-scheme] #view-list .sx-sub { font-size: 13px; color: var(--fg2); }
+html[data-scheme] #view-list .sx-sec-title { font-size: 13.5px; font-weight: 600; color: var(--fg2); letter-spacing: 0; }
+html[data-scheme] #view-list .sx-state.is-run { background: color-mix(in srgb, var(--acc) 18%, transparent); color: var(--acc); }
+html[data-scheme] #view-list .sx-sec-add { background: transparent; color: var(--fg2); }
+html[data-scheme] .av-badge { border-color: var(--bg2); width: 11px; height: 11px; }
+html[data-scheme] .av-badge-running { background: var(--acc); }
+
+/* Settings: clean monochrome line icons, borderless cards with thin inner dividers, refined toggles. */
+html[data-scheme] #view-settings .set-head {
+  background: transparent;
+  margin: 0;
+  padding: calc(10px + env(safe-area-inset-top)) calc(8px + env(safe-area-inset-right)) 6px
+    calc(18px + env(safe-area-inset-left));
+  min-height: 56px;
+}
+html[data-scheme] #view-settings .set-head-page {
+  padding-left: calc(6px + env(safe-area-inset-left));
+}
+html[data-scheme] #view-settings .set-head:not(.set-head-page) .set-title {
+  font: 600 22px/1.25 var(--font);
+  letter-spacing: -0.3px;
+}
+html[data-scheme] #view-settings .set-head-page .set-title {
+  font: 600 19px/1.25 var(--font);
+}
+html[data-scheme] #view-settings .set-head:not(.set-head-page) .set-action {
+  background: transparent;
+  border: 0;
+  color: var(--fg2);
+}
+html[data-scheme] #view-settings .set-head:not(.set-head-page) .set-action:active { background: var(--bg2); }
+html[data-scheme] #view-settings .set-caps {
+  padding: 6px 8px 2px;
+  font: 500 13px/1.3 var(--font);
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--fg2);
+}
+html[data-scheme] #view-settings .set-card {
+  border-radius: 18px;
+  padding: 0;
+  background: var(--bg2);
+}
+html[data-scheme] #view-settings .set-card > * + * {
+  border-top: 1px solid var(--line);
+}
+html[data-scheme] #view-settings .set-row {
+  min-height: 54px;
+  gap: 14px;
+  padding: 10px 14px 10px 16px;
+}
+html[data-scheme] #view-settings .set-line {
+  min-height: 54px;
+  gap: 14px;
+  padding: 11px 16px;
+}
+html[data-scheme] #view-settings .set-label,
+html[data-scheme] #view-settings .set-line-title {
+  font: 400 15.5px/1.3 var(--font);
+  letter-spacing: 0;
+}
+html[data-scheme] #view-settings .set-lines .set-value,
+html[data-scheme] #view-settings .set-side,
+html[data-scheme] #view-settings .set-line-detail {
+  font: 400 13.5px/1.35 var(--font);
+  color: var(--fg2);
+}
+html[data-scheme] #view-settings .set-glyph,
+html[data-scheme] #view-settings .set-row[data-group] .set-glyph {
+  width: 24px;
+  height: 24px;
+  background: none;
+  box-shadow: none;
+  color: var(--fg2);
+}
+html[data-scheme] #view-settings .set-glyph svg { width: 20px; height: 20px; }
+html[data-scheme] #view-settings .set-chev { opacity: 0.55; }
+html[data-scheme] #view-settings .set-chev svg { width: 16px; height: 16px; }
+html[data-scheme] #view-settings .set-searchbox { min-height: 44px; padding: 0 16px; border-radius: 999px; }
+
+/* Settings switches: sleek pill toggles matching the reference Notifications/Options switches. */
+html[data-scheme] #view-settings .set-switch {
+  width: 46px;
+  height: 28px;
+  padding: 3px;
+  border: 1.5px solid color-mix(in srgb, var(--fg2) 55%, transparent);
+  background: transparent;
+}
+html[data-scheme] #view-settings .set-switch.on {
+  border-color: var(--acc);
+  background: var(--acc);
+  color: var(--acc-fg);
+}
+html[data-scheme] #view-settings .set-knob {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  background: var(--fg2);
+}
+html[data-scheme] #view-settings .set-switch.on .set-knob {
+  width: 20px;
+  height: 20px;
+  margin: 0;
+  background: var(--acc-fg);
+}
+
+/* Session header & transcript. */
+html[data-scheme] #view-session .session-bar {
+  margin: 0;
+  min-height: 56px;
+  gap: 6px;
+  padding: calc(6px + env(safe-area-inset-top)) calc(8px + env(safe-area-inset-right)) 6px
+    calc(6px + env(safe-area-inset-left));
+  border: 0;
+  border-radius: 0;
+  background: var(--bg);
+}
+html[data-scheme] #view-session .session-bar .title-wrap {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+  gap: 1px;
+}
+html[data-scheme] #view-session .session-bar h2 {
+  margin-left: 2px;
+  font: 600 16px/1.25 var(--font);
+  color: var(--fg);
+}
+html[data-scheme] #view-session .session-bar .sub {
+  max-width: none;
+  margin: 0 0 0 2px;
+  padding: 0;
+  gap: 5px;
+  background: none;
+  color: var(--fg2);
+  font: 400 12.5px/1.3 var(--font);
+}
+html[data-scheme] #view-session .session-bar .sub .dot {
+  order: -1;
+  width: 6px;
+  height: 6px;
+}
+html[data-scheme] #view-session .session-bar .proj:not(:empty)::before { content: "· "; }
+html[data-scheme] #view-session .session-bar .proj {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+html[data-scheme] #view-session .session-bar .icon-btn {
+  width: 40px;
+  height: 40px;
+  color: var(--fg);
+}
+html[data-scheme] #view-session .session-bar .icon-btn svg { width: 20px; height: 20px; }
+html[data-scheme] #view-session .session-bar #refresh { color: var(--fg2); }
+
+html[data-scheme] #view-session .turns { padding-top: 10px; gap: 18px; }
+html[data-scheme] #view-session .turn { gap: 6px; }
+html[data-scheme] #view-session .bubble { font-size: 15px; line-height: 1.5; letter-spacing: 0; }
+html[data-scheme] #view-session .bubble.user {
+  padding: 9px 14px;
+  border-radius: 20px;
+  background: var(--bg2);
+  border: 0;
+  color: var(--fg);
+}
+html[data-scheme="light"] #view-session .bubble.user {
+  background: var(--bg3);
+}
+html[data-scheme] #view-session .bubble.agent { color: var(--fg); }
+html[data-scheme] #view-session .msg-body pre { background: var(--bg2); border: 0; border-radius: 12px; }
+html[data-scheme] #view-session details.tool {
+  border: 0;
+  border-radius: 12px;
+  background: var(--bg2);
+}
+html[data-scheme] #view-session details.tool > summary { min-height: 42px; padding: 8px 12px; }
+
+/* Empty chat. */
+#view-session .turns-hero {
+  margin: auto 0;
+  padding: 0 28px 10vh;
+  text-align: center;
+  color: var(--fg2);
+}
+#view-session .turns-hero h3 { margin: 0 0 8px; color: var(--fg); font: 600 24px/1.3 var(--font); letter-spacing: -0.3px; }
+#view-session .turns-hero h3 em { font-style: normal; color: var(--acc); }
+#view-session .turns-hero p { margin: 0; font-size: 14px; }
+#view-session .turns-hero:not(:only-child) { display: none; }
+
+/* New chat sheet follows the clean borderless card language. */
+html[data-scheme] .nc-sheet {
+  background: var(--bg);
+  border: 0;
+  box-shadow: var(--shadow-pop);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+html[data-scheme] :is(.nc-card, .nc-agent, .nc-input) {
+  background: var(--bg2);
+  border: 0;
+}
+html[data-scheme] .nc-agent.on { box-shadow: inset 0 0 0 1.5px var(--acc); }
+html[data-scheme] .nc-tile { background: color-mix(in srgb, var(--acc) 18%, var(--bg3)); color: var(--acc); box-shadow: none; }
+
+/* Settings → Appearance (appearance.js). */
+.ap { display: flex; flex-direction: column; gap: 16px; }
+.ap .set-note { padding: 0 8px; }
+.ap-modes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.ap-mode, .ap-theme {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 8px 12px;
+  border: 1.5px solid transparent;
+  border-radius: 18px;
+  background: var(--bg2);
+  color: var(--fg);
+  font: 500 13.5px/1.2 var(--font);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.ap-mode.on, .ap-theme.on { border-color: var(--acc); }
+.ap-phone {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  width: 46px;
+  height: 76px;
+  padding: 12px 7px;
+  overflow: hidden;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--p-bg);
+}
+.ap-phone-half { position: absolute; inset: 0 0 0 50%; background: var(--p-bg); }
+.ap-phone i { position: relative; display: block; height: 7px; border-radius: 4px; background: var(--p-card); }
+.ap-phone i:first-of-type { width: 60%; background: var(--p-acc); }
+.ap-themes { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.ap-theme { align-items: flex-start; padding: 14px 14px 12px; }
+.ap-theme:last-child:nth-child(odd) { grid-column: 1 / -1; }
+.ap-orbs { display: flex; justify-content: center; gap: 14px; width: 100%; padding: 4px 0 2px; }
+.ap-orb {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+}
+.ap-orb.is-cur {
+  box-shadow: 0 0 0 2px var(--bg2), 0 0 0 4px var(--acc);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #view-session .working i { animation: none; }
+}

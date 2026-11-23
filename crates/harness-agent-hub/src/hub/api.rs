@@ -696,6 +696,14 @@ impl HarnessCore for Hub {
         Box::pin(self.do_sync_board(workspace_key))
     }
 
+    fn usage_stats(&self, days: u32) -> BoxFuture<'_, ApiResult<harness_core_api::UsageStats>> {
+        Box::pin(self.do_usage_stats(days))
+    }
+
+    fn list_pulls(&self) -> BoxFuture<'_, ApiResult<harness_core_api::PullList>> {
+        Box::pin(self.do_list_pulls())
+    }
+
     fn inbox_status(&self) -> BoxFuture<'_, ApiResult<harness_core_api::InboxStatus>> {
         Box::pin(self.do_inbox_status())
     }

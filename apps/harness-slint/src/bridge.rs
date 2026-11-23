@@ -27,6 +27,7 @@ use harness_core_api::{ContextItem, PermissionOptionKind};
 mod api;
 mod board;
 mod dock;
+mod draft;
 mod events;
 mod export;
 mod fleet;
@@ -76,6 +77,8 @@ struct UiState {
     /// Message typed before any session existed: sent once the created session opens.
     pending_send: Option<(String, Vec<ContextItem>)>,
     workspace: PathBuf,
+    /// Project and checkout of the next new session (`bridge/draft.rs`).
+    draft: draft::Draft,
     /// Phase 9.2 view state (thinking rows, groups, schedules, change plans): `bridge/turns.rs`.
     turn: turns::TurnState,
     /// Options of the shown permission request (`Event::PermissionChoices`), in the agent's order.

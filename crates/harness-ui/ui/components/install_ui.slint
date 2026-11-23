@@ -1,0 +1,10 @@
+// Portable copies offer to install Harness for this user (src/install/mod.rs), so it shows up in
+// system search and the app menu like any installed app.
+export global InstallUi {
+    // This copy runs from outside the install location (and is not a dev build).
+    in-out property <bool> portable;
+    in-out property <bool> busy;
+    // Progress or error text; empty shows the default description.
+    in-out property <string> status;
+    callback install();
+}

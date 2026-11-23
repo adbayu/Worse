@@ -17,8 +17,11 @@ use tokio::net::{TcpListener, TcpStream};
 
 use crate::{rpc, ws, Inner};
 
+mod assets;
 mod upload;
 mod util;
+
+use assets::asset;
 
 use upload::upload;
 pub(crate) use util::client_ip;
@@ -34,86 +37,6 @@ const MAX_RPC_BODY: usize = 16 * 1024 * 1024;
 const MAX_UPLOAD_BODY: usize = 25 * 1024 * 1024;
 const JSON: &str = "application/json";
 const COOKIE: &str = "harness_remote";
-
-/// One embedded file served without auth. A fixed table: no path traversal is possible.
-struct Asset {
-    name: &'static str,
-    content_type: &'static str,
-    body: &'static [u8],
-}
-
-/// The phone client (stream C owns `src/assets/**`; this crate only embeds it).
-const ASSETS: &[Asset] = &[
-    Asset {
-        name: "index.html",
-        content_type: "text/html; charset=utf-8",
-        body: include_bytes!("assets/index.html"),
-    },
-    Asset {
-        name: "app.js",
-        content_type: "text/javascript; charset=utf-8",
-        body: include_bytes!("assets/app.js"),
-    },
-    Asset {
-        name: "style.css",
-        content_type: "text/css; charset=utf-8",
-        body: include_bytes!("assets/style.css"),
-    },
-    Asset {
-        name: "pair.css",
-        content_type: "text/css; charset=utf-8",
-        body: include_bytes!("assets/pair.css"),
-    },
-    Asset {
-        name: "sessions.css",
-        content_type: "text/css; charset=utf-8",
-        body: include_bytes!("assets/sessions.css"),
-    },
-    Asset {
-        name: "chat.css",
-        content_type: "text/css; charset=utf-8",
-        body: include_bytes!("assets/chat.css"),
-    },
-    Asset {
-        name: "settings.css",
-        content_type: "text/css; charset=utf-8",
-        body: include_bytes!("assets/settings.css"),
-    },
-    Asset {
-        name: "glass.css",
-        content_type: "text/css; charset=utf-8",
-        body: include_bytes!("assets/glass.css"),
-    },
-    Asset {
-        name: "sessions.js",
-        content_type: "text/javascript; charset=utf-8",
-        body: include_bytes!("assets/sessions.js"),
-    },
-    Asset {
-        name: "settings.js",
-        content_type: "text/javascript; charset=utf-8",
-        body: include_bytes!("assets/settings.js"),
-    },
-    Asset {
-        name: "manifest.webmanifest",
-        content_type: "application/manifest+json",
-        body: include_bytes!("assets/manifest.webmanifest"),
-    },
-    Asset {
-        name: "sw.js",
-        content_type: "text/javascript; charset=utf-8",
-        body: include_bytes!("assets/sw.js"),
-    },
-    Asset {
-        name: "icon.svg",
-        content_type: "image/svg+xml",
-        body: include_bytes!("assets/icon.svg"),
-    },
-];
-
-fn asset(name: &str) -> Option<&'static Asset> {
-    ASSETS.iter().find(|asset| asset.name == name)
-}
 
 /// Accept loop; runs until the handle's `closing` watch flips.
 pub(crate) async fn accept_loop(inner: Arc<Inner>, listener: TcpListener) {
@@ -289,20 +212,31 @@ async fn rpc_call(inner: &Arc<Inner>, peer: SocketAddr, req: Request<Incoming>) 
         return json_response(StatusCode::OK, &rpc::not_allowed(&method));
     }
     let view = inner.settings.read().ok().and_then(|slot| slot.clone());
-    if let Some(value) = rpc::settings_call(view.as_deref(), &method, &args) {
-        return json_response(StatusCode::OK, &json!({ "ok": true, "value": value }));
+    if let Some(result) = rpc::settings_call(view.as_deref(), &method, &args) {
+        let response = match result {
+            Ok(value) => json!({ "ok": true, "value": value }),
+            Err(error) => json!({ "ok": false, "error": error }),
+        };
+        return json_response(StatusCode::OK, &response);
     }
     let response = match rpc::call(inner.core.as_ref(), &method, args).await {
-        Ok(value) => json!({ "ok": true, "value": value }),
+        Ok(mut value) => {
+            // Plan limits live in the desktop app (plan_usage), not the hub: merge them in.
+            if method == "usage_stats" {
+                value["limits"] = view.map_or_else(|| json!([]), |view| view.limits());
+            }
+            json!({ "ok": true, "value": value })
+        }
         Err(error) => json!({ "ok": false, "error": error }),
     };
     json_response(StatusCode::OK, &response)
 }
 
 async fn revoke(inner: &Arc<Inner>, peer: SocketAddr, req: Request<Incoming>) -> Response<Body> {
-    if let Err(status) = authenticate(inner, peer, req.headers()) {
-        return empty(status);
-    }
+    let device = match authenticate(inner, peer, req.headers()) {
+        Ok(device) => device,
+        Err(status) => return empty(status),
+    };
     if !origin_ok(inner, req.headers()) {
         return empty(StatusCode::FORBIDDEN);
     }
@@ -324,6 +258,13 @@ async fn revoke(inner: &Arc<Inner>, peer: SocketAddr, req: Request<Incoming>) ->
         return json_response(
             StatusCode::OK,
             &json!({ "ok": false, "error": "id required" }),
+        );
+    }
+    // 安全修复：手机只能注销自己，其他设备只能在桌面端的设置里移除。
+    if id != device {
+        return json_response(
+            StatusCode::FORBIDDEN,
+            &json!({ "ok": false, "error": "a phone can only unpair itself" }),
         );
     }
     inner.auth.revoke(&id);

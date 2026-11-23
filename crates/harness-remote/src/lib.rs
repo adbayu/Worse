@@ -27,6 +27,7 @@ use tokio::task::JoinHandle;
 
 mod auth;
 mod http;
+mod relay;
 mod rpc;
 mod ws;
 
@@ -34,6 +35,7 @@ mod ws;
 mod tests;
 
 pub use harness_core_api::API_VERSION as REMOTE_API_VERSION;
+pub use relay::{RelayHandle, RelayIdentity, RelayStatus};
 
 /// Server configuration, built by the desktop from `RemoteSettings`.
 #[derive(Debug, Clone)]
@@ -56,6 +58,20 @@ impl Default for RemoteConfig {
 pub trait SettingsView: Send + Sync {
     fn overview(&self) -> serde_json::Value;
     fn page(&self, page: &str) -> serde_json::Value;
+
+    /// Writes one allowlisted setting (`general.showReasoning`, …) from a phone row.
+    ///
+    /// # Errors
+    /// The path is not editable from a phone or the value does not fit the setting.
+    fn set(&self, path: &str, value: &serde_json::Value) -> Result<(), String> {
+        let _ = (path, value);
+        Err("settings cannot be changed from a phone here".to_owned())
+    }
+
+    /// Plan limits of the signed-in accounts (`[{id, label, plan, sessionUsed, …}]`).
+    fn limits(&self) -> serde_json::Value {
+        serde_json::Value::Array(Vec::new())
+    }
 }
 
 /// One paired device, as shown in Settings.

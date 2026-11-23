@@ -52,6 +52,51 @@ async fn revoke_drops_access_and_closes_the_socket() {
 }
 
 #[tokio::test]
+async fn a_phone_cannot_revoke_another_device() {
+    let server = Server::start().await;
+    let (first, _) = server.pair("Pixel").await;
+    let (_, cookie) = server.pair("iPhone").await;
+    let denied = call(
+        server.addr,
+        "POST",
+        "/api/v1/devices/revoke",
+        &server.host(),
+        &cookie_header(&cookie),
+        &json!({ "id": first }).to_string(),
+    )
+    .await;
+    assert_eq!(denied.status, 403);
+    assert_eq!(server.handle.devices().len(), 2);
+}
+
+#[tokio::test]
+async fn the_device_token_is_not_the_pair_token() {
+    let server = Server::start().await;
+    let offer = server.handle.new_pair_offer("Phone");
+    let paired = call(
+        server.addr,
+        "POST",
+        "/api/v1/pair",
+        &server.host(),
+        &[],
+        &json!({ "token": offer.token }).to_string(),
+    )
+    .await;
+    assert_eq!(paired.status, 200);
+    let leaked = format!("harness_remote={}", offer.token);
+    let status = call(
+        server.addr,
+        "GET",
+        "/api/v1/status",
+        &server.host(),
+        &cookie_header(&leaked),
+        "",
+    )
+    .await;
+    assert_eq!(status.status, 401, "a used QR token gives no access");
+}
+
+#[tokio::test]
 async fn static_shell_and_healthz_need_no_auth() {
     let server = Server::start().await;
     let index = call(server.addr, "GET", "/", &server.host(), &[], "").await;

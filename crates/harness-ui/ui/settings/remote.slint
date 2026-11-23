@@ -1,5 +1,5 @@
-// Remote page (design frame S5 "Remote"): Tunnel card (status, public URL + Copy / Restart, enable + pairing rows),
-// Pair a device (QR + code), Paired devices. The tunnel helper fields and raw output stay in an extra card below.
+// Remote page: the Remote Control card (switch, device name, QR through the relay) and Paired devices on top;
+// Advanced keeps the relay URL, manual pairing, the own tunnel and its helper settings.
 import { Theme } from "../theme/tokens.slint";
 import { Divider } from "../components/controls.slint";
 import { SettingRow, Switch, TextField } from "parts.slint";
@@ -9,6 +9,7 @@ export { RemoteDevice, RemoteUi }
 import { RemoteLook, RCard, Sep, RButton, ToggleRow, FieldRow } from "./remote_parts.slint";
 import { TunnelCard, HelperCard } from "./remote_tunnel.slint";
 import { PairCard, DevicesCard } from "./remote_devices.slint";
+import { ControlCard, RelayCard } from "./remote_control.slint";
 export { RemoteLook, RCard, Sep, RButton, ToggleRow, FieldRow }
 
 export component RemotePage inherits VerticalLayout {
@@ -30,7 +31,7 @@ export component RemotePage inherits VerticalLayout {
             color: Theme.foreground;
         }
         Text {
-            text: "Reach Harness from your phone through a Cloudflare tunnel.";
+            text: "Continue your work from your phone or another computer.";
             font-size: 13px;
             color: Theme.muted;
             wrap: word-wrap;
@@ -42,20 +43,38 @@ export component RemotePage inherits VerticalLayout {
         color: Theme.destructive-surface-foreground;
         wrap: word-wrap;
     }
-    // ---- Tunnel ----
-    TunnelCard {
+    ControlCard {
+        running: root.running;
+    }
+    DevicesCard { }
+    // ---- Advanced: own relay, manual pairing, own tunnel ----
+    HorizontalLayout {
+        alignment: start;
+        Text {
+            text: (RemoteUi.advanced-open ? "▾ " : "▸ ") + "Advanced";
+            font-size: 12px;
+            font-weight: Theme.weight-medium;
+            color: Theme.muted;
+            TouchArea {
+                mouse-cursor: pointer;
+                clicked => {
+                    RemoteUi.advanced-open = !RemoteUi.advanced-open;
+                }
+            }
+        }
+    }
+    if RemoteUi.advanced-open: RelayCard {
+        stacked: root.stacked;
+    }
+    if RemoteUi.advanced-open: PairCard { }
+    if RemoteUi.advanced-open: TunnelCard {
         running: root.running;
         tunnel-running: root.tunnel-running;
         bin: root.bin;
         url: root.url;
         tunnel-tone: root.tunnel-tone;
     }
-    // ---- Pair a device ----
-    PairCard { }
-    // ---- Paired devices ----
-    DevicesCard { }
-    // ---- Tunnel helper (not in the design frame; keeps the server/tunnel configuration reachable) ----
-    HelperCard {
+    if RemoteUi.advanced-open: HelperCard {
         stacked: root.stacked;
         tunnel-running: root.tunnel-running;
     }

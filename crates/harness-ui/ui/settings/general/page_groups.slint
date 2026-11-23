@@ -3,6 +3,7 @@ import { Look } from "../../theme/look.slint";
 import { ThinkGlyph, GlyphAnim, AsciiArt } from "../../components/ascii.slint";
 import { Button } from "../../components/controls.slint";
 import { SettingsUi } from "../globals.slint";
+import { InstallUi } from "../../components/install_ui.slint";
 import { PageHeader, Group, SettingRow, Switch, TextField, Stepper, RangeSlider, Select, SetButton, Pill, SegmentedControl, CapsLabel, Dot } from "../parts.slint";
 import { BoolRow, TextRow, SectionCaps, ThemeOption, Swatch, ThinkTile, FieldTile } from "./parts.slint";
 
@@ -91,6 +92,21 @@ export component BasicsGroup inherits Group {
             if !root.update-ready: Pill {
                 text: @tr("latest");
                 tint: Theme.muted;
+            }
+        }
+    }
+    if InstallUi.portable: SettingRow {
+        stacked: root.stacked;
+        title: @tr("Install Harness");
+        description: InstallUi.status != "" ? InstallUi.status : @tr("This is a portable copy. Install it for your user so it shows up in system search and the app menu. Chats and settings stay.");
+        SetButton {
+            text: InstallUi.busy ? @tr("Installing…") : @tr("Install");
+            label: @tr("Install Harness for this user");
+            variant: "accent";
+            clicked => {
+                if !InstallUi.busy {
+                    InstallUi.install();
+                }
             }
         }
     }

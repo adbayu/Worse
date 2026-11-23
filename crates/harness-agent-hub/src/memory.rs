@@ -180,6 +180,11 @@ impl LockGuard {
                     }
                     std::thread::sleep(LOCK_STEP);
                 }
+                // 修复（CI concurrent_writers_lose_nothing）：Windows 上另一个写入者刚删除锁文件、删除尚未
+                // 完成时，create_new 返回 Access denied 而不是 AlreadyExists；当作“锁被占用”重试。
+                Err(e) if cfg!(windows) && e.kind() == ErrorKind::PermissionDenied => {
+                    std::thread::sleep(LOCK_STEP);
+                }
                 Err(e) => return Err(e),
             }
         }

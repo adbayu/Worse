@@ -60,6 +60,28 @@ class Unauthorized extends Error {}
 
 import { initSessions, renderSessions } from '/assets/sessions.js';
 import { initSettings, showSettings } from '/assets/settings.js';
+import { initUsage, showUsage } from '/assets/usage.js';
+import { initPulls, showPulls } from '/assets/pulls.js';
+import { agentGlyph } from '/assets/avatar.js';
+import { initPicker, openPicker, closePicker, cacheAgentModels, syncPickerIfOpen } from '/assets/picker.js';
+import {
+  relayActive,
+  relayFetch,
+  relayForget,
+  relayMissingSecret,
+  relaySocket,
+  takePairToken,
+} from '/assets/relay.js';
+
+/** Plain fetch on the desktop's own server, the encrypted relay transport when opened from the relay. */
+function apiFetch(path, options) {
+  return relayActive ? relayFetch(path, options) : fetch(path, options);
+}
+
+function apiSocket(path) {
+  if (relayActive) return relaySocket(path);
+  return new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + path);
+}
 
 const BACKOFF_MIN = 500;
 const BACKOFF_MAX = 15000;
@@ -150,7 +172,7 @@ function toast(text) {
 /* ---------- HTTP / RPC ---------- */
 
 async function postJson(path, body) {
-  return fetch(path, {
+  return apiFetch(path, {
     method: 'POST',
     credentials: 'same-origin',
     cache: 'no-store',
@@ -193,7 +215,7 @@ async function rpcSoft(method, params, fallback) {
 
 async function getStatus() {
   try {
-    const res = await fetch('/api/v1/status', { credentials: 'same-origin', cache: 'no-store' });
+    const res = await apiFetch('/api/v1/status', { credentials: 'same-origin', cache: 'no-store' });
     if (res.status === 401) return { unauthorized: true };
     if (!res.ok) return null;
     return await res.json();
@@ -204,6 +226,7 @@ async function getStatus() {
 
 function onUnauthorized() {
   state.authed = false;
+  relayForget();
   if (state.socket) {
     try {
       state.socket.close();
@@ -283,7 +306,14 @@ async function afterPaired() {
 
 /* ---------- views / routing ---------- */
 
-const VIEWS = { pair: '#view-pair', list: '#view-list', session: '#view-session', settings: '#view-settings' };
+const VIEWS = {
+  pair: '#view-pair',
+  list: '#view-list',
+  pulls: '#view-pulls',
+  usage: '#view-usage',
+  session: '#view-session',
+  settings: '#view-settings',
+};
 
 function show(name) {
   state.view = name;
@@ -300,13 +330,23 @@ async function route() {
     return;
   }
   const hit = /^#\/s\/(.+)$/.exec(location.hash);
-  const settings = /^#\/settings(?:\/([a-z-]+))?$/.exec(location.hash);
+  const settings = /^#\/?settings(?:\/([a-z-]+))?$/.exec(location.hash);
+  const pulls = /^#\/?pulls$/.exec(location.hash);
+  const usage = /^#\/?usage(?:\/([a-z-]+))?$/.exec(location.hash);
   if (hit) {
     await openSession(decodeURIComponent(hit[1]));
   } else if (settings) {
     leaveSession();
     show('settings');
     showSettings(settings[1] || '');
+  } else if (pulls) {
+    leaveSession();
+    show('pulls');
+    showPulls();
+  } else if (usage) {
+    leaveSession();
+    show('usage');
+    showUsage(usage[1] || '');
   } else {
     leaveSession();
     await loadList();
@@ -321,6 +361,8 @@ function leaveSession() {
   state.stack = [];
   state.attachments = [];
   renderAttachments();
+  closePicker();
+  closeAttachMenu();
 }
 
 /* ---------- sessions list ---------- */
@@ -397,6 +439,12 @@ function viewApi() {
     createSession,
     openSettings: (page) => {
       location.hash = page ? '#/settings/' + page : '#/settings';
+    },
+    openPulls: () => {
+      location.hash = '#/pulls';
+    },
+    openUsage: () => {
+      location.hash = '#/usage';
     },
     closeSettings: () => {
       history.replaceState(null, '', '/');
@@ -572,6 +620,8 @@ function newTurn(id) {
     userText: '',
     status: 'queued',
     error: '',
+    createdAt: 0,
+    finishedAt: 0,
     notes: [],
     segments: [],
     tools: new Map(),
@@ -586,6 +636,8 @@ function turnFromView(view) {
   turn.userText = view.userText || '';
   turn.status = view.status || 'completed';
   turn.error = view.error || '';
+  turn.createdAt = view.createdAt || 0;
+  turn.finishedAt = view.finishedAt || 0;
   for (const tool of view.toolCalls || []) turn.tools.set(tool.toolCallId, tool);
   if (Array.isArray(view.segments) && view.segments.length) {
     for (const seg of view.segments) {
@@ -709,11 +761,71 @@ function flushTurns() {
     if (want !== turn.article) box.insertBefore(turn.article, want);
     anchor = turn.article;
   });
+  emptyHero(box);
   for (const pending of state.optimistic) {
     if (pending.node.parentNode !== box || pending.node !== box.lastChild) box.appendChild(pending.node);
   }
   if (state.follow) stickToBottom(box);
   updateBusy();
+}
+
+const COPY_SVG =
+  '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+const clockFmt = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' });
+
+function fmtClock(ms) {
+  if (!ms) return '';
+  try {
+    return clockFmt.format(new Date(ms));
+  } catch (_) {
+    return '';
+  }
+}
+
+async function copyText(text) {
+  const value = String(text || '');
+  if (!value) return;
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(value);
+      toast('Copied');
+      return;
+    }
+  } catch (_) {
+    /* fallback below for non-HTTPS LAN/WebView */
+  }
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = value;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    ta.remove();
+    toast('Copied');
+  } catch (_) {
+    toast('Could not copy');
+  }
+}
+
+function msgMeta(text, ts, role) {
+  const row = el('div', 'msg-meta ' + role);
+  const timeStr = fmtClock(ts);
+  const copyBtn = el('button', 'msg-copy');
+  copyBtn.type = 'button';
+  copyBtn.setAttribute('aria-label', 'Copy message');
+  copyBtn.innerHTML = COPY_SVG;
+  copyBtn.addEventListener('click', () => copyText(text));
+  if (role === 'user') {
+    if (timeStr) row.appendChild(el('span', 'msg-time', timeStr));
+    row.appendChild(copyBtn);
+  } else {
+    row.appendChild(copyBtn);
+    if (timeStr) row.appendChild(el('span', 'msg-time', timeStr));
+  }
+  return row;
 }
 
 function userBubble(text, attachments) {
@@ -740,13 +852,22 @@ function agentBubble(text) {
 function turnBlocks(turn) {
   const blocks = [];
   const note = (key, cls, text) => blocks.push({ key, sig: cls + '|' + text, make: () => el('div', cls, text) });
-  if (turn.userText) blocks.push({ key: 'user', sig: turn.userText, make: () => userBubble(turn.userText) });
+  if (turn.userText) {
+    blocks.push({ key: 'user', sig: turn.userText, make: () => userBubble(turn.userText) });
+    blocks.push({
+      key: 'umeta',
+      sig: turn.userText + '|' + (turn.createdAt || 0),
+      make: () => msgMeta(turn.userText, turn.createdAt, 'user'),
+    });
+  }
   let textBuf = '';
+  let allAgentText = [];
   let count = 0;
   const flushText = () => {
     if (!textBuf) return;
     const text = textBuf;
     textBuf = '';
+    allAgentText.push(text);
     blocks.push({ key: 'text' + count++, sig: text, make: () => agentBubble(text) });
   };
   for (const seg of turn.segments) {
@@ -763,6 +884,15 @@ function turnBlocks(turn) {
     }
   }
   flushText();
+  const agentCombined = allAgentText.join('\n\n').trim();
+  if (agentCombined && !BUSY.has(turn.status)) {
+    const ts = turn.finishedAt || turn.createdAt || 0;
+    blocks.push({
+      key: 'ameta',
+      sig: agentCombined + '|' + ts,
+      make: () => msgMeta(agentCombined, ts, 'agent'),
+    });
+  }
   if (turn.status === 'running' && !turn.segments.length) note('working', 'note', 'working…');
   turn.notes.forEach((item, i) => note('note' + i, 'note' + (item.err ? ' err' : ''), item.text));
   if (turn.error) note('end', 'note err', turn.error);
@@ -843,10 +973,67 @@ function diffText(item) {
   return lines.join('\n');
 }
 
+let sessionBusy = false;
+function updateComposerActions() {
+  const input = $('#input');
+  const ready = Boolean((input && input.value.trim()) || state.attachments.length);
+  const stopBtn = $('#stop');
+  const sendBtn = $('#send');
+  if (stopBtn) stopBtn.hidden = !sessionBusy;
+  if (sendBtn) {
+    // 运行中且输入框为空时只展示红色停止键，有文字或附件时保留发送键以便排队。
+    sendBtn.hidden = sessionBusy && !ready;
+    sendBtn.classList.toggle('is-ready', ready);
+  }
+}
+
 function updateBusy() {
   let busy = false;
   for (const turn of state.turns.values()) if (BUSY.has(turn.status)) busy = true;
-  $('#stop').hidden = !busy;
+  sessionBusy = busy;
+  updateComposerActions();
+  showWorking(busy);
+}
+
+// "Working 12s" chip above the composer; counts from when this phone first saw the turn busy.
+let workingSince = 0;
+let workingTimer = 0;
+function showWorking(busy) {
+  const chip = $('#working');
+  if (!busy) {
+    workingSince = 0;
+    clearInterval(workingTimer);
+    workingTimer = 0;
+    chip.hidden = true;
+    return;
+  }
+  if (!workingSince) workingSince = Date.now();
+  const paint = () => {
+    const secs = Math.max(0, Math.round((Date.now() - workingSince) / 1000));
+    $('#working-t').textContent = 'Working ' + (secs < 60 ? secs + 's' : Math.floor(secs / 60) + 'm ' + (secs % 60) + 's');
+  };
+  paint();
+  if (!workingTimer) workingTimer = setInterval(paint, 1000);
+  chip.hidden = false;
+}
+
+// Empty chat: a prompt instead of a blank page (CSS hides it as soon as anything else is in #turns).
+function emptyHero(box) {
+  let hero = box.querySelector('.turns-hero');
+  if (state.order.length) {
+    if (hero) hero.remove();
+    return;
+  }
+  if (!hero) {
+    hero = el('div', 'turns-hero');
+    hero.appendChild(el('h3'));
+    hero.appendChild(el('p', '', 'Type below to start — the agent works on your desktop.'));
+    box.appendChild(hero);
+  }
+  const h3 = hero.querySelector('h3');
+  h3.textContent = 'What should we build in ';
+  h3.appendChild(el('em', '', baseName(state.summary && state.summary.workspacePath) || 'this project'));
+  h3.appendChild(document.createTextNode('?'));
 }
 
 /* ---------- open session ---------- */
@@ -856,6 +1043,7 @@ async function openSession(id) {
   const isSame = state.sessionId === id;
   show('session');
   if (!isSame) {
+    showWorking(false);
     $('#s-title').textContent = 'Loading…';
     $('#turns').textContent = '';
     $('#perms').textContent = '';
@@ -940,6 +1128,7 @@ function renderHeader() {
   $('#s-title').textContent = (s && (s.title || baseName(s.workspacePath))) || 'Session';
   $('#s-agent').textContent = agentName(s && s.activeAgent);
   $('#s-agent').parentElement.dataset.agent = agentTone(s && s.activeAgent);
+  $('#s-proj').textContent = (s && s.title && baseName(s.workspacePath)) || '';
   $('#back').setAttribute('aria-label', state.stack.length ? 'Back to parent session' : 'Back to sessions');
 }
 
@@ -1103,6 +1292,31 @@ function openChild(childId) {
 
 /* ---------- mode / model ---------- */
 
+function normalizeModels(data) {
+  if (!data || typeof data !== 'object') return null;
+  if (Array.isArray(data.available) && data.available.length) {
+    return {
+      current: data.current || '',
+      available: data.available.map((item) => ({
+        id: item.id,
+        name: item.name || item.id,
+        description: item.description || '',
+      })),
+    };
+  }
+  if (Array.isArray(data.availableModels) && data.availableModels.length) {
+    return {
+      current: data.currentModelId || data.current || '',
+      available: data.availableModels.map((item) => ({
+        id: item.modelId || item.id,
+        name: item.displayName || item.name || item.modelId || item.id,
+        description: item.description || '',
+      })),
+    };
+  }
+  return null;
+}
+
 function fillPicker(select, data) {
   select.textContent = '';
   const items = data && Array.isArray(data.available) ? data.available : [];
@@ -1144,81 +1358,33 @@ function toggleResearch() {
     localStorage.setItem(RESEARCH_KEY, JSON.stringify([...state.research].slice(-200)));
   } catch (_) {}
   syncChip();
-  openSheet('main');
-}
-
-function researchCard() {
-  const row = el('button', 'sheet-card sheet-link');
-  row.type = 'button';
-  row.setAttribute('aria-pressed', researchOn() ? 'true' : 'false');
-  row.appendChild(el('span', 'sheet-link-label', 'Deep research'));
-  row.appendChild(el('span', 'sheet-link-value' + (researchOn() ? ' on' : ''), researchOn() ? 'On' : 'Off'));
-  row.addEventListener('click', toggleResearch);
-  return row;
 }
 
 function syncChip() {
+  const activeId = state.summary && state.summary.activeAgent;
   const model = selectedName($('#model-sel'));
   const effort = selectedName($('#effort-sel'));
   const mode = selectedName($('#mode-sel'));
+  const iconBox = $('#chip-icon');
+  if (iconBox) {
+    iconBox.textContent = '';
+    iconBox.appendChild(agentGlyph(activeId, 18));
+  }
   const effortNode = $('#chip-effort');
-  $('#chip-model').textContent = model || mode || agentName(state.summary && state.summary.activeAgent);
+  $('#chip-model').textContent = model || mode || agentName(activeId);
   effortNode.textContent = model || mode ? effort : '';
   effortNode.hidden = !effortNode.textContent;
-  $('#model-chip').title = [model, effort, mode, researchOn() ? 'Deep research' : ''].filter(Boolean).join(' · ');
+  $('#model-chip').title = [agentName(activeId), model, effort, mode, researchOn() ? 'Deep research' : '']
+    .filter(Boolean)
+    .join(' · ');
   $('#model-chip').classList.toggle('research', researchOn());
 }
 
-const SHEET_TITLES = { mode: 'Mode', model: 'Select model', effort: 'Effort' };
-const ICON_CLOSE = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>';
-const ICON_BACK = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6" /></svg>';
-const ICON_CHEVRON = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6" /></svg>';
-let sheetView = 'main';
-
-function closeSheet() {
-  $('#sheet').hidden = true;
-}
-
 function pickValue(select, value) {
-  if (select.value === value) return;
+  if (!select || select.value === value) return;
   select.value = value;
   syncChip();
   select.dispatchEvent(new Event('change'));
-}
-
-function optionCard(select, onPick) {
-  const card = el('div', 'sheet-card');
-  card.setAttribute('role', 'listbox');
-  for (const opt of select.options) {
-    const row = el('button', 'sheet-row' + (opt.selected ? ' on' : ''));
-    row.type = 'button';
-    row.setAttribute('role', 'option');
-    row.setAttribute('aria-selected', opt.selected ? 'true' : 'false');
-    const text = el('span', 'sheet-text');
-    text.appendChild(el('span', 'sheet-name', opt.textContent));
-    if (opt.title) text.appendChild(el('span', 'sheet-desc', opt.title));
-    row.appendChild(text);
-    row.appendChild(el('span', 'sheet-check', opt.selected ? '✓' : ''));
-    row.addEventListener('click', () => {
-      pickValue(select, opt.value);
-      onPick();
-    });
-    card.appendChild(row);
-  }
-  return card;
-}
-
-function navCard(kind) {
-  const select = $('#' + kind + '-sel');
-  const row = el('button', 'sheet-card sheet-link');
-  row.type = 'button';
-  row.appendChild(el('span', 'sheet-link-label', SHEET_TITLES[kind]));
-  row.appendChild(el('span', 'sheet-link-value', selectedName(select)));
-  const chev = el('span', 'sheet-link-chev');
-  chev.innerHTML = ICON_CHEVRON;
-  row.appendChild(chev);
-  row.addEventListener('click', () => openSheet(kind));
-  return row;
 }
 
 function agentChoices() {
@@ -1234,98 +1400,30 @@ function agentChoices() {
   return ordered;
 }
 
-function agentCard() {
-  const current = state.summary && state.summary.activeAgent;
-  const card = el('div', 'sheet-card');
-  card.setAttribute('role', 'listbox');
-  agentChoices().forEach((agent, index) => {
-    const on = agent.id === current;
-    const row = el('button', 'sheet-row' + (on ? ' on' : ''));
-    row.type = 'button';
-    row.setAttribute('role', 'option');
-    row.setAttribute('aria-selected', on ? 'true' : 'false');
-    const text = el('span', 'sheet-text');
-    text.appendChild(el('span', 'sheet-name', agent.displayName || agent.id));
-    row.appendChild(text);
-    row.appendChild(el('span', 'sheet-badge', on ? 'Active' : 'Fallback #' + (index + 1)));
-    row.appendChild(el('span', 'sheet-check', on ? '✓' : ''));
-    row.addEventListener('click', () => {
-      closeSheet();
-      if (!on) switchAgent(agent.id);
-    });
-    card.appendChild(row);
-  });
-  return card;
-}
-
-async function switchAgent(agentId) {
+async function switchAgentAndModel(agentId, modelId) {
   const id = state.sessionId;
-  if (!id) return;
+  if (!id || !agentId) return;
   try {
     await rpc('set_active_agent', { sessionId: id, agent: agentId });
     if (state.sessionId !== id) return;
     if (state.summary) state.summary.activeAgent = agentId;
     renderHeader();
-    loadPickers();
+    syncChip();
+    await loadPickers();
+    if (state.sessionId !== id || !modelId) return;
+    const modelSel = $('#model-sel');
+    if (modelSel && Array.from(modelSel.options).some((o) => o.value === modelId)) {
+      if (modelSel.value !== modelId) {
+        modelSel.value = modelId;
+        syncChip();
+        await changeOption('model', modelId);
+      }
+    } else {
+      await changeOption('model', modelId);
+    }
   } catch (err) {
     if (!(err instanceof Unauthorized)) toast('Could not switch agent: ' + err.message);
   }
-}
-
-function agentLink() {
-  const row = el('button', 'sheet-card sheet-link');
-  row.type = 'button';
-  row.appendChild(el('span', 'sheet-link-label', 'Agent'));
-  row.appendChild(el('span', 'sheet-link-value', agentName(state.summary && state.summary.activeAgent)));
-  const chev = el('span', 'sheet-link-chev');
-  chev.innerHTML = ICON_CHEVRON;
-  row.appendChild(chev);
-  row.addEventListener('click', () => openSheet('agent'));
-  return row;
-}
-
-function sheetUsable(kind) {
-  if (kind === 'agent') return agentChoices().length > 1;
-  const select = $('#' + kind + '-sel');
-  return Boolean(select && select.options.length);
-}
-
-function openSheet(view) {
-  sheetView = view || 'main';
-  const list = $('#sheet-list');
-  const nav = $('#sheet-nav');
-  list.textContent = '';
-  if (sheetView === 'main') {
-    const hasModel = sheetUsable('model');
-    $('#sheet-title').textContent = hasModel ? SHEET_TITLES.model : 'Options';
-    nav.innerHTML = ICON_CLOSE;
-    nav.setAttribute('aria-label', 'Close');
-    if (hasModel) list.appendChild(optionCard($('#model-sel'), closeSheet));
-    for (const kind of ['effort', 'mode']) {
-      if (sheetUsable(kind)) list.appendChild(navCard(kind));
-    }
-    if (sheetUsable('agent')) list.appendChild(agentLink());
-    list.appendChild(researchCard());
-  } else if (sheetView === 'agent') {
-    if (!sheetUsable('agent')) {
-      openSheet('main');
-      return;
-    }
-    $('#sheet-title').textContent = 'Agent';
-    nav.innerHTML = ICON_BACK;
-    nav.setAttribute('aria-label', 'Back');
-    list.appendChild(agentCard());
-  } else {
-    if (!sheetUsable(sheetView)) {
-      openSheet('main');
-      return;
-    }
-    $('#sheet-title').textContent = SHEET_TITLES[sheetView];
-    nav.innerHTML = ICON_BACK;
-    nav.setAttribute('aria-label', 'Back');
-    list.appendChild(optionCard($('#' + sheetView + '-sel'), () => openSheet('main')));
-  }
-  $('#sheet').hidden = false;
 }
 
 function findOption(options, id, categories) {
@@ -1350,22 +1448,28 @@ async function loadPickers() {
   const id = state.sessionId;
   if (!id) return;
   const token = ++pickerToken;
-  const [modes, models, config] = await Promise.all([
+  const [modes, modelsRaw, config] = await Promise.all([
     rpcSoft('list_modes', { sessionId: id }, null),
     rpcSoft('list_models', { sessionId: id }, null),
     rpcSoft('list_config_options', { sessionId: id }, null),
   ]).catch(() => [null, null, null]);
   if (token !== pickerToken || state.sessionId !== id) return;
-  const hasModels = Boolean(models && Array.isArray(models.available) && models.available.length);
+  const models = normalizeModels(modelsRaw);
+  const hasModels = Boolean(models && models.available.length);
   const modelOption = hasModels ? null : findOption(config, 'model', ['model']);
   const effortOption = findOption(config, 'effort', ['thought_level', 'effort']);
   configIds.model = modelOption ? modelOption.id : null;
   configIds.effort = effortOption ? effortOption.id : null;
+  const resolvedModels = hasModels ? models : optionList(modelOption);
   fillPicker($('#mode-sel'), modes);
-  fillPicker($('#model-sel'), hasModels ? models : optionList(modelOption));
+  fillPicker($('#model-sel'), resolvedModels);
   fillPicker($('#effort-sel'), optionList(effortOption));
+  if (state.summary && state.summary.activeAgent && resolvedModels && resolvedModels.available.length) {
+    cacheAgentModels(state.summary.activeAgent, resolvedModels.available);
+  }
   syncChip();
   $('#pickers').hidden = false;
+  syncPickerIfOpen();
 }
 
 async function changeOption(kind, value) {
@@ -1389,13 +1493,41 @@ async function changeOption(kind, value) {
 
 const MAX_INPUT_LINES = 6;
 
+// 输入框固定全宽堆叠布局，避免宽度随行数变化引起反复跳动；超过 6 行改为内部滚动。
 function autoGrow(node) {
   const style = window.getComputedStyle(node);
-  const line = parseFloat(style.lineHeight) || 20;
+  const line = parseFloat(style.lineHeight) || 22;
   const padding = (parseFloat(style.paddingTop) || 0) + (parseFloat(style.paddingBottom) || 0);
-  const cap = Math.min(Math.round(line * MAX_INPUT_LINES + padding), Math.round(window.innerHeight * 0.4));
+  const cap = Math.min(Math.round(line * MAX_INPUT_LINES + padding), Math.round(window.innerHeight * 0.36));
   node.style.height = 'auto';
-  node.style.height = Math.min(node.scrollHeight, cap) + 'px';
+  const scrollH = node.scrollHeight;
+  node.style.height = Math.min(scrollH, cap) + 'px';
+  node.style.overflowY = scrollH > cap ? 'auto' : 'hidden';
+  updateComposerActions();
+}
+
+function closeAttachMenu() {
+  const menu = $('#attach-menu');
+  const btn = $('#attach');
+  if (menu) menu.hidden = true;
+  if (btn) btn.setAttribute('aria-expanded', 'false');
+}
+
+function toggleAttachMenu() {
+  const menu = $('#attach-menu');
+  const btn = $('#attach');
+  if (!menu) return;
+  const next = menu.hidden;
+  menu.hidden = !next;
+  if (btn) btn.setAttribute('aria-expanded', next ? 'true' : 'false');
+}
+
+function openFilePicker(accept) {
+  closeAttachMenu();
+  const input = $('#file-input');
+  if (!input) return;
+  input.accept = accept;
+  input.click();
 }
 
 function newClientId() {
@@ -1439,6 +1571,7 @@ function renderAttachments() {
     chip.appendChild(x);
     row.appendChild(chip);
   }
+  updateComposerActions();
 }
 
 function removeAttachment(id) {
@@ -1543,7 +1676,7 @@ async function uploadAttachment(item) {
   const name = item.name.replace(/[^\x20-\x7E]/g, '_').slice(0, 100) || 'file';
   let res;
   try {
-    res = await fetch('/api/v1/upload', {
+    res = await apiFetch('/api/v1/upload', {
       method: 'POST',
       credentials: 'same-origin',
       cache: 'no-store',
@@ -1597,7 +1730,9 @@ async function sendMessage(text, items) {
   const sessionId = state.sessionId;
   const clientMessageId = newClientId();
   const node = el('article', 'turn');
+  const now = Date.now();
   node.appendChild(userBubble(text, items));
+  node.appendChild(msgMeta(text, now, 'user'));
   const pending = { clientMessageId, text, node };
   state.optimistic.push(pending);
   const box = $('#turns');
@@ -1662,7 +1797,7 @@ function connect() {
   clearTimeout(state.retryTimer);
   let ws;
   try {
-    ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/api/v1/events');
+    ws = apiSocket('/api/v1/events');
   } catch (err) {
     scheduleReconnect();
     return;
@@ -1774,6 +1909,7 @@ function applySessionEvent(event) {
     case 'turnQueued': {
       const turn = getTurn(k.turnId);
       if (!turn.userText) turn.userText = k.userText || '';
+      if (!turn.createdAt) turn.createdAt = Date.now();
       if (!k.background) claimOptimistic(k.userText);
       if (!state.queue.some((q) => q.turnId === k.turnId) && turn.status === 'queued') {
         state.queue.push({ turnId: k.turnId, userText: k.userText || '' });
@@ -1819,6 +1955,7 @@ function applySessionEvent(event) {
       const turn = getTurn(k.turnId);
       const outcome = (k.outcome && k.outcome.outcome) || 'completed';
       turn.status = outcome;
+      turn.finishedAt = Date.now();
       if (outcome === 'failed' && k.outcome.error) turn.error = k.outcome.error;
       state.queue = state.queue.filter((q) => q.turnId !== k.turnId);
       renderQueue();
@@ -1934,7 +2071,15 @@ function bindUi() {
     event.preventDefault();
     submitComposer().catch(() => undefined);
   });
-  $('#attach').addEventListener('click', () => $('#file-input').click());
+  $('#attach').addEventListener('click', toggleAttachMenu);
+  $('#attach-menu').addEventListener('click', (event) => {
+    if (event.target === event.currentTarget) closeAttachMenu();
+  });
+  $('#attach-photo').addEventListener('click', () => openFilePicker('image/*'));
+  $('#attach-file').addEventListener('click', () => openFilePicker('*/*'));
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && !$('#attach-menu').hidden) closeAttachMenu();
+  });
   $('#file-input').addEventListener('change', (event) => {
     const input = event.target;
     const files = Array.from(input.files || []);
@@ -1967,9 +2112,21 @@ function bindUi() {
   $('#mode-sel').addEventListener('change', (event) => changeOption('mode', event.target.value));
   $('#model-sel').addEventListener('change', (event) => changeOption('model', event.target.value));
   $('#effort-sel').addEventListener('change', (event) => changeOption('effort', event.target.value));
-  $('#model-chip').addEventListener('click', () => openSheet('main'));
-  $('#sheet-nav').addEventListener('click', () => (sheetView === 'main' ? closeSheet() : openSheet('main')));
-  $('#sheet').querySelector('.sheet-backdrop').addEventListener('click', closeSheet);
+  initPicker($('#sheet'), {
+    el,
+    agentChoices,
+    activeAgent: () => (state.summary && state.summary.activeAgent) || '',
+    select: (kind) => $('#' + kind + '-sel'),
+    selectedName,
+    pickSelect: (kind, val) => pickValue($('#' + kind + '-sel'), val),
+    switchAgentAndModel,
+    researchOn,
+    toggleResearch,
+  });
+  $('#model-chip').addEventListener('click', () => {
+    closeAttachMenu();
+    openPicker();
+  });
   window.addEventListener('hashchange', () => {
     if (!navigating) state.stack = [];
     navigating = false;
@@ -2008,13 +2165,20 @@ function bindUi() {
 
 async function boot() {
   initSessions($('#view-list'), viewApi());
+  initPulls($('#view-pulls'), viewApi());
+  initUsage($('#view-usage'), viewApi());
   initSettings($('#view-settings'), viewApi());
   bindUi();
   setOffline(false);
+  if (relayMissingSecret()) {
+    show('pair');
+    showPairError('Open the full link or scan the QR code shown in Harness on the desktop.');
+    return;
+  }
   const fragment = new URLSearchParams(location.hash.replace(/^#/, ''));
-  const token = fragment.get('t');
+  const token = relayActive ? takePairToken() : fragment.get('t');
   if (token) {
-    history.replaceState(null, '', '/');
+    if (!relayActive) history.replaceState(null, '', '/');
     try {
       await pair({ token, name: deviceName() });
     } catch (err) {
@@ -2026,7 +2190,11 @@ async function boot() {
   const status = await getStatus();
   if (!status) {
     show('pair');
-    showPairError('Cannot reach the Harness hub.');
+    showPairError(
+      relayActive
+        ? 'Cannot reach the desktop. Check that Harness is running with Remote Control on.'
+        : 'Cannot reach the Harness hub.',
+    );
     return;
   }
   if (status.unauthorized) {

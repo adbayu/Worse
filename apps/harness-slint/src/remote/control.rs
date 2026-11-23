@@ -41,6 +41,7 @@ pub fn start_server() {
         },
         core,
     });
+    send(Cmd::Relay(settings.remote.relay_url.clone()));
 }
 
 /// Starts the configured tunnel for the running server.

@@ -1,0 +1,160 @@
+// New session draft, modelled on the Antigravity desktop composer: until the first message is sent, the
+// composer shows the project and checkout the session will start in. "No project" sessions run in a scratch
+// folder and are listed under Conversations. Rust (apps/harness-slint/src/bridge/draft.rs) owns the state.
+import { Icon, Icons, MenuItem, MenuShell } from "../components/controls.slint";
+import { Theme } from "../theme/tokens.slint";
+
+export struct DraftProject {
+    label: string,
+    path: string,
+}
+
+export global DraftUi {
+    // True while no session is open: the next message creates one.
+    in property <bool> active: true;
+    // Folder name of the chosen project; "" = No project.
+    in property <string> project;
+    in property <string> project-path;
+    // Recent projects for the picker, newest first.
+    in property <[DraftProject]> projects;
+    in property <bool> worktree;
+    // A project path, "" = No project, "open" = Open folder…, "local" / "worktree" = checkout.
+    callback pick(string);
+}
+
+component DraftChip inherits Rectangle {
+    in property <image> icon;
+    in property <string> text;
+    in property <string> tip;
+    callback clicked();
+    height: 24px;
+    width: chip-row.preferred-width;
+    border-radius: Theme.radius-md;
+    background: ta.has-hover ? Theme.border-hover : Theme.border-hover.with-alpha(0);
+    animate background { duration: Theme.dur-hover; easing: ease-out-quint; }
+    accessible-role: button;
+    accessible-label: root.tip;
+    accessible-action-default => {
+        root.clicked();
+    }
+    chip-row := HorizontalLayout {
+        padding-left: 6px;
+        padding-right: 6px;
+        spacing: 5px;
+        Icon {
+            y: (parent.height - self.height) / 2;
+            source: root.icon;
+            size: 13px;
+            tint: ta.has-hover ? Theme.icon : Theme.icon-subtle;
+        }
+        Text {
+            text: root.text;
+            font-size: Theme.ui-sm;
+            color: ta.has-hover ? Theme.foreground : Theme.foreground-subtle;
+            vertical-alignment: center;
+            overflow: elide;
+            max-width: 220px;
+            accessible-role: none;
+        }
+        Icon {
+            y: (parent.height - self.height) / 2;
+            source: Icons.chevron-down;
+            size: 11px;
+            tint: Theme.icon-subtlest;
+        }
+    }
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+// The chip row above the composer input of a new session.
+export component DraftChips inherits HorizontalLayout {
+    height: 24px;
+    spacing: 2px;
+    alignment: start;
+    padding-left: 2px;
+    DraftChip {
+        icon: DraftUi.project == "" ? Icons.message-square : Icons.folder;
+        text: DraftUi.project == "" ? "No project" : DraftUi.project;
+        tip: DraftUi.project == "" ? "Project: none (scratch folder)" : "Project: " + DraftUi.project-path;
+        clicked => {
+            project-menu.show();
+        }
+    }
+    if DraftUi.project != "": DraftChip {
+        icon: Icons.git-branch;
+        text: DraftUi.worktree ? "New worktree" : "Local checkout";
+        tip: "Checkout: " + self.text;
+        clicked => {
+            checkout-menu.show();
+        }
+    }
+    project-menu := PopupWindow {
+        x: 0;
+        y: -self.height - 6px;
+        width: 300px;
+        MenuShell {
+            for p in DraftUi.projects: MenuItem {
+                text: p.label;
+                description: p.path;
+                has-icon: true;
+                icon: Icons.folder;
+                checked: p.path == DraftUi.project-path;
+                clicked => {
+                    project-menu.close();
+                    DraftUi.pick(p.path);
+                }
+            }
+            MenuItem {
+                text: "No project";
+                description: "Chat without a folder (scratch)";
+                has-icon: true;
+                icon: Icons.message-square;
+                checked: DraftUi.project == "";
+                clicked => {
+                    project-menu.close();
+                    DraftUi.pick("");
+                }
+            }
+            MenuItem {
+                text: "Open folder…";
+                show-check: false;
+                has-icon: true;
+                icon: Icons.folder-open;
+                clicked => {
+                    project-menu.close();
+                    DraftUi.pick("open");
+                }
+            }
+        }
+    }
+    checkout-menu := PopupWindow {
+        x: 0;
+        y: -self.height - 6px;
+        width: 260px;
+        MenuShell {
+            MenuItem {
+                text: "Local checkout";
+                description: "Work in the project folder";
+                checked: !DraftUi.worktree;
+                clicked => {
+                    checkout-menu.close();
+                    DraftUi.pick("local");
+                }
+            }
+            MenuItem {
+                text: "New worktree";
+                description: "Isolated git worktree on its own branch";
+                checked: DraftUi.worktree;
+                clicked => {
+                    checkout-menu.close();
+                    DraftUi.pick("worktree");
+                }
+            }
+        }
+    }
+}

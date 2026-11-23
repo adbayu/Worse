@@ -25,6 +25,7 @@ use stub::{StubCore, TIMEOUT};
 
 mod lockout;
 mod pairing;
+mod relay;
 mod rpc_upload;
 mod socket;
 

@@ -11,7 +11,7 @@ harness-core-api = { path = "../harness-core-api" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true, features = ["fs", "net", "io-util", "sync", "time"] }
-hyper = { version = "1", features = ["server", "http1"] }
+hyper = { version = "1", features = ["server", "client", "http1"] }
 hyper-util = { version = "0.1", features = ["tokio"] }
 http-body-util = "0.1"
 http = "1"
@@ -19,6 +19,12 @@ bytes = "1"
 base64 = { workspace = true }
 getrandom = "0.3"
 subtle = "2"
+# Remote Control relay (docs/plans/remote-relay.md): Ed25519 identity, HKDF + AES-256-GCM, wss client.
+ring = "0.17"
+futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
+tokio-tungstenite = { version = "0.30", default-features = false, features = ["connect", "handshake", "__rustls-tls"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+rustls-native-certs = "0.8"
 
 [lints]
 workspace = true

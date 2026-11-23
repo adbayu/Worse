@@ -1,3 +1,6 @@
+import { appearanceBody } from '/assets/appearance.js';
+import { renderSettingRow, closeSettingSheet } from '/assets/settings_edit.js';
+
 let root = null;
 let api = null;
 let seq = 0;
@@ -53,6 +56,8 @@ const ICONS = {
   download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>',
   search: '<circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>',
   chat: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M8 9h8M8 13h5"/>',
+  pull: '<circle cx="6" cy="6" r="3"/><circle cx="18" cy="18" r="3"/><path d="M6 9v12M13 6h3a2 2 0 0 1 2 2v7M15 4l-2 2 2 2"/>',
+  usage: '<rect x="3" y="12" width="4" height="8" rx="1"/><rect x="10" y="5" width="4" height="15" rx="1"/><rect x="17" y="9" width="4" height="11" rx="1"/>',
   chevron: '<path d="m9 6 6 6-6 6"/>',
   back: '<path d="M19 12H5M12 19l-7-7 7-7"/>',
 };
@@ -68,12 +73,17 @@ function icon(name, className) {
   return box;
 }
 
-export function bottomNav(viewApi, active) {
+// 4-tab bottom navigation bar (Chats · Pulls · Usage · Settings) with optional compose FAB.
+export function bottomNav(viewApi, active, action) {
+  const dock = document.createElement('div');
+  dock.className = 'app-dock';
   const nav = document.createElement('nav');
   nav.className = 'app-nav';
   nav.setAttribute('aria-label', 'Main');
   const items = [
     { id: 'chats', label: 'Chats', icon: 'chat', go: () => viewApi.closeSettings() },
+    { id: 'pulls', label: 'Pulls', icon: 'pull', go: () => viewApi.openPulls() },
+    { id: 'usage', label: 'Usage', icon: 'usage', go: () => viewApi.openUsage() },
     { id: 'settings', label: 'Settings', icon: 'gear', go: () => viewApi.openSettings('') },
   ];
   for (const item of items) {
@@ -81,6 +91,7 @@ export function bottomNav(viewApi, active) {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = on ? 'app-nav-item on' : 'app-nav-item';
+    btn.dataset.nav = item.id;
     if (on) btn.setAttribute('aria-current', 'page');
     btn.appendChild(icon(item.icon, 'app-nav-icon'));
     const label = document.createElement('span');
@@ -90,20 +101,39 @@ export function bottomNav(viewApi, active) {
     if (!on) btn.addEventListener('click', item.go);
     nav.appendChild(btn);
   }
-  return nav;
+  dock.appendChild(nav);
+  if (action) {
+    const fab = document.createElement('button');
+    fab.type = 'button';
+    fab.className = 'app-fab';
+    fab.setAttribute('aria-label', action.title);
+    fab.innerHTML =
+      '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.4 3.6a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
+    const label = document.createElement('span');
+    label.textContent = action.title;
+    fab.appendChild(label);
+    fab.addEventListener('click', action.onClick);
+    dock.appendChild(fab);
+  }
+  return dock;
 }
 
 const TONES = new Set(['default', 'accent', 'success', 'warning', 'danger', 'muted', 'info']);
 const KINDS = new Set(['row', 'toggle', 'code', 'stat']);
-const DESKTOP = 'Manage this on the desktop';
+let hashBound = false;
 
 export function initSettings(node, viewApi) {
   root = node;
   api = viewApi;
+  if (!hashBound) {
+    hashBound = true;
+    window.addEventListener('hashchange', closeSettingSheet);
+  }
 }
 
 export function showSettings(page) {
   if (!root) return;
+  closeSettingSheet();
   seq += 1;
   const token = seq;
   const id = typeof page === 'string' ? page.trim() : '';
@@ -127,15 +157,10 @@ function labelOf(pageId) {
 }
 
 function emptyNote() {
-  return api.el('p', 'set-empty', DESKTOP);
-}
-
-// 圆形字标：glyph 为空时回退到标题首字母（M3 单色图标位）。
-function glyphBox(className, glyph, fallback) {
-  const raw = text(glyph).trim();
-  const letter = (raw || text(fallback).trim() || '?').charAt(0);
-  const box = api.el('span', className, letter.toUpperCase());
-  box.setAttribute('aria-hidden', 'true');
+  const box = api.el('div', 'set-empty-box');
+  box.appendChild(icon('monitor', 'set-empty-ico'));
+  box.appendChild(api.el('p', 'set-empty-title', "This page isn't available on the phone yet"));
+  box.appendChild(api.el('p', 'set-empty-sub', 'Manage this setting on the Harness desktop app.'));
   return box;
 }
 
@@ -177,6 +202,7 @@ function openIndex(token) {
       if (entry.group !== group.id) continue;
       const row = api.el('button', 'set-row');
       row.type = 'button';
+      row.dataset.group = group.id;
       row.appendChild(icon(entry.icon, 'set-glyph'));
       const lines = api.el('span', 'set-lines');
       lines.appendChild(api.el('span', 'set-label', entry.title));
@@ -291,6 +317,12 @@ async function openPage(pageId, token) {
   page.appendChild(head);
 
   const body = api.el('div', 'set-body');
+  if (pageId === 'appearance') {
+    body.appendChild(appearanceBody(api));
+    page.appendChild(body);
+    root.appendChild(page);
+    return;
+  }
   const note = api.el('p', 'set-note', 'Loading…');
   body.appendChild(note);
   page.appendChild(body);
@@ -334,65 +366,21 @@ function sectionNode(section) {
     wrap.appendChild(emptyNote());
   } else {
     const card = api.el('div', 'set-card');
+    const rowCtx = {
+      kinds: KINDS,
+      toneOf,
+      icon,
+      onSaved: () => {
+        overviewPending = null;
+      },
+    };
     for (const row of rows) {
       if (!row || typeof row !== 'object') continue;
-      card.appendChild(lineNode(row));
+      card.appendChild(renderSettingRow(row, api, rowCtx));
     }
     wrap.appendChild(card);
   }
   const note = text(section.note).trim();
   if (note) wrap.appendChild(api.el('p', 'set-note', note));
   return wrap;
-}
-
-function lineNode(row) {
-  const kind = KINDS.has(row.kind) ? row.kind : 'row';
-  const tone = toneOf(row.tone);
-  const heading = text(row.title).trim();
-  const detail = text(row.detail).trim();
-  const value = text(row.value).trim();
-  const classNames = 'set-line kind-' + kind;
-  // 行级 tone 只在行内没有独立着色元素时生效，否则会盖掉 badge 的弱化色。
-  const line = api.el('div', tone !== 'default' && !row.badge ? classNames + ' tone-' + tone : classNames);
-  const glyph = text(row.glyph).trim();
-
-  if (kind === 'code') {
-    const code = text(row.code || row.detail || row.value).trim();
-    if (heading) line.appendChild(api.el('p', 'set-line-title', heading));
-    if (code) {
-      const block = api.el('pre', 'set-code');
-      block.textContent = code;
-      line.appendChild(block);
-    }
-    return line;
-  }
-
-  if (kind === 'toggle') {
-    line.classList.add('has-toggle');
-    if (glyph) line.appendChild(glyphBox('set-icon tone-' + tone, glyph, heading));
-    line.appendChild(lineText(heading, detail));
-    const state = row.on === true;
-    const sw = api.el('span', 'set-switch' + (state ? ' on' : ''));
-    sw.setAttribute('role', 'switch');
-    sw.setAttribute('aria-checked', state ? 'true' : 'false');
-    sw.appendChild(api.el('span', 'set-knob'));
-    sw.appendChild(api.el('span', 'set-sr', state ? 'on' : 'off'));
-    line.appendChild(sw);
-    if (value) line.appendChild(api.el('span', 'set-value', value));
-    return line;
-  }
-
-  if (glyph) line.appendChild(glyphBox('set-icon tone-' + tone, glyph, heading));
-  line.appendChild(lineText(heading, detail));
-  if (row.badge) line.appendChild(api.el('span', 'set-badge tone-' + tone, text(row.badge)));
-  if (value) line.appendChild(api.el('span', 'set-value tone-' + tone, value));
-  return line;
-}
-
-function lineText(heading, detail) {
-  const box = api.el('div', 'set-line-text');
-  if (heading) box.appendChild(api.el('p', 'set-line-title', heading));
-  if (detail) box.appendChild(api.el('p', 'set-line-detail', detail));
-  if (!heading && !detail) box.appendChild(api.el('span', 'set-line-detail', ''));
-  return box;
 }

@@ -9,6 +9,8 @@ import android.text.Html
 import android.util.Log
 import android.webkit.CookieManager
 import android.webkit.SslErrorHandler
+import android.webkit.ValueCallback
+import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
@@ -16,6 +18,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
@@ -43,6 +46,15 @@ class MainActivity : AppCompatActivity() {
     private var host: String = ""
     private var pendingUrl: String? = null
     private var showingError = false
+
+    /** Pending `<input type=file>` callback; must always be answered (null = cancelled). */
+    private var fileCallback: ValueCallback<Array<Uri>>? = null
+
+    private val pickFiles =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            fileCallback?.onReceiveValue(pickedUris(result.resultCode, result.data))
+            fileCallback = null
+        }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -98,11 +110,41 @@ class MainActivity : AppCompatActivity() {
             true
         }
         web.webViewClient = HarnessWebViewClient()
+        // 修复：没有 WebChromeClient 时 <input type=file> 不会打开文件选择器，“+”按钮无反应。
+        web.webChromeClient = object : WebChromeClient() {
+            override fun onShowFileChooser(
+                view: WebView,
+                callback: ValueCallback<Array<Uri>>,
+                params: FileChooserParams,
+            ): Boolean {
+                fileCallback?.onReceiveValue(null)
+                fileCallback = callback
+                val multiple = params.mode == FileChooserParams.MODE_OPEN_MULTIPLE
+                // 修复：“Photos”和“Files”都打开相册且还要先选应用：图片直接开系统照片选择器，
+                // 其他直接开文件管理器，不再弹 createChooser。
+                val intent = if (onlyImages(params.acceptTypes)) {
+                    photoIntent(multiple)
+                } else {
+                    filesIntent(multiple)
+                }
+                return try {
+                    pickFiles.launch(intent)
+                    true
+                } catch (e: Exception) {
+                    Log.w(TAG, "no file picker: ${e.javaClass.simpleName}")
+                    fileCallback = null
+                    false
+                }
+            }
+        }
     }
 
     private fun setUpSwipe() {
         swipe.setColorSchemeColors(getColor(R.color.harness_accent))
-        swipe.setOnChildScrollUpCallback { _, _ -> web.scrollY > 0 }
+        // 修复：聊天内容在页面内部的容器里滚动，web.scrollY 永远是 0，往上滑就会误触发刷新。
+        // 只在离线错误页启用下拉刷新；正常页面用长按菜单里的 Reload。
+        swipe.isEnabled = false
+        swipe.setOnChildScrollUpCallback { _, _ -> !showingError || web.scrollY > 0 }
         swipe.setOnRefreshListener {
             if (showingError) {
                 loadStart()
@@ -177,6 +219,7 @@ class MainActivity : AppCompatActivity() {
         if (showingError) return
         showingError = true
         swipe.isRefreshing = false
+        swipe.isEnabled = true
         val detail = Html.escapeHtml(description.ifBlank { "unreachable" })
         val page = """
             <!doctype html>
@@ -241,6 +284,7 @@ class MainActivity : AppCompatActivity() {
         override fun onPageStarted(view: WebView, url: String?, favicon: android.graphics.Bitmap?) {
             if (url?.startsWith("https://", ignoreCase = true) != true) return
             showingError = false
+            swipe.isEnabled = false
             swipe.isRefreshing = true
         }
 

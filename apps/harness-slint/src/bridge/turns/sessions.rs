@@ -107,7 +107,13 @@ impl UiState {
     pub(super) fn group_action(&mut self, action: &str, id: &str) {
         if action == "new-session" {
             if !id.is_empty() {
-                self.new_session(false, Some(std::path::PathBuf::from(id)));
+                use crate::bridge::draft::{is_scratch, DraftTarget};
+                let project = if is_scratch(id) {
+                    DraftTarget::NoProject
+                } else {
+                    DraftTarget::Folder(std::path::PathBuf::from(id))
+                };
+                self.start_draft(false, project);
             }
             return;
         }
@@ -187,6 +193,8 @@ impl UiState {
                 None => projects.push((s.project.as_str(), vec![s])),
             }
         }
+        // “No project” 会话（草稿的 scratch 文件夹）像 Antigravity 一样列在最后的 Conversations 下。
+        projects.sort_by_key(|(key, _)| crate::bridge::draft::is_scratch(key));
         projects
             .into_iter()
             .map(|(key, members)| {
@@ -195,10 +203,14 @@ impl UiState {
                     .iter()
                     .find(|s| s.branch.is_none() && !s.workspace_path.is_empty())
                     .map_or(key, |s| s.workspace_path.as_str());
-                let name = folder
-                    .rsplit(['/', '\\'])
-                    .find(|part| !part.is_empty())
-                    .unwrap_or(folder);
+                let name = if crate::bridge::draft::is_scratch(key) {
+                    "Conversations"
+                } else {
+                    folder
+                        .rsplit(['/', '\\'])
+                        .find(|part| !part.is_empty())
+                        .unwrap_or(folder)
+                };
                 let header = SessionRow {
                     header: sv("project"),
                     header_id: sv(&id),

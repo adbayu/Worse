@@ -28,6 +28,16 @@ export global RemoteUi {
     in property <[RemoteDevice]> devices;
     in property <string> note;
     in-out property <bool> log-open;
+    // Remote Control through the relay (remote_control.slint).
+    in property <int> relay-state;
+    in property <string> relay-text;
+    in property <string> relay-link;
+    in property <bool> has-relay-qr;
+    in property <image> relay-qr;
+    // 8-char pair code of the current QR offer (typed on the phone when the link was opened without the QR).
+    in property <string> relay-code;
+    in property <string> device-name-default;
+    in-out property <bool> advanced-open;
     callback set-enabled(bool);
     callback start-tunnel();
     callback stop-tunnel();
@@ -36,4 +46,6 @@ export global RemoteUi {
     callback refresh();
     callback copy(string);
     callback open-url(string);
+    callback new-relay-qr();
+    callback reset-link();
 }

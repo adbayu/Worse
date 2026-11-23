@@ -40,6 +40,7 @@ impl UiState {
         self.refresh_sessions();
         self.session_opened(items, summary.unread);
         self.reset_dock();
+        self.sync_draft();
         if let Some((text, mut context)) = self.pending_send.take() {
             self.add_modes(&summary.id, &mut context);
             self.send_message(summary.id.clone(), text, context);
@@ -75,6 +76,11 @@ impl UiState {
     /// `workspace` 为该会话指定工作区（“Open folder…”，None = 启动时的工作区）。
     pub(super) fn new_session(&mut self, worktree: bool, workspace: Option<PathBuf>) {
         let agent = self.sticky.clone();
+        // 修复：None 时用当前打开会话所属的项目，没有打开的会话时用草稿选的项目（bridge/draft.rs），
+        // 不再总是回到启动时的工作区。
+        let workspace = workspace
+            .or_else(|| self.active_project())
+            .or_else(|| Some(self.draft_target()));
         if worktree {
             self.send(Command::CreateWorktreeSession { agent, workspace });
         } else {
@@ -117,6 +123,7 @@ impl UiState {
         self.window.set_running(false);
         self.window.set_perm_visible(false);
         self.reset_dock();
+        self.sync_draft();
     }
 
     pub(super) fn set_perm_choices(

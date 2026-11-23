@@ -149,11 +149,10 @@ export component ComposerToolbar inherits HorizontalLayout {
         width: 28px;
         height: 28px;
         border-radius: Theme.radius-md;
-        background: pta.has-hover ? Theme.border-hover : Theme.raised;
-        border-width: 1px;
-        border-color: pta.has-hover ? Theme.accent-line : Theme.border;
+        // Antigravity 式：工具栏按钮平时无底色，悬停才显出底色。
+        background: pta.has-hover ? Theme.border-hover : Theme.border-hover.with-alpha(0);
         transform-scale: pta.pressed ? 0.9 : 1;
-        animate background, border-color { duration: Theme.dur-hover; easing: ease-out-quint; }
+        animate background { duration: Theme.dur-hover; easing: ease-out-quint; }
         animate transform-scale { duration: Theme.dur-press; easing: ease-out-quint; }
         accessible-role: button;
         accessible-label: @tr("Add");
@@ -199,7 +198,7 @@ export component ComposerToolbar inherits HorizontalLayout {
         height: 28px;
         width: agent-chip.preferred-width;
         border-radius: Theme.radius-md;
-        background: agta.has-hover ? Theme.border-hover : Theme.raised;
+        background: agta.has-hover ? Theme.border-hover : Theme.border-hover.with-alpha(0);
         animate background { duration: Theme.dur-hover; easing: ease-out-quint; }
         accessible-role: button;
         accessible-label: @tr("Agent: {0}", root.sticky-name);

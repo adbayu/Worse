@@ -159,6 +159,7 @@ pub async fn run(
         core: Arc::clone(&core),
         ev,
         workspace,
+        store: Arc::clone(&store),
         settings: Settings {
             theme: prefs::theme_of(&snapshot),
             language: prefs::language_tag(snapshot.general.language),

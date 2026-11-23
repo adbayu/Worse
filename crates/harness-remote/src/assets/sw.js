@@ -3,7 +3,7 @@
  * Caches the app shell only, network-first so desktop updates show up immediately.
  * /api/* and any non-GET request always go straight to the network and are never cached.
  */
-const VERSION = 'harness-shell-v15';
+const VERSION = 'harness-shell-v23';
 const SHELL = [
   '/',
   '/assets/app.js',
@@ -12,9 +12,26 @@ const SHELL = [
   '/assets/sessions.css',
   '/assets/chat.css',
   '/assets/settings.css',
+  '/assets/settings_edit.css',
+  '/assets/settings_edit.js',
+  '/assets/usage.css',
+  '/assets/usage.js',
+  '/assets/usage_charts.js',
+  '/assets/pulls.css',
+  '/assets/pulls.js',
   '/assets/glass.css',
+  '/assets/refresh.css',
+  '/assets/newchat.css',
+  '/assets/avatar.js',
+  '/assets/newchat.js',
+  '/assets/picker.js',
+  '/assets/picker.css',
+  '/assets/theme.css',
+  '/assets/theme.js',
+  '/assets/appearance.js',
   '/assets/sessions.js',
   '/assets/settings.js',
+  '/assets/relay.js',
   '/assets/manifest.webmanifest',
   '/assets/icon.svg',
 ];

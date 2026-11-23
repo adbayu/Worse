@@ -2,10 +2,14 @@
 //!
 //! The server runs on its own thread with a small multi-thread tokio runtime; the UI never awaits it. Commands go
 //! through one channel, results land in a [`Snapshot`] that a Slint timer publishes to the "Remote (phone)"
-//! settings page. Starting is user-driven: the page toggle starts the server, nothing runs at launch.
+//! settings page. The page toggle starts the server and the relay (`relay.rs`); when Remote Control was left on,
+//! it starts again once the hub is ready (`view.rs`).
 
 pub mod qr;
+mod settings_rows;
 mod settings_view;
+
+pub use settings_rows::publish_limits;
 pub mod tunnel;
 
 use std::cell::RefCell;
@@ -22,6 +26,8 @@ use std::rc::Rc;
 use crate::ui::{AppWindow, RemoteDevice, RemoteUi};
 
 mod control;
+mod relay;
+mod relay_view;
 mod server;
 mod view;
 
@@ -64,6 +70,12 @@ struct Snapshot {
     devices: Vec<DeviceInfo>,
     /// One-line page notice (a tunnel started before the server, for example).
     note: String,
+    /// Relay link `<relay>/<id>#k=…` (empty while the relay is off).
+    relay_link: String,
+    /// QR link: the relay link plus a single-use pair offer.
+    relay_qr: String,
+    /// 8-char code of the same pair offer (for a phone that opened the plain link).
+    relay_code: String,
 }
 
 static SNAPSHOT: Mutex<Snapshot> = Mutex::new(Snapshot {
@@ -77,6 +89,9 @@ static SNAPSHOT: Mutex<Snapshot> = Mutex::new(Snapshot {
     offer_expires: 0,
     devices: Vec::new(),
     note: String::new(),
+    relay_link: String::new(),
+    relay_qr: String::new(),
+    relay_code: String::new(),
 });
 static TUNNEL: Mutex<Option<tunnel::Tunnel>> = Mutex::new(None);
 static COMMANDS: OnceLock<Sender<Cmd>> = OnceLock::new();
@@ -95,6 +110,12 @@ enum Cmd {
     Devices,
     Revoke(String),
     PublicHost(Option<String>),
+    /// (Re)connect the running server to this relay URL (empty = relay off).
+    Relay(String),
+    /// New QR link for this device name.
+    RelayQr(String),
+    /// New link secret, then reconnect to this relay URL.
+    ResetLink(String),
 }
 
 fn snapshot() -> MutexGuard<'static, Snapshot> {
@@ -173,6 +194,17 @@ fn wire(window: &AppWindow) {
         });
     });
     ui.on_revoke(|id| send(Cmd::Revoke(id.to_string())));
+    ui.on_new_relay_qr(|| {
+        let name = crate::settings::current()
+            .map(|s| s.remote.device_name.clone())
+            .unwrap_or_default();
+        send(Cmd::RelayQr(relay::device_name(&name)));
+    });
+    ui.on_reset_link(|| {
+        if let Some(settings) = crate::settings::current() {
+            send(Cmd::ResetLink(settings.remote.relay_url.clone()));
+        }
+    });
     ui.on_refresh(|| send(Cmd::Devices));
     let weak = window.as_weak();
     ui.on_copy(move |text| {

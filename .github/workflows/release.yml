@@ -1,0 +1,218 @@
+name: release
+
+# Builds every platform for a release tag and attaches the downloads:
+# - Windows: Worse-Harness-windows-x64-setup.exe (per-user installer, packaging/windows/installer.nsi)
+#   and Worse-Harness-windows-x64.zip (portable; the in-app updater of older copies uses it)
+# - Linux: Worse-Harness-linux-x64.tar.gz with install.sh (app menu entry, icon, ~/.local/bin link)
+# - macOS: Worse-Harness-macos-universal.dmg (drag to Applications) and the .zip the updater uses
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag to build and attach to (e.g. v0.1.2)"
+        required: true
+      platforms:
+        description: "windows, linux, macos or all"
+        required: false
+        default: all
+      macos_runner:
+        description: "macOS runner label (macos-15, macos-14, macos-15-intel)"
+        required: false
+        default: macos-15
+
+permissions:
+  contents: write
+
+env:
+  TAG: ${{ github.event.inputs.tag || github.ref_name }}
+
+jobs:
+  windows:
+    if: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.platforms == 'all' || github.event.inputs.platforms == 'windows' }}
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+
+      - name: Toolchain
+        run: rustup update stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build
+        run: cargo build -p harness-slint --release --bins
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $version = ($env:TAG.TrimStart('v') -split '[-+]')[0]
+          $dir = "dist/Worse-Harness-windows-x64"
+          New-Item -ItemType Directory -Force $dir | Out-Null
+          Copy-Item target/release/harness-slint.exe "$dir/Worse-Harness.exe"
+          foreach ($file in "LICENSE", "NOTICE") {
+            if (Test-Path $file) { Copy-Item $file $dir }
+          }
+          Compress-Archive -Path "$dir/*" -DestinationPath dist/Worse-Harness-windows-x64.zip -Force
+          $nsis = "${env:ProgramFiles(x86)}\NSIS\makensis.exe"
+          if (-not (Test-Path $nsis)) { choco install nsis -y --no-progress }
+          $src = (Resolve-Path $dir).Path
+          $out = Join-Path (Resolve-Path dist).Path "Worse-Harness-windows-x64-setup.exe"
+          & $nsis /V2 "/DVERSION=$version" "/DSRC=$src" "/DOUTFILE=$out" packaging/windows/installer.nsi
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Worse-Harness-windows-x64
+          path: |
+            dist/Worse-Harness-windows-x64.zip
+            dist/Worse-Harness-windows-x64-setup.exe
+
+      - name: Attach to release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$env:TAG" dist/Worse-Harness-windows-x64.zip dist/Worse-Harness-windows-x64-setup.exe --clobber --repo "$env:GITHUB_REPOSITORY"
+
+  linux:
+    if: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.platforms == 'all' || github.event.inputs.platforms == 'linux' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+
+      - name: System packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            pkg-config clang libgtk-3-dev libfontconfig1-dev libfreetype6-dev \
+            libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev libx11-dev libx11-xcb-dev \
+            libxcb1-dev libxcb-randr0-dev libxcb-shm0-dev libxcb-xfixes0-dev libxrandr-dev \
+            libxi-dev libxtst-dev libxdo-dev libdbus-1-dev libpipewire-0.3-dev libegl-dev \
+            libgbm-dev libgl1-mesa-dev libssl-dev
+
+      - name: Toolchain
+        run: rustup update stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build
+        run: cargo build -p harness-slint --release --bins
+
+      - name: Package
+        run: |
+          set -euo pipefail
+          dir=dist/Worse-Harness-linux-x64
+          mkdir -p "$dir"
+          cp target/release/harness-slint "$dir/worse-harness"
+          chmod +x "$dir/worse-harness"
+          cp LICENSE NOTICE "$dir/" 2>/dev/null || true
+          cat > "$dir/install.sh" <<'SH'
+          #!/bin/sh
+          # Installs Worse Harness for this user, no root needed: ~/.local/share/worse-harness,
+          # an app menu entry with icon, and ~/.local/bin/worse-harness.
+          set -e
+          cd "$(dirname "$0")"
+          exec ./worse-harness --install
+          SH
+          chmod +x "$dir/install.sh"
+          tar -C dist -czf dist/Worse-Harness-linux-x64.tar.gz Worse-Harness-linux-x64
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Worse-Harness-linux-x64
+          path: dist/Worse-Harness-linux-x64.tar.gz
+
+      - name: Attach to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$TAG" dist/Worse-Harness-linux-x64.tar.gz --clobber --repo "$GITHUB_REPOSITORY"
+
+  macos:
+    if: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.platforms == 'all' || github.event.inputs.platforms == 'macos' }}
+    runs-on: ${{ github.event.inputs.macos_runner || 'macos-15' }}
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+
+      - name: Toolchain
+        run: |
+          rustup update stable
+          rustup target add aarch64-apple-darwin x86_64-apple-darwin
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build arm64
+        run: cargo build -p harness-slint --release --target aarch64-apple-darwin
+
+      - name: Build x86_64
+        run: cargo build -p harness-slint --release --target x86_64-apple-darwin
+
+      - name: Bundle
+        run: |
+          set -euo pipefail
+          version="${TAG#v}"
+          app=dist/Harness.app
+          mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
+          lipo -create \
+            target/aarch64-apple-darwin/release/harness-slint \
+            target/x86_64-apple-darwin/release/harness-slint \
+            -output "$app/Contents/MacOS/harness-slint"
+          chmod +x "$app/Contents/MacOS/harness-slint"
+          # App icon for Finder, Spotlight and Launchpad.
+          iconset=dist/AppIcon.iconset
+          mkdir -p "$iconset"
+          png=crates/harness-ui/ui/brand/app-icon.png
+          for s in 16 32 128 256 512; do
+            sips -z "$s" "$s" "$png" --out "$iconset/icon_${s}x${s}.png" >/dev/null
+            d=$((s * 2))
+            sips -z "$d" "$d" "$png" --out "$iconset/icon_${s}x${s}@2x.png" >/dev/null
+          done
+          iconutil -c icns "$iconset" -o "$app/Contents/Resources/AppIcon.icns"
+          cat > "$app/Contents/Info.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleName</key><string>Worse Harness</string>
+            <key>CFBundleDisplayName</key><string>Worse Harness</string>
+            <key>CFBundleIdentifier</key><string>dev.harness.slint</string>
+            <key>CFBundleExecutable</key><string>harness-slint</string>
+            <key>CFBundleIconFile</key><string>AppIcon</string>
+            <key>CFBundlePackageType</key><string>APPL</string>
+            <key>CFBundleShortVersionString</key><string>${version}</string>
+            <key>CFBundleVersion</key><string>1</string>
+            <key>LSApplicationCategoryType</key><string>public.app-category.developer-tools</string>
+            <key>LSMinimumSystemVersion</key><string>11.0</string>
+            <key>NSHighResolutionCapable</key><true/>
+          </dict>
+          </plist>
+          PLIST
+          codesign --force --deep --sign - "$app"
+          # Disk image: drag "Worse Harness" onto Applications.
+          mkdir -p dist/dmg
+          ditto "$app" "dist/dmg/Worse Harness.app"
+          ln -s /Applications dist/dmg/Applications
+          hdiutil create -volname "Worse Harness" -srcfolder dist/dmg -ov -format UDZO \
+            dist/Worse-Harness-macos-universal.dmg
+          # The zip keeps the Harness.app layout the in-app updater expects.
+          (cd dist && ditto -c -k --keepParent Harness.app Worse-Harness-macos-universal.zip)
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Worse-Harness-macos-universal
+          path: |
+            dist/Worse-Harness-macos-universal.dmg
+            dist/Worse-Harness-macos-universal.zip
+
+      - name: Attach to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$TAG" dist/Worse-Harness-macos-universal.dmg dist/Worse-Harness-macos-universal.zip --clobber --repo "$GITHUB_REPOSITORY"

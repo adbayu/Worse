@@ -315,6 +315,23 @@ impl Adapter {
         }
         match result {
             Ok(created) => {
+                // 修复：新会话总是落在启动时的文件夹（lastWorkspace 只在启动时写一次）；现在记住最后
+                // 新建会话的项目，下次新建和下次启动都用它。
+                // ~/.harness 下的 scratch（No project）与 worktree 文件夹不算项目，不记住。
+                let home = crate::startup::harness_home();
+                if let Some(dir) =
+                    target.filter(|dir| *dir != self.workspace.as_path() && !dir.starts_with(&home))
+                {
+                    self.workspace = dir.to_path_buf();
+                    let last = dir.to_string_lossy().into_owned();
+                    if let Err(error) = self
+                        .store
+                        .patch(|s| s.general.last_workspace = Some(last))
+                        .await
+                    {
+                        self.emit(Event::Error(format!("cannot store the workspace: {error}")));
+                    }
+                }
                 self.refresh_sessions().await;
                 self.open(created.id.as_str(), false).await;
             }

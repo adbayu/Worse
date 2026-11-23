@@ -20,6 +20,14 @@ struct Package {
 }
 
 fn package() -> Option<Package> {
+    #[cfg(windows)]
+    if crate::install::is_installed() {
+        // 安装版不直接替换 exe：下载安装程序，退出后静默运行（empty member = installer）。
+        return Some(Package {
+            asset: crate::install::win::SETUP_ASSET,
+            member: "",
+        });
+    }
     if cfg!(all(windows, target_arch = "x86_64")) {
         Some(Package {
             asset: "Worse-Harness-windows-x64.zip",
@@ -59,7 +67,7 @@ fn is_newer(tag: &str, current: &str) -> bool {
     }
 }
 
-fn is_dev_build(exe: &Path) -> bool {
+pub(crate) fn is_dev_build(exe: &Path) -> bool {
     exe.components()
         .any(|part| part.as_os_str().eq_ignore_ascii_case("target"))
 }
@@ -74,7 +82,7 @@ pub fn watch(window: slint::Weak<crate::ui::AppWindow>) {
     if std::env::var_os(NO_UPDATE_ENV).is_some_and(|v| !v.is_empty())
         || std::env::var_os("HARNESS_UI_CORE").is_some_and(|v| !v.is_empty())
         || cfg!(feature = "automation")
-        || (cfg!(windows) && !crate::live_update::is_shadow())
+        || (cfg!(windows) && !crate::live_update::is_shadow() && !crate::install::is_installed())
     {
         return;
     }
@@ -115,19 +123,76 @@ pub fn watch(window: slint::Weak<crate::ui::AppWindow>) {
         .ok();
 }
 
-async fn check(package: &Package, target: &Path) -> Result<bool, String> {
+fn http() -> Result<reqwest::Client, String> {
     let _ = rustls::crypto::ring::default_provider().install_default();
-    let client = reqwest::Client::builder()
+    reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(15))
         .timeout(Duration::from_secs(600))
         .user_agent(concat!("harness/", env!("CARGO_PKG_VERSION")))
         .build()
-        .map_err(|e| format!("http client: {e}"))?;
+        .map_err(|e| format!("http client: {e}"))
+}
+
+/// Body of `url`, or `None` when the release has no such asset.
+async fn fetch(client: &reqwest::Client, url: &str) -> Result<Option<Vec<u8>>, String> {
+    let response = client
+        .get(url)
+        .send()
+        .await
+        .map_err(|e| format!("download: {e}"))?;
+    if response.status() == reqwest::StatusCode::NOT_FOUND {
+        return Ok(None);
+    }
+    let bytes = response
+        .error_for_status()
+        .map_err(|e| format!("download: {e}"))?
+        .bytes()
+        .await
+        .map_err(|e| format!("download: {e}"))?;
+    Ok(Some(bytes.to_vec()))
+}
+
+/// The newest installer in `%LOCALAPPDATA%\worse-harness-updater`, downloaded when missing.
+#[cfg(windows)]
+pub(crate) async fn download_setup() -> Result<PathBuf, String> {
+    let client = http()?;
+    let (tag, url) = latest(&client, crate::install::win::SETUP_ASSET).await?;
+    setup_for(&client, &tag, url.as_deref()).await
+}
+
+#[cfg(windows)]
+async fn setup_for(
+    client: &reqwest::Client,
+    tag: &str,
+    url: Option<&str>,
+) -> Result<PathBuf, String> {
+    let dir = crate::install::win::updater_dir();
+    let path = dir.join(format!("Worse-Harness-setup-{tag}.exe"));
+    if path.is_file() {
+        return Ok(path);
+    }
+    let missing = || format!("release {tag} has no Windows installer yet");
+    let bytes = fetch(client, url.ok_or_else(missing)?)
+        .await?
+        .ok_or_else(missing)?;
+    std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    // Older installers are no longer needed.
+    for entry in std::fs::read_dir(&dir).into_iter().flatten().flatten() {
+        let _ = std::fs::remove_file(entry.path());
+    }
+    let part = path.with_extension("part");
+    std::fs::write(&part, bytes).map_err(|e| format!("{}: {e}", part.display()))?;
+    std::fs::rename(&part, &path).map_err(|e| format!("{}: {e}", path.display()))?;
+    Ok(path)
+}
+
+/// Newest release tag and the download URL of `asset` in it.
+async fn latest(client: &reqwest::Client, asset: &str) -> Result<(String, Option<String>), String> {
     // 修复：api.github.com 未登录时每个 IP 每小时只有 60 次，共享 IP 上常返回 403，更新永远检查不到。
     // 先从公开 release 页面的跳转拿版本号，下载地址按固定命名拼出；跳转失败才查 API。
-    let (tag, url) = match latest_tag().await {
+    Ok(match latest_tag().await {
         Ok(tag) => {
-            let url = format!("{DOWNLOAD_BASE}/{tag}/{}", package.asset);
+            let url = format!("{DOWNLOAD_BASE}/{tag}/{asset}");
             (tag, Some(url))
         }
         Err(page) => {
@@ -146,12 +211,24 @@ async fn check(package: &Package, target: &Path) -> Result<bool, String> {
                 .and_then(serde_json::Value::as_str)
                 .unwrap_or_default()
                 .to_owned();
-            let url = asset_url(&release, package.asset).map(str::to_owned);
+            let url = asset_url(&release, asset).map(str::to_owned);
             (tag, url)
         }
-    };
+    })
+}
+
+async fn check(package: &Package, target: &Path) -> Result<bool, String> {
+    let client = http()?;
+    let (tag, url) = latest(&client, package.asset).await?;
     if !is_newer(&tag, env!("CARGO_PKG_VERSION")) {
         return Ok(false);
+    }
+    #[cfg(windows)]
+    if package.member.is_empty() {
+        // 同 Antigravity：下载新安装程序，点“重启”后退出并静默安装，安装完自动重新打开。
+        let setup = setup_for(&client, &tag, url.as_deref()).await?;
+        crate::install::set_pending(setup, crate::install::win::setup_args(true));
+        return Ok(true);
     }
     if std::fs::read_to_string(marker()).is_ok_and(|done| done.trim() == tag) {
         remember(target);
@@ -160,20 +237,9 @@ async fn check(package: &Package, target: &Path) -> Result<bool, String> {
     let Some(url) = url else {
         return Ok(false);
     };
-    let response = client
-        .get(&url)
-        .send()
-        .await
-        .map_err(|e| format!("download: {e}"))?;
-    if response.status() == reqwest::StatusCode::NOT_FOUND {
+    let Some(bytes) = fetch(&client, &url).await? else {
         return Ok(false);
-    }
-    let bytes = response
-        .error_for_status()
-        .map_err(|e| format!("download: {e}"))?
-        .bytes()
-        .await
-        .map_err(|e| format!("download: {e}"))?;
+    };
     let target = target.to_path_buf();
     let member = package.member;
     let asset = package.asset;

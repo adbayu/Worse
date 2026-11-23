@@ -164,6 +164,30 @@ pub(super) fn with_state(f: impl FnOnce(&mut State)) {
     });
 }
 
+/// Saves one setting changed on a phone (callable from any thread). The value is checked against a copy
+/// of `current` first, so a bad value is reported to the phone instead of only on the desktop.
+///
+/// # Errors
+/// The value does not fit the setting, or the UI event loop is gone.
+pub(crate) fn patch_remote(
+    current: &harness_settings::Settings,
+    path: &str,
+    value: Value,
+) -> Result<(), String> {
+    let mut probe = current.clone();
+    values::set_path(&mut probe, path, value.clone())?;
+    let path = path.to_owned();
+    slint::invoke_from_event_loop(move || with_state(|s| s.patch(&path, value)))
+        .map_err(|e| e.to_string())
+}
+
+/// Stored value at a dotted settings path (remote row tests).
+#[cfg(test)]
+pub(crate) fn value_at(settings: &harness_settings::Settings, path: &str) -> Option<Value> {
+    let root = serde_json::to_value(settings).ok()?;
+    values::get(&root, path).cloned()
+}
+
 fn snap<T>(f: impl FnOnce(&Value) -> T) -> T {
     SNAP.with(|cell| f(&cell.borrow()))
 }

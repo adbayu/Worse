@@ -62,6 +62,7 @@ pub(super) fn refresh(window: &AppWindow) {
     let settings = crate::settings::current();
     settings_view::mirror(settings.clone());
     let ui = window.global::<RemoteUi>();
+    super::relay_view::paint(&ui, settings.as_deref());
     ui.set_server_state(match &server {
         ServerState::Off => 0,
         ServerState::Starting => 1,

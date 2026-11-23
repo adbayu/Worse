@@ -1,5 +1,6 @@
 use super::{
-    mpsc, send, settings_view, snapshot, tunnel, tunnel_handle, Cmd, RemoteHandle, ServerState,
+    mpsc, relay, send, settings_view, snapshot, tunnel, tunnel_handle, Cmd, RemoteHandle,
+    ServerState,
 };
 
 /// Server thread: one runtime, one handle, commands applied in order.
@@ -17,6 +18,7 @@ pub(super) fn serve(rx: mpsc::Receiver<Cmd>) {
         return;
     };
     let mut handle: Option<RemoteHandle> = None;
+    let mut relay_conn = None;
     while let Ok(cmd) = rx.recv() {
         match cmd {
             Cmd::Start { cfg, core } => {
@@ -42,6 +44,7 @@ pub(super) fn serve(rx: mpsc::Receiver<Cmd>) {
                 }
             }
             Cmd::Stop => {
+                relay::stop(&runtime, &mut relay_conn);
                 if let Some(running) = handle.take() {
                     runtime.block_on(running.shutdown());
                 }
@@ -73,8 +76,24 @@ pub(super) fn serve(rx: mpsc::Receiver<Cmd>) {
                     running.set_public_host(host);
                 }
             }
+            Cmd::Relay(url) => {
+                if let Some(running) = &handle {
+                    relay::start(&runtime, running, &mut relay_conn, &url);
+                }
+            }
+            Cmd::RelayQr(name) => {
+                if let Some(running) = &handle {
+                    relay::new_qr(running, &name);
+                }
+            }
+            Cmd::ResetLink(url) => {
+                if let Some(running) = &handle {
+                    relay::reset_link(&runtime, running, &mut relay_conn, &url);
+                }
+            }
         }
     }
+    relay::stop(&runtime, &mut relay_conn);
     if let Some(running) = handle.take() {
         runtime.block_on(running.shutdown());
     }

@@ -174,7 +174,10 @@ enum Pref {
 struct Adapter {
     core: Arc<dyn HarnessCore>,
     ev: mpsc::UnboundedSender<Event>,
+    /// Project of the next new session without an explicit folder: the last one a session was created in
+    /// (persisted as `general.lastWorkspace`, like Antigravity's last selected project).
     workspace: PathBuf,
+    store: Arc<SettingsStore>,
     settings: Settings,
     agents: Vec<api::AgentInfo>,
     sticky: HashMap<api::SessionId, AgentId>,

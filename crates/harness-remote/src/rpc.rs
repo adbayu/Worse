@@ -3,7 +3,7 @@
 //! `params` is the serde JSON of the matching `harness_core_api` request type (camelCase, as every
 //! API type already is). Methods taking plain arguments instead use a small object with the same
 //! camelCase names (`sessionId`, `turnId`, …). `shutdown`, `import_*`, `archive_*` and anything
-//! else outside [`ALLOWED`] are rejected here.
+//! else outside [`ALLOWED`] are rejected here. `create_session` only accepts a known project.
 
 use harness_core_api::{
     AgentId, ApiResult, HarnessCore, ListProjects, ListSessions, PermissionRequestId, SendMessage,
@@ -19,6 +19,7 @@ pub(crate) const ALLOWED: &[&str] = &[
     "get_fallback_order",
     "list_sessions",
     "open_session",
+    "create_session",
     "send_message",
     "stop",
     "cancel_queued",
@@ -36,27 +37,42 @@ pub(crate) const ALLOWED: &[&str] = &[
     "set_config_option",
     "settings_overview",
     "settings_page",
+    "set_setting",
+    "usage_stats",
+    "list_pulls",
 ];
 
+/// Methods answered by the desktop's [`crate::SettingsView`] instead of the hub.
 pub(crate) fn settings_call(
     view: Option<&dyn crate::SettingsView>,
     method: &str,
     params: &Value,
-) -> Option<Value> {
+) -> Option<Result<Value, String>> {
     match method {
-        "settings_overview" => Some(view.map_or_else(
+        "settings_overview" => Some(Ok(view.map_or_else(
             || json!({ "host": "", "items": {} }),
             crate::SettingsView::overview,
-        )),
+        ))),
         "settings_page" => {
             let page = params
                 .get("page")
                 .and_then(Value::as_str)
                 .unwrap_or_default();
-            Some(view.map_or_else(
+            Some(Ok(view.map_or_else(
                 || json!({ "title": page, "subtitle": "", "sections": [] }),
                 |view| view.page(page),
-            ))
+            )))
+        }
+        "set_setting" => {
+            let path = params
+                .get("path")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            let value = params.get("value").unwrap_or(&Value::Null);
+            Some(match view {
+                Some(view) => view.set(path, value).map(|()| json!({ "saved": true })),
+                None => Err("settings are not available yet".to_owned()),
+            })
         }
         _ => None,
     }
@@ -82,6 +98,7 @@ pub(crate) async fn call(
             out(core.list_sessions(request).await)
         }
         "open_session" => open_session(core, params).await,
+        "create_session" => create::create_session(core, params).await,
         "list_modes" => out(core.list_modes(session(params)?).await),
         "list_models" => out(core.list_models(session(params)?).await),
         "list_config_options" => out(core.list_config_options(session(params)?).await),
@@ -104,6 +121,14 @@ pub(crate) async fn call(
             let request: SendMessage = strict(filled)?;
             out(core.send_message(request).await)
         }
+        "usage_stats" => {
+            let days = params
+                .get("days")
+                .and_then(Value::as_u64)
+                .map_or(7, |d| u32::try_from(d.clamp(1, 366)).unwrap_or(7));
+            out(core.usage_stats(days).await)
+        }
+        "list_pulls" => out(core.list_pulls().await),
         "stop" => out(core.stop(session(params)?).await),
         "cancel_queued" => {
             let (session, turn) = turn(params)?;
@@ -351,6 +376,8 @@ struct Pinned {
     session_ids: Vec<String>,
     pinned: bool,
 }
+
+mod create;
 
 #[cfg(test)]
 mod tests;

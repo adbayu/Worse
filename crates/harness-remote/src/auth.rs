@@ -161,6 +161,7 @@ impl Auth {
             _ => false,
         })?;
         let offer = state.offers.remove(index);
+        let mut evicted = Vec::new();
         while state.devices.len() >= MAX_DEVICES {
             let Some(oldest) = state
                 .devices
@@ -171,7 +172,7 @@ impl Auth {
             else {
                 break;
             };
-            state.devices.remove(oldest);
+            evicted.push(state.devices.remove(oldest).id);
         }
         let device = Device {
             id: hex(&random_bytes(16)),
@@ -180,13 +181,18 @@ impl Auth {
                 .filter(|name| !name.is_empty())
                 .unwrap_or(&offer.name)
                 .to_owned(),
-            token: offer.token,
+            // 安全修复：设备令牌重新随机生成，二维码/链接里的配对令牌用过即作废，不再成为长期凭据。
+            token: hex(&random_bytes(32)),
             created_ms: now,
             last_seen_ms: now,
         };
         let pair = (device.id.clone(), device.token.clone());
         state.devices.push(device);
         self.save(&state);
+        // 被挤掉的旧设备要立即断开连接，而不是悄悄失效。
+        for id in evicted {
+            let _ = self.revoked.send(id);
+        }
         Some(pair)
     }
 

@@ -96,6 +96,9 @@ impl Default for SetupSettings {
     }
 }
 
+/// Relay of the official builds; forks deploy their own (`relay/`) and change `remote.relayUrl`.
+pub const DEFAULT_RELAY_URL: &str = "https://worse.digidaw.site";
+
 /// Phone access (phase-12-remote-phone.md §3): local HTTP/WS server plus the `cftunnel` supervisor.
 /// Loopback only; a tunnel is started from Settings, never at launch.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -110,6 +113,10 @@ pub struct RemoteSettings {
     pub subdomain: String,
     /// Zone appended when the tunnel prints no URL: `https://<subdomain>.<tunnel_domain>`.
     pub tunnel_domain: String,
+    /// Remote Control relay (docs/plans/remote-relay.md); empty = no relay, local server/tunnel only.
+    pub relay_url: String,
+    /// Name phones show for this computer (empty = the computer's host name).
+    pub device_name: String,
 }
 
 impl Default for RemoteSettings {
@@ -120,6 +127,8 @@ impl Default for RemoteSettings {
             tunnel_bin: "cftunnel".into(),
             subdomain: String::new(),
             tunnel_domain: String::new(),
+            relay_url: DEFAULT_RELAY_URL.into(),
+            device_name: String::new(),
         }
     }
 }
