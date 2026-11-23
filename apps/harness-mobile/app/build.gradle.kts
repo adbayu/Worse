@@ -11,8 +11,9 @@ android {
         applicationId = "dev.harness.mobile"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        // CI passes the release tag (-PappVersion=0.1.13 -PappVersionCode=113); local builds keep the defaults.
+        versionCode = (findProperty("appVersionCode") as String?)?.toIntOrNull() ?: 1
+        versionName = (findProperty("appVersion") as String?) ?: "0.1.0"
     }
 
     buildTypes {

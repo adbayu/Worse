@@ -30,7 +30,20 @@ env:
   TAG: ${{ github.event.inputs.tag || github.ref_name }}
 
 jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create the release when it does not exist yet
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # apk.yml may create it at the same moment: a failed create is fine when it exists afterwards.
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 \
+            || gh release create "$TAG" --title "$TAG" --generate-notes --repo "$GITHUB_REPOSITORY" \
+            || gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null
+
   windows:
+    needs: release
     if: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.platforms == 'all' || github.event.inputs.platforms == 'windows' }}
     runs-on: windows-latest
     timeout-minutes: 90
@@ -79,6 +92,7 @@ jobs:
         run: gh release upload "$env:TAG" dist/Worse-Harness-windows-x64.zip dist/Worse-Harness-windows-x64-setup.exe --clobber --repo "$env:GITHUB_REPOSITORY"
 
   linux:
+    needs: release
     if: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.platforms == 'all' || github.event.inputs.platforms == 'linux' }}
     runs-on: ubuntu-24.04
     steps:
@@ -134,6 +148,7 @@ jobs:
         run: gh release upload "$TAG" dist/Worse-Harness-linux-x64.tar.gz --clobber --repo "$GITHUB_REPOSITORY"
 
   macos:
+    needs: release
     if: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.platforms == 'all' || github.event.inputs.platforms == 'macos' }}
     runs-on: ${{ github.event.inputs.macos_runner || 'macos-15' }}
     timeout-minutes: 90
