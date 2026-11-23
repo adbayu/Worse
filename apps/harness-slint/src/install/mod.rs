@@ -98,7 +98,8 @@ pub(crate) fn is_portable() -> bool {
 }
 
 /// `harness-slint --install`: installs this copy for the current user, without the UI.
-#[must_use]
+// 修复：新版 clippy 要求返回 ExitCode 的函数上的 #[must_use] 带说明文字（CI 报 double_must_use）。
+#[must_use = "return the exit code from main"]
 pub(crate) fn run_cli() -> ExitCode {
     if cfg!(windows) {
         eprintln!("On Windows, run Worse-Harness-windows-x64-setup.exe to install Harness.");
