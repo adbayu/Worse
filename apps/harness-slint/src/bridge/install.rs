@@ -235,6 +235,5 @@ fn wire_callbacks(window: &AppWindow) {
             }
         });
     });
-    // Round 1: links are not opened yet (opener wiring is round 2); keep the click side-effect free.
-    window.on_open_link(|_url| {});
+    window.on_open_link(|url| crate::chat::open_link(&url));
 }

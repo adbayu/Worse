@@ -108,12 +108,18 @@ export component UsageRing inherits Rectangle {
                             max-width: 200px;
                         }
                     }
-                    if p.known: LimitBar {
+                    if p.id == "codex" && p.summary != "": Text {
+                        text: p.summary;
+                        font-size: Theme.ui-xs;
+                        color: Theme.foreground-subtle;
+                        wrap: word-wrap;
+                    }
+                    if p.id != "codex" && p.known: LimitBar {
                         label: p.five-label != "" ? p.five-label : "5-hour limit";
                         reset: p.five-reset;
                         value: p.five;
                     }
-                    if p.known: LimitBar {
+                    if p.id != "codex" && p.known: LimitBar {
                         label: p.week-label != "" ? p.week-label : "Weekly · all models";
                         reset: p.week-reset;
                         value: p.week;

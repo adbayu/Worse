@@ -58,17 +58,24 @@ impl SessionActor {
         &mut self,
         turn_id: &TurnId,
         agent: &AgentId,
-        error: AgentErrorInfo,
+        mut error: AgentErrorInfo,
         phase: crate::failure::Phase,
     ) {
+        let partial = self
+            .running
+            .as_ref()
+            .map(|r| r.text.clone())
+            .unwrap_or_default();
+        let error_is_generic_codex = agent.as_str() == "codex"
+            && error.message.trim().eq_ignore_ascii_case("Internal error");
+        let partial_is_codex_limit = crate::quota::is_codex_usage_limit_notice(&partial);
+        if error_is_generic_codex && partial_is_codex_limit {
+            error.message = format!("{}: {}", error.message, partial.trim());
+        }
         let class = self.ctx.classify(agent, &error);
         if let ErrorClass::QuotaExhausted { resets_at } = class {
+            let class = ErrorClass::QuotaExhausted { resets_at };
             // Spec §6.4 failover: record the partial attempt, mark the agent exhausted, re-run the same turn.
-            let partial = self
-                .running
-                .as_ref()
-                .map(|r| r.text.clone())
-                .unwrap_or_default();
             self.cancel_pending_permissions();
             self.flush_thought().await;
             if let Some(running) = self.running.take() {

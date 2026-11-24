@@ -36,6 +36,53 @@ pub(crate) fn load_handles(
 }
 
 pub(crate) fn load_quota(c: &Connection) -> Result<HashMap<AgentId, QuotaState>, HubError> {
+    let migration = "migration.codexQuotaRetry.v2";
+    if get_setting(c, migration)?.is_none() {
+        let tx = c.unchecked_transaction()?;
+        let now = crate::util::now_secs();
+        let reset_sources = {
+            let mut statement = tx.prepare(
+                "SELECT DISTINCT ta.partial_text, aq.updated_at
+                 FROM agent_quota aq
+                 JOIN turn_attempts ta ON ta.agent_id = aq.agent_id
+                 WHERE aq.agent_id = 'codex' AND aq.state = 'exhausted'
+                   AND ta.status = 'quotaExhausted' AND ta.error = aq.reason",
+            )?;
+            let rows = statement
+                .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))?
+                .collect::<Result<Vec<_>, _>>()?;
+            rows
+        };
+        let latest_reset = if reset_sources.len() == 1 {
+            let (text, attempted_at) = &reset_sources[0];
+            crate::quota::is_codex_usage_limit_notice(text)
+                .then(|| crate::quota::parse_reset_from_text_at(text, *attempted_at))
+                .flatten()
+        } else {
+            None
+        };
+
+        if let Some(parsed) = latest_reset {
+            if parsed <= now {
+                tx.execute(
+                    "UPDATE agent_quota SET state = 'ok', resets_at = NULL, reason = NULL WHERE agent_id = 'codex'",
+                    [],
+                )?;
+            } else {
+                tx.execute(
+                    "UPDATE agent_quota SET resets_at = ?1 WHERE agent_id = 'codex' AND state = 'exhausted' AND (resets_at IS NULL OR resets_at > ?1)",
+                    [parsed],
+                )?;
+            }
+        }
+        tx.execute(
+            "UPDATE agent_quota SET state = 'ok', resets_at = NULL, reason = NULL
+             WHERE state = 'exhausted' AND resets_at IS NOT NULL AND resets_at <= ?1",
+            [now],
+        )?;
+        set_setting(&tx, migration, "1")?;
+        tx.commit()?;
+    }
     let mut statement = c.prepare("SELECT agent_id,state,resets_at,reason FROM agent_quota")?;
     let rows = statement
         .query_map([], |r| {

@@ -7,10 +7,10 @@ use harness_core_api as api;
 use serde_json::Value;
 use slint::ComponentHandle;
 
-use crate::ui::{AppWindow, PlanLimit};
+use crate::ui::{AppWindow, ChatUi, PlanLimit};
 
 mod row;
-use row::{now_ms, title_case, to_row, window_of};
+use row::{now_ms, sv, title_case, to_row, window_of};
 pub(crate) use row::{parse_rfc3339, resets_in};
 
 const USAGE_URL: &str = "https://api.anthropic.com/api/oauth/usage";
@@ -22,6 +22,12 @@ struct Account {
     dir: PathBuf,
 }
 
+#[derive(Clone)]
+struct CodexResetAttempt {
+    idempotency_key: String,
+    credit_id: Option<String>,
+}
+
 struct State {
     window: slint::Weak<AppWindow>,
     accounts: Vec<Account>,
@@ -29,6 +35,11 @@ struct State {
     last: Option<Instant>,
     busy: bool,
     wanted: bool,
+    codex_reset_busy: bool,
+    codex_reset_attempts: std::collections::HashMap<String, CodexResetAttempt>,
+    codex_account_id: Option<String>,
+    codex_reset_message: String,
+    codex_reset_error: bool,
     all: Vec<PlanLimit>,
 }
 
@@ -45,18 +56,31 @@ pub fn install(window: &AppWindow) {
             last: None,
             busy: false,
             wanted: false,
+            codex_reset_busy: false,
+            codex_reset_attempts: std::collections::HashMap::new(),
+            codex_account_id: None,
+            codex_reset_message: String::new(),
+            codex_reset_error: false,
             all: Vec::new(),
         });
     });
 }
 
 pub fn refresh() {
+    refresh_with(false);
+}
+
+fn refresh_with(force: bool) {
     let due = STATE.with(|cell| {
         let mut cell = cell.borrow_mut();
         let Some(s) = cell.as_mut() else {
             return false;
         };
-        if s.busy || s.last.is_some_and(|t| t.elapsed() < MIN_INTERVAL) {
+        if s.codex_reset_busy
+            || s.busy
+            || s.wanted
+            || (!force && s.last.is_some_and(|t| t.elapsed() < MIN_INTERVAL))
+        {
             return false;
         }
         s.wanted = true;
@@ -70,6 +94,120 @@ pub fn refresh() {
             crate::core::AccountsCall::List,
         ));
     }
+}
+
+pub(crate) fn redeem_codex_reset() {
+    let started = STATE.with(|cell| {
+        let mut cell = cell.borrow_mut();
+        let s = cell.as_mut()?;
+        let account_id = s.codex_account_id.clone()?;
+        let retry = s.codex_reset_attempts.contains_key(&account_id);
+        if s.codex_reset_busy
+            || s.busy
+            || s.wanted
+            || (!retry
+                && !s.all.iter().any(|row| {
+                    row.id.as_str() == "codex" && row.reset_count > 0 && row.reset_eligible
+                }))
+        {
+            return None;
+        }
+        s.codex_reset_busy = true;
+        s.codex_reset_error = false;
+        s.codex_reset_message = "Redeeming saved Codex reset…".into();
+        let attempt = s
+            .codex_reset_attempts
+            .entry(account_id.clone())
+            .or_insert_with(|| CodexResetAttempt {
+                idempotency_key: uuid::Uuid::new_v4().to_string(),
+                credit_id: None,
+            })
+            .clone();
+        Some((attempt, account_id, retry))
+    });
+    let Some((attempt, expected_account_id, retry)) = started else {
+        return;
+    };
+    let attempt_account_id = expected_account_id.clone();
+    let retry_credit_id = attempt.credit_id.clone();
+    publish();
+    std::thread::spawn(move || {
+        let result = match tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+        {
+            Ok(runtime) => runtime.block_on(crate::codex_usage::consume_reset(
+                attempt.idempotency_key,
+                expected_account_id,
+                retry,
+                retry_credit_id.clone(),
+            )),
+            Err(error) => Err(crate::codex_usage::ResetError {
+                message: format!("Codex reset runtime: {error}"),
+                preserve_key: retry,
+                credit_id: retry_credit_id.clone(),
+            }),
+        };
+        let clear_attempt = match &result {
+            Ok(_) => true,
+            Err(error) => !error.preserve_key,
+        };
+        let retry_credit_id = result
+            .as_ref()
+            .err()
+            .filter(|error| error.preserve_key)
+            .and_then(|error| error.credit_id.clone());
+        let clear_quota = matches!(
+            &result,
+            Ok(crate::codex_usage::ResetOutcome::Reset)
+                | Ok(crate::codex_usage::ResetOutcome::AlreadyRedeemed)
+        );
+        let _ = slint::invoke_from_event_loop(move || {
+            let (message, error) = match result {
+                Ok(crate::codex_usage::ResetOutcome::Reset) => {
+                    ("Reset applied; refreshing Codex usage.".to_owned(), false)
+                }
+                Ok(crate::codex_usage::ResetOutcome::NothingToReset) => {
+                    ("No covered Codex limit needs a reset yet.".to_owned(), true)
+                }
+                Ok(crate::codex_usage::ResetOutcome::NoCredit) => {
+                    ("No saved Codex reset is available.".to_owned(), true)
+                }
+                Ok(crate::codex_usage::ResetOutcome::UsageStillBlocked) => (
+                    "Codex consumed the reset, but still reports usage blocked. Local quota stays paused.".to_owned(),
+                    true,
+                ),
+                Ok(crate::codex_usage::ResetOutcome::UsageStatusUnavailable) => (
+                    "Codex consumed the reset, but recovery status is unavailable. Local quota stays paused.".to_owned(),
+                    true,
+                ),
+                Ok(crate::codex_usage::ResetOutcome::AlreadyRedeemed) => (
+                    "Reset already applied; refreshing Codex usage.".to_owned(),
+                    false,
+                ),
+                Err(error) => (error.message, true),
+            };
+            STATE.with(|cell| {
+                if let Some(s) = cell.borrow_mut().as_mut() {
+                    s.codex_reset_busy = false;
+                    s.codex_reset_message = message;
+                    s.codex_reset_error = error;
+                    if clear_attempt {
+                        s.codex_reset_attempts.remove(&attempt_account_id);
+                    } else if let Some(credit_id) = retry_credit_id {
+                        if let Some(attempt) = s.codex_reset_attempts.get_mut(&attempt_account_id) {
+                            attempt.credit_id = Some(credit_id);
+                        }
+                    }
+                }
+            });
+            if clear_quota {
+                crate::bridge::send(crate::core::Command::ClearAgentQuota("codex".into()));
+            }
+            publish();
+            refresh_with(true);
+        });
+    });
 }
 
 /// Saved agy accounts (from every `Event::AgyAccounts`); each gets its own usage row.
@@ -144,6 +282,7 @@ pub(crate) fn default_dir() -> Option<PathBuf> {
 
 pub(crate) struct Fetched {
     pub id: String,
+    pub account_id: Option<String>,
     pub label: String,
     pub plan: String,
     pub email: String,
@@ -151,6 +290,8 @@ pub(crate) struct Fetched {
     pub five: Option<(f32, String)>,
     pub week: Option<(f32, String)>,
     pub opus: Option<(f32, String)>,
+    pub reset_count: Option<i32>,
+    pub reset_eligible: bool,
     pub labels: [String; 3],
     pub summary: String,
     pub bars: Vec<(String, f32, String)>,
@@ -169,6 +310,10 @@ fn fetch(window: slint::Weak<AppWindow>, list: Vec<Account>, agy: Vec<crate::agy
                 .collect(),
         };
         crate::remote::publish_limits(rows.iter().map(remote_limit).collect());
+        let codex_account_id = rows
+            .iter()
+            .find(|row| row.id == "codex")
+            .and_then(|row| row.account_id.clone());
         let _ = slint::invoke_from_event_loop(move || {
             STATE.with(|cell| {
                 if let Some(s) = cell.borrow_mut().as_mut() {
@@ -179,6 +324,7 @@ fn fetch(window: slint::Weak<AppWindow>, list: Vec<Account>, agy: Vec<crate::agy
             let model: Vec<PlanLimit> = rows.into_iter().map(to_row).collect();
             STATE.with(|cell| {
                 if let Some(s) = cell.borrow_mut().as_mut() {
+                    s.codex_account_id = codex_account_id;
                     s.all = model;
                 }
             });
@@ -216,9 +362,25 @@ fn publish() {
             .filter(|a| a.active)
             .map(|a| a.id.clone())
             .collect();
-        Some((s.window.upgrade()?, s.all.clone(), active))
+        Some((
+            s.window.upgrade()?,
+            s.all.clone(),
+            active,
+            s.codex_reset_busy || s.busy || s.wanted,
+            s.codex_account_id
+                .as_ref()
+                .is_some_and(|id| s.codex_reset_attempts.contains_key(id))
+                && !s.codex_reset_busy,
+            s.codex_reset_message.clone(),
+            s.codex_reset_error,
+        ))
     });
-    if let Some((window, all, active)) = job {
+    if let Some((window, all, active, busy, retry, message, error)) = job {
+        let chat = window.global::<ChatUi>();
+        chat.set_codex_reset_busy(busy);
+        chat.set_codex_reset_retry(retry);
+        chat.set_codex_reset_message(sv(&message));
+        chat.set_codex_reset_error(error);
         crate::plan_view::render(&window, &all, &active);
     }
 }
@@ -226,6 +388,7 @@ fn publish() {
 fn failed(a: Account, error: &str) -> Fetched {
     Fetched {
         id: a.id,
+        account_id: None,
         label: a.label,
         plan: String::new(),
         email: String::new(),
@@ -233,6 +396,8 @@ fn failed(a: Account, error: &str) -> Fetched {
         five: None,
         week: None,
         opus: None,
+        reset_count: None,
+        reset_eligible: false,
         labels: Default::default(),
         summary: String::new(),
         bars: Vec::new(),
@@ -249,17 +414,31 @@ async fn fetch_all(list: Vec<Account>, agy: Vec<crate::agy_usage::AgySlot>) -> V
     {
         Ok(client) => client,
         Err(error) => {
-            return list
-                .into_iter()
-                .map(|a| failed(a, &format!("http client: {error}")))
-                .collect();
+            let error = format!("http client: {error}");
+            let mut out: Vec<_> = list.into_iter().map(|a| failed(a, &error)).collect();
+            let (codex, agy) = tokio::join!(crate::codex_usage::fetch(), async {
+                crate::agy_usage::unavailable_rows(&agy, &error)
+            },);
+            out.push(codex);
+            out.extend(agy);
+            return out;
         }
     };
-    let mut out = Vec::new();
-    for account in list {
-        out.push(fetch_one(&client, account).await);
-    }
-    out.extend(crate::agy_usage::fetch(&client, &agy).await);
+    let accounts_client = client.clone();
+    let accounts = async move {
+        let mut rows = Vec::with_capacity(list.len());
+        for account in list {
+            rows.push(fetch_one(&accounts_client, account).await);
+        }
+        rows
+    };
+    let (mut out, codex, agy) = tokio::join!(
+        accounts,
+        crate::codex_usage::fetch(),
+        crate::agy_usage::fetch(&client, &agy),
+    );
+    out.push(codex);
+    out.extend(agy);
     out
 }
 

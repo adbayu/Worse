@@ -22,6 +22,7 @@ mod markdown;
 mod orchestra;
 mod panels;
 
+mod codex_usage;
 mod perf;
 mod plan_usage;
 mod plan_view;

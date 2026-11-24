@@ -167,6 +167,12 @@ impl Adapter {
                 }
                 self.refresh_agents().await;
             }
+            Command::ClearAgentQuota(agent) => {
+                if let Err(error) = self.core.clear_agent_quota(api::AgentId::new(agent)).await {
+                    self.report("clear agent quota", &error);
+                }
+                self.refresh_agents().await;
+            }
 
             Command::SetFallbackOrder(order) => {
                 let order = order.into_iter().map(api::AgentId::new).collect();

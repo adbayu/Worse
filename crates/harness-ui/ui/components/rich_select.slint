@@ -38,11 +38,6 @@ export component RichSelect inherits Rectangle {
         selection-background-color: Theme.text-selection;
         accessible-role: none;
         cursor-position-changed(p) => {
-            if self.has-focus && root.links.length > 0 && self.anchor-position-byte-offset == self.cursor-position-byte-offset {
-                if ChatUi.link-at(root.links, self.cursor-position-byte-offset) != "" {
-                    root.link(ChatUi.link-at(root.links, self.cursor-position-byte-offset));
-                }
-            }
             // A selection began here: blocks the pointer is dragged over from now on join it.
             if self.has-focus && self.anchor-position-byte-offset != self.cursor-position-byte-offset {
                 ChatUi.drag-begin(root.top, root.top + root.height);
@@ -93,6 +88,20 @@ export component RichSelect inherits Rectangle {
         } else {
             field.clear-selection();
             ChatUi.drag-part(root.top / 1px, root.left / 1px);
+        }
+    }
+    link-overlay := StyledText {
+        x: 0;
+        y: 0;
+        width: root.width;
+        text: root.text;
+        default-color: #00000000;
+        link-color: #00000000;
+        default-font-size: root.font-size;
+        default-font-family: root.font-family;
+        visible: ChatUi.ctrl-held && root.links.length > 0;
+        link-clicked(url) => {
+            root.link(url);
         }
     }
 }

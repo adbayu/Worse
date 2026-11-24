@@ -309,6 +309,7 @@ pub(super) fn wire(window: &crate::ui::AppWindow) {
     ui.on_usage_action(|action| match action.as_str() {
         "toggleAutoCompact" => crate::settings::run_command("toggleAutoCompact"),
         "refreshPlan" => crate::plan_usage::refresh(),
+        "redeemCodexReset" => crate::plan_usage::redeem_codex_reset(),
         other => crate::chat::command(other),
     });
     ui.on_dialog_submit(|| with_state(UiState::dialog_submit));

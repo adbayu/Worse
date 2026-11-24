@@ -97,6 +97,7 @@ pub fn render(window: &AppWindow, all: &[PlanLimit], agy_active: &HashSet<String
     for a in agents.iter() {
         let id = a.id.as_str();
         let covered = a.claude
+            || (id == "codex" && limits.iter().any(|p| p.id.as_str() == id))
             || (agy_rows && (id == crate::agy_usage::AGY_ID || id.starts_with(AGY_ACCOUNT)));
         if covered || !subscription(id) {
             continue;

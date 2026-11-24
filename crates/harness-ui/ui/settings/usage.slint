@@ -55,12 +55,51 @@ export component UsagePage inherits VerticalLayout {
                 color: Theme.warning-surface-foreground;
                 wrap: word-wrap;
             }
-            if p.known: LimitBar {
+            if p.id == "codex" && p.summary != "": Text {
+                text: p.summary;
+                font-size: 12px;
+                color: Theme.foreground-subtle;
+                wrap: word-wrap;
+            }
+            if p.id == "codex" && (p.reset_count >= 0 || ChatUi.codex-reset-retry): HorizontalLayout {
+                spacing: 10px;
+                Text {
+                    text: p.reset_text;
+                    font-size: 12px;
+                    color: Theme.foreground-subtle;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                }
+                if p.reset_count > 0 || ChatUi.codex-reset-retry: RButton {
+                    text: ChatUi.codex-reset-busy ? "Redeeming…" : ChatUi.codex-reset-retry ? "Retry saved reset" : "Use saved reset";
+                    enabled: !ChatUi.codex-reset-busy && (ChatUi.codex-reset-retry || p.reset_eligible);
+                    clicked => {
+                        if ChatUi.codex-reset-retry {
+                            ChatUi.usage-action("redeemCodexReset");
+                        } else {
+                            ChatUi.codex-reset-confirm-open = true;
+                        }
+                    }
+                }
+            }
+            if p.id == "codex" && p.reset_count > 0 && !p.reset_eligible: Text {
+                text: "Use it when a covered limit has less than 80% remaining and the local Codex account is verified.";
+                font-size: 12px;
+                color: Theme.foreground-subtle;
+                wrap: word-wrap;
+            }
+            if p.id == "codex" && ChatUi.codex-reset-message != "": Text {
+                text: ChatUi.codex-reset-message;
+                font-size: 12px;
+                color: ChatUi.codex-reset-error ? Theme.warning-surface-foreground : Theme.foreground-subtle;
+                wrap: word-wrap;
+            }
+            if p.id != "codex" && p.known: LimitBar {
                 label: p.five-label != "" ? p.five-label : "5-hour limit";
                 reset: p.five-reset;
                 value: p.five;
             }
-            if p.known: LimitBar {
+            if p.id != "codex" && p.known: LimitBar {
                 label: p.week-label != "" ? p.week-label : "Weekly · all models";
                 reset: p.week-reset;
                 value: p.week;

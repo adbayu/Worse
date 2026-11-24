@@ -6,8 +6,8 @@ use super::{
     ForkSession, GroupColor, HarnessCore, Hub, ImportCandidate, ImportReport, ImportRequest,
     ImportScan, ListArchived, ListProjects, ListSessions, MemoryDoc, MemoryFileInfo, MemoryPlan,
     MemoryScope, MemoryWriteMode, MentionCandidate, MentionQuery, NewSchedule, PermissionRequestId,
-    PrefChange, Prefs, ProjectInfo, ProviderInfo, ResolvedItem, ResumableRun, Retry, Rewind,
-    RewindResult, ScheduleRun, ScheduledPrompt, SendAccepted, SendMessage, SessionCmd,
+    PrefChange, Prefs, ProjectInfo, ProviderInfo, QuotaState, ResolvedItem, ResumableRun, Retry,
+    Rewind, RewindResult, ScheduleRun, ScheduledPrompt, SendAccepted, SendMessage, SessionCmd,
     SessionConfigOptions, SessionDetail, SessionGroup, SessionId, SessionModels, SessionModes,
     SessionSelection, SessionSummary, TurnDiff, TurnId, UpdateGroup, UpdateProvider,
     UpdateSchedule,
@@ -74,6 +74,18 @@ impl HarnessCore for Hub {
         Box::pin(async move {
             self.ask(&session_id, |reply| SessionCmd::SetAgent(agent, reply))
                 .await
+        })
+    }
+
+    fn clear_agent_quota(&self, agent: AgentId) -> BoxFuture<'_, ApiResult<()>> {
+        Box::pin(async move {
+            self.check_open()?;
+            self.ctx.set_quota(&agent, QuotaState::Ok).await;
+            let actors: Vec<_> = self.actors.lock().await.values().cloned().collect();
+            for actor in actors {
+                let _ = actor.send(crate::session::ActorMsg::Wake);
+            }
+            Ok(())
         })
     }
 

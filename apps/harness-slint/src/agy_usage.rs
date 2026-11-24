@@ -72,6 +72,7 @@ fn platform_enum() -> u8 {
 fn row(id: &str, label: &str, error: &str) -> Fetched {
     Fetched {
         id: id.into(),
+        account_id: None,
         label: label.into(),
         plan: String::new(),
         email: String::new(),
@@ -79,6 +80,8 @@ fn row(id: &str, label: &str, error: &str) -> Fetched {
         five: None,
         week: None,
         opus: None,
+        reset_count: None,
+        reset_eligible: false,
         labels: Default::default(),
         summary: String::new(),
         bars: Vec::new(),
@@ -146,6 +149,24 @@ async fn post(
         .json::<Value>()
         .await
         .map_err(|_| "Usage unavailable".to_owned())
+}
+
+/// Failure rows when the shared HTTP client cannot be created.
+pub(crate) fn unavailable_rows(slots: &[AgySlot], error: &str) -> Vec<Fetched> {
+    if !crate::agy_cred::shared().0.available() {
+        return Vec::new();
+    }
+    if slots.is_empty() {
+        return vec![row(AGY_ID, "Antigravity", error)];
+    }
+    slots
+        .iter()
+        .map(|slot| {
+            let id = format!("{AGY_ID}:{}", slot.id);
+            let label = format!("Antigravity · {}", slot.name);
+            row(&id, &label, error)
+        })
+        .collect()
 }
 
 /// One row per saved agy account (the active one from agy's live login, the others from their Harness copies);
