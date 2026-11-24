@@ -27,6 +27,8 @@ pub(in crate::bridge) fn subagent_row(s: &SubagentView) -> SubagentRow {
         trail: ModelRc::default(),
         steps: 0,
         scope: sv(&scope_text(s)),
+        depth: 0,
+        parent: -1,
     }
 }
 

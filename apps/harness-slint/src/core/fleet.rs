@@ -10,7 +10,10 @@ pub struct FleetSession {
     pub agent: String,
     pub running: bool,
     pub open: bool,
+    /// Every subagent under the session, depth first: direct ones and the ones they delegated in turn.
     pub subagents: Vec<api::SubagentView>,
+    /// Per entry of `subagents`: index of its parent in that list (`None` = the session itself).
+    pub parents: Vec<Option<usize>>,
 }
 
 #[derive(Default)]
@@ -200,22 +203,51 @@ impl Fleet {
             .filter_map(|id| {
                 let entry = self.entries.get(id);
                 let is_open = open == Some(id.as_str());
-                let busy = entry
-                    .is_some_and(|e| e.running || e.subagents.iter().any(|s| s.status.is_active()));
                 let child = self.children.contains_key(id);
+                let (subagents, parents) = self.descendants(id);
+                let busy = entry.is_some_and(|e| e.running)
+                    || subagents.iter().any(|s| s.status.is_active());
                 if !(is_open || (busy && !child)) {
                     return None;
                 }
                 Some(FleetSession {
+                    subagents,
+                    parents,
                     id: id.clone(),
                     title: self.titles.get(id).cloned().unwrap_or_default(),
                     prompt: entry.map(|e| e.prompt.clone()).unwrap_or_default(),
                     agent: entry.map(|e| e.agent.clone()).unwrap_or_default(),
                     running: entry.is_some_and(|e| e.running),
                     open: is_open,
-                    subagents: entry.map(|e| e.subagents.clone()).unwrap_or_default(),
                 })
             })
             .collect()
+    }
+
+    /// 修复：Orchestra 只画出会话的直接子代理；子代理再委派出的子代理（嵌套）不显示。
+    /// Depth first list of every subagent under `id`, with each one's parent index in that list.
+    fn descendants(&self, id: &str) -> (Vec<api::SubagentView>, Vec<Option<usize>>) {
+        let children = |session: &str| {
+            self.entries
+                .get(session)
+                .map(|e| e.subagents.iter().rev().collect::<Vec<_>>())
+                .unwrap_or_default()
+        };
+        let mut out: Vec<api::SubagentView> = Vec::new();
+        let mut parents = Vec::new();
+        let mut pending: Vec<(&api::SubagentView, Option<usize>, usize)> =
+            children(id).into_iter().map(|s| (s, None, 0)).collect();
+        while let Some((sub, parent, depth)) = pending.pop() {
+            if depth > 8 || out.iter().any(|s| s.session_id == sub.session_id) {
+                continue;
+            }
+            out.push(sub.clone());
+            parents.push(parent);
+            let index = out.len() - 1;
+            for child in children(sub.session_id.as_str()) {
+                pending.push((child, Some(index), depth + 1));
+            }
+        }
+        (out, parents)
     }
 }

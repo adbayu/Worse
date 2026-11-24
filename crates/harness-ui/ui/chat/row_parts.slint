@@ -126,7 +126,8 @@ export component AssistantBubble inherits Rectangle {
     ata := TouchArea {
         al := VerticalLayout {
             spacing: 6px;
-            if !root.continued || root.item.status != 1: HorizontalLayout {
+            // A continued answer that is still streaming shows its status on the head row (agent name), not on its own line.
+            if !root.continued || (root.item.status != 1 && root.item.status != 0): HorizontalLayout {
                 spacing: 8px;
                 alignment: start;
                 height: root.continued ? 18px : 24px;
@@ -142,12 +143,12 @@ export component AssistantBubble inherits Rectangle {
                     vertical-alignment: center;
                     accessible-role: none;
                 }
-                if root.item.status == 0: Spinner {
+                if root.item.status == 0 || root.item.streaming: Spinner {
                     y: (parent.height - self.height) / 2;
                     size: 13px;
                     clocked: true;
                 }
-                if root.item.status == 0: Text {
+                if root.item.status == 0 || root.item.streaming: Text {
                     text: @tr("Streaming…");
                     font-size: Theme.ui-sm;
                     color: Theme.foreground-subtle;

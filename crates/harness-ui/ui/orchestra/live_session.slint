@@ -112,11 +112,16 @@ export component SessionGroup inherits Rectangle {
     property <length> top: (root.height - root.col-h) / 2;
     property <length> orch-y: (root.height - 196px) / 2;
     property <length> sub-x: 460px;
+    // Horizontal step per nesting level: a subagent's own subagents sit one column to the right.
+    property <length> level-step: 420px;
     height: root.g.height * 1px;
+    // Edge into card i: from the orchestrator (parent -1) or from the right side of its parent card.
     for r[i] in root.g.subagents: Path {
-        property <float> sx: 320;
-        property <float> sy: (root.orch-y + (root.n > 1 ? 40px + i * 116px / (root.n - 1) : 98px)) / 1px;
-        property <float> ex: root.sub-x / 1px;
+        property <float> sx: r.parent < 0 ? 320 : (root.sub-x + (r.depth - 1) * root.level-step + 340px) / 1px;
+        property <float> sy: r.parent < 0
+            ? (root.orch-y + (root.n > 1 ? 40px + i * 116px / (root.n - 1) : 98px)) / 1px
+            : (root.top + r.parent * (root.node-h + root.gap) + 58px) / 1px;
+        property <float> ex: (root.sub-x + r.depth * root.level-step) / 1px;
         property <float> ey: (root.top + i * (root.node-h + root.gap) + 58px) / 1px;
         x: 0;
         y: 0;
@@ -130,7 +135,7 @@ export component SessionGroup inherits Rectangle {
         accessible-role: none;
     }
     for r[i] in root.g.subagents: Path {
-        x: root.sub-x - 8px;
+        x: root.sub-x + r.depth * root.level-step - 8px;
         y: root.top + i * (root.node-h + root.gap) + 58px - 4px;
         width: 8px;
         height: 8px;
@@ -141,8 +146,8 @@ export component SessionGroup inherits Rectangle {
         accessible-role: none;
     }
     for r[i] in root.g.subagents: Rectangle {
-        x: 320px - 3px;
-        y: root.orch-y + (root.n > 1 ? 40px + i * 116px / (root.n - 1) : 98px) - 3px;
+        x: (r.parent < 0 ? 320px : root.sub-x + (r.depth - 1) * root.level-step + 340px) - 3px;
+        y: (r.parent < 0 ? root.orch-y + (root.n > 1 ? 40px + i * 116px / (root.n - 1) : 98px) : root.top + r.parent * (root.node-h + root.gap) + 58px) - 3px;
         width: 6px;
         height: 6px;
         border-radius: 3px;
@@ -260,7 +265,7 @@ export component SessionGroup inherits Rectangle {
         }
     }
     for r[i] in root.g.subagents: SubNode {
-        x: root.sub-x;
+        x: root.sub-x + r.depth * root.level-step;
         y: root.top + i * (root.node-h + root.gap);
         item: r;
         selected: i == root.sel;

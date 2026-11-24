@@ -109,6 +109,7 @@ impl UiState {
         self.chat.push(row);
         self.mark_continued(index);
         self.regroup(index);
+        self.sync_streaming(index);
     }
 
     pub(super) fn update_row(&self, id: ItemId, f: impl FnOnce(&mut ChatItem)) {
@@ -116,11 +117,16 @@ impl UiState {
             return;
         };
         if let Some(mut row) = self.chat.row_data(index) {
+            let status = row.status;
             f(&mut row);
             let tool = row.kind == 2;
+            let answer_status = row.kind == 1 && row.status != status;
             self.chat.set_row_data(index, row);
             if tool {
                 self.regroup(index);
+            }
+            if answer_status {
+                self.sync_streaming(index);
             }
         }
     }

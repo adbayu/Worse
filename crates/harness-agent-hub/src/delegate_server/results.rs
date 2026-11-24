@@ -47,7 +47,15 @@ pub(super) async fn result(
     };
     if let Some(mut view) = hub.ctx.subagents.get(child) {
         view.result_preview = preview(&turn.assistant_text);
-        if view.status.is_active() {
+        // 修复：取的是旧轮次（已取消）的结果时，若子会话已开始新一轮（续聊/Steer），不能把状态改回终态。
+        let newer_active = detail.turns.iter().any(|t| {
+            &t.id != turn_id
+                && matches!(
+                    t.status,
+                    TurnStatus::Queued | TurnStatus::Running | TurnStatus::Paused
+                )
+        });
+        if view.status.is_active() && !newer_active {
             // 防御：TurnFinished 尚未被 tracker 处理时也要给出终态。
             view.status = if outcome == "done" {
                 SubagentStatus::Done

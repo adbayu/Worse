@@ -939,6 +939,17 @@ function prettyJson(text) {
   }
 }
 
+function mergeTool(prev, next) {
+  if (!prev) return next;
+  const out = Object.assign({}, prev);
+  for (const [key, value] of Object.entries(next)) {
+    if (value === null || value === undefined || value === '') continue;
+    if (Array.isArray(value) && value.length === 0) continue;
+    out[key] = value;
+  }
+  return out;
+}
+
 function toolCard(tool) {
   const card = el('details', 'tool');
   card.dataset.status = tool.status || 'pending';
@@ -1940,7 +1951,9 @@ function applySessionEvent(event) {
       if (!k.tool) break;
       const turn = getTurn(k.turnId);
       const id = k.tool.toolCallId;
-      turn.tools.set(id, k.tool);
+      // 修复：toolCallUpdated 只带变化的字段（最后一次常是空标题 + completed），直接覆盖会丢掉真实命令，
+      // 手机上只剩 "Tool call"。与桌面端一样合并：空值不覆盖已有值。
+      turn.tools.set(id, mergeTool(turn.tools.get(id), k.tool));
       if (!turn.segments.some((s) => s.type === 'tool' && s.id === id)) turn.segments.push({ type: 'tool', id });
       markDirty(turn);
       break;

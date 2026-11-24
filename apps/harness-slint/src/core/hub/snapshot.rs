@@ -160,7 +160,8 @@ pub(super) fn snapshot_turn_items(
         } else {
             turn.assistant_text.clone()
         };
-        if !text.is_empty() || status == TurnStatus::Streaming {
+        // 修复：同上，流式中且还没有文字时不插入空占位段落。
+        if !text.trim().is_empty() {
             let id = view.alloc_in(&turn.id);
             items.push((
                 id,
@@ -289,7 +290,9 @@ pub(super) fn snapshot_segments(
             } else {
                 String::new()
             };
-            if text.is_empty() && status != TurnStatus::Streaming {
+            // 修复：流式中重新打开会话时不再插入空的占位段落；之后的工具调用会排在它后面，
+            // 把同一组工具拆成两段并留下空白。文字到达时 message_delta 会新建段落。
+            if text.is_empty() {
                 return;
             }
             let id = view.alloc_in(&turn.id);

@@ -78,6 +78,8 @@ export struct ChatItem {
     member: bool,
     turn-end: bool,
     head: bool,
+    // Head row of an agent run whose later (continued) answer is still streaming: shows "Streaming…" next to the agent name.
+    streaming: bool,
     // Work item card shown under tool rows that create/edit/export `work/<slug>/`.
     work-slug: string,
     work-title: string,

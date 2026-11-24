@@ -3,7 +3,7 @@
  * Caches the app shell only, network-first so desktop updates show up immediately.
  * /api/* and any non-GET request always go straight to the network and are never cached.
  */
-const VERSION = 'harness-shell-v23';
+const VERSION = 'harness-shell-v24';
 const SHELL = [
   '/',
   '/assets/app.js',

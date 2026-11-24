@@ -57,6 +57,17 @@ export component ChatRow inherits VerticalLayout {
             vertical-alignment: center;
             accessible-role: none;
         }
+        if root.item.streaming: Spinner {
+            y: (parent.height - self.height) / 2;
+            size: 13px;
+            clocked: true;
+        }
+        if root.item.streaming: Text {
+            text: @tr("Streaming…");
+            font-size: Theme.ui-sm;
+            color: Theme.foreground-subtle;
+            vertical-alignment: center;
+        }
     }
     // Tool call: ZCode's inline tool row (icon + title + status) that expands into its content (R8).
     if root.item.group > 0: RowGroupHeader {

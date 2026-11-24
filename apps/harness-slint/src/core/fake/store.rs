@@ -228,6 +228,7 @@ impl FakeCore {
                         running: s.run.is_some(),
                         open: true,
                         subagents: demo_subagents(session),
+                        parents: Vec::new(),
                     },
                     super::super::FleetSession {
                         id: other.clone(),
@@ -237,6 +238,7 @@ impl FakeCore {
                         running: true,
                         open: false,
                         subagents: demo_subagents(&other).into_iter().take(1).collect(),
+                        parents: Vec::new(),
                     },
                 ]),
             );

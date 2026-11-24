@@ -60,20 +60,30 @@ export component SidePane inherits Rectangle {
             padding-left: 12px;
             padding-right: 8px;
             spacing: 4px;
-            Segmented {
-                y: (parent.height - self.height) / 2;
-                options: [
-                    { id: "overview", label: "Overview" },
-                    { id: "git", label: "Git" },
-                    { id: "terminal", label: "Terminal" },
-                    { id: "files", label: "Files" },
-                    { id: "live", label: "Live" },
-                    { id: "work", label: "Work" },
-                ];
-                chip-pad: 8px;
-                current: root.tab;
-                select(id) => {
-                    root.tab = id;
+            // 修复：面板较窄时分段标签比可用宽度更宽，整行溢出面板（展开按钮被挤出边框）；
+            // 标签放进可横向滚动的区域，按宽度收紧内边距，展开按钮始终留在面板内。
+            tabs-flick := Flickable {
+                horizontal-stretch: 1;
+                interactive: tabs.preferred-width > self.width;
+                content-width: max(self.width, tabs.preferred-width);
+                content-height: self.height;
+                tabs := Segmented {
+                    x: 0;
+                    y: (parent.height - self.height) / 2;
+                    width: self.preferred-width;
+                    options: [
+                        { id: "overview", label: "Overview" },
+                        { id: "git", label: "Git" },
+                        { id: "terminal", label: "Terminal" },
+                        { id: "files", label: "Files" },
+                        { id: "live", label: "Live" },
+                        { id: "work", label: "Work" },
+                    ];
+                    chip-pad: root.width < 470px ? 5px : 8px;
+                    current: root.tab;
+                    select(id) => {
+                        root.tab = id;
+                    }
                 }
             }
             if root.tab == "diff" || root.tab == "search": Text {
@@ -83,11 +93,9 @@ export component SidePane inherits Rectangle {
                 color: Theme.foreground;
                 vertical-alignment: center;
             }
-            Rectangle {
-                horizontal-stretch: 1;
-            }
             IconButton {
                 y: (parent.height - self.height) / 2;
+                horizontal-stretch: 0;
                 icon: root.wide ? Icons.minimize-2 : Icons.maximize-2;
                 label: root.wide ? @tr("Collapse panel") : @tr("Expand panel");
                 clicked => {

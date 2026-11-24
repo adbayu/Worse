@@ -114,6 +114,10 @@ export struct SubagentRow {
     steps: int,
     // Its narrowed permissions (phase-9-parity.md 9.8.2); empty means unrestricted.
     scope: string,
+    // Orchestra canvas only: nesting level (0 = delegated by the orchestrator) and the index of the parent
+    // card in the same list (-1 = the orchestrator), so a subagent's own subagents appear one column further.
+    depth: int,
+    parent: int,
 }
 
 export struct FleetGroup {

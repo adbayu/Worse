@@ -65,15 +65,35 @@ impl UiState {
         let mut groups = Vec::with_capacity(list.len());
         let mut rows = Vec::with_capacity(list.len());
         for s in list {
-            let active: Vec<SubagentRow> = s
-                .subagents
-                .iter()
-                .filter(|a| a.status.is_active())
-                .map(|a| SubagentRow {
+            // Card index of each shown subagent; nested ones hang off their nearest shown ancestor.
+            let mut shown: Vec<Option<usize>> = Vec::with_capacity(s.subagents.len());
+            let mut active: Vec<SubagentRow> = Vec::new();
+            for (index, a) in s.subagents.iter().enumerate() {
+                if !a.status.is_active() {
+                    shown.push(None);
+                    continue;
+                }
+                let mut up = s.parents.get(index).copied().flatten();
+                let parent = loop {
+                    match up {
+                        Some(p) if p < index => match shown[p] {
+                            Some(card) => break Some(card),
+                            None => up = s.parents.get(p).copied().flatten(),
+                        },
+                        _ => break None,
+                    }
+                };
+                let depth = parent
+                    .and_then(|card| active.get(card))
+                    .map_or(0, |row: &SubagentRow| row.depth + 1);
+                shown.push(Some(active.len()));
+                active.push(SubagentRow {
                     agent_name: self.agent_name(a.agent.as_str()).into(),
+                    depth,
+                    parent: parent.map_or(-1, int),
                     ..subagent_row(a)
-                })
-                .collect();
+                });
+            }
             running += active.len();
             waiting += s
                 .subagents

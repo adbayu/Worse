@@ -135,6 +135,11 @@ pub(super) fn message_delta(
         return;
     };
     let existing = view.turns.get(&turn_id).and_then(|t| t.assistant);
+    // 修复：两次工具调用之间只有空白（换行）的文字会新建一个空的助手段落，把工具组拆成两段；
+    // 段落还不存在时忽略纯空白片段。
+    if existing.is_none() && text.trim().is_empty() {
+        return;
+    }
     let id = if let Some(id) = existing {
         id
     } else {

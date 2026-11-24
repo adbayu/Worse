@@ -214,6 +214,43 @@ impl UiState {
         }
     }
 
+    /// Marks the head row (agent name) of the run holding `index` as streaming while a later answer in the
+    /// same run still streams, so "Streaming…" stays next to the agent name instead of on its own line.
+    pub(super) fn sync_streaming(&self, index: usize) {
+        let boundary = |at: usize| {
+            self.chat
+                .row_data(at)
+                .map_or(true, |r| matches!(r.kind, 0 | 6 | 7))
+        };
+        if boundary(index) {
+            return;
+        }
+        let mut start = index;
+        while start > 0 && !boundary(start - 1) {
+            start -= 1;
+        }
+        let mut end = index + 1;
+        while end < self.chat.row_count() && !boundary(end) {
+            end += 1;
+        }
+        let Some(head) = (start..end).find(|&at| {
+            self.chat
+                .row_data(at)
+                .is_some_and(|r| matches!(r.kind, 1 | 2 | 5))
+        }) else {
+            return;
+        };
+        let live = (head + 1..end).any(|at| {
+            self.chat
+                .row_data(at)
+                .is_some_and(|r| r.kind == 1 && r.status == 0)
+        });
+        if let Some(mut row) = self.chat.row_data(head).filter(|r| r.streaming != live) {
+            row.streaming = live;
+            self.chat.set_row_data(head, row);
+        }
+    }
+
     pub(super) fn toggle_group(&self, index: usize) {
         if let Some(mut row) = self.chat.row_data(index) {
             row.group_open = !row.group_open;
