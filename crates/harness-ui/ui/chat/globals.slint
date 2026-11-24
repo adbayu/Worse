@@ -192,6 +192,7 @@ export global ChatUi {
 
     // ---- feedback ----
     in property <string> toast;
+    in-out property <bool> ctrl-held;
     callback copy(string);
     pure callback link-at([MdLink], int) -> string;
     // ---- selecting text across blocks (`chat::select`) ----

@@ -199,6 +199,8 @@ fn install_drop(window: &AppWindow) {
             WindowEvent::Focused(focused) => {
                 if *focused {
                     set_visible(true);
+                } else if let Some(window) = weak.upgrade() {
+                    window.global::<ChatUi>().set_ctrl_held(false);
                 }
                 set_focused(*focused);
             }

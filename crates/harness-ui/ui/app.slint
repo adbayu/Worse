@@ -311,6 +311,7 @@ export component AppWindow inherits Window {
 
     key-scope := FocusScope {
         capture-key-pressed(event) => {
+            ChatUi.ctrl-held = event.modifiers.control || event.modifiers.meta;
             // Shortcut recorder / key search (settings): the root sees keys before the focused child, so it hands
             // them to Rust first; Esc there cancels the recording instead of closing settings.
             if root.settings-open && (ShortcutsUi.recording != "" || ShortcutsUi.key-search) {
@@ -404,6 +405,10 @@ export component AppWindow inherits Window {
                     return accept;
                 }
             }
+            reject
+        }
+        capture-key-released(event) => {
+            ChatUi.ctrl-held = event.modifiers.control || event.modifiers.meta;
             reject
         }
 

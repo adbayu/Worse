@@ -35,6 +35,7 @@ slint = { version = "=1.18.1", default-features = false, features = [
 tokio = { workspace = true, features = ["rt", "fs", "time", "sync", "macros"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
+url = { workspace = true }
 uuid = { workspace = true }
 pulldown-cmark = { version = "0.13", default-features = false }
 harness-core-api = { path = "../../crates/harness-core-api" }
