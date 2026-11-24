@@ -37,6 +37,14 @@ impl ResetError {
         }
     }
 
+    fn rejected(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+            preserve_key: false,
+            credit_id: None,
+        }
+    }
+
     fn retry_preflight(message: impl Into<String>, retry: bool, credit_id: Option<String>) -> Self {
         Self {
             message: message.into(),
@@ -235,7 +243,7 @@ pub(crate) async fn consume_reset(
         .or_else(|| available_reset_credit_id(rates))
         .ok_or_else(|| {
             ResetError::retry_preflight(
-                "Codex did not return a saved reset ID; update Codex CLI before redeeming",
+                "Codex did not provide a saved reset ID; redemption paused to protect the logged-in account",
                 retry,
                 None,
             )
@@ -256,12 +264,11 @@ pub(crate) async fn consume_reset(
     .map_err(|_| ResetError::after_consume("Codex reset request timed out", credit_id.clone()))?
     .map_err(|error| ResetError::after_consume(error, credit_id.clone()))?;
     if response.get("error").is_some() {
-        return Err(ResetError::after_consume(
+        return Err(ResetError::rejected(
             response
                 .pointer("/error/message")
                 .and_then(Value::as_str)
                 .unwrap_or("Codex reset request failed"),
-            credit_id.clone(),
         ));
     }
     let outcome = match response.pointer("/result/outcome").and_then(Value::as_str) {
@@ -334,7 +341,12 @@ fn available_reset_credit_id(rates: &Value) -> Option<String> {
         .as_array()?;
     credits
         .iter()
-        .filter(|credit| credit.get("status").and_then(Value::as_str) == Some("available"))
+        .filter(|credit| {
+            credit
+                .get("status")
+                .and_then(Value::as_str)
+                .is_some_and(|status| status.eq_ignore_ascii_case("available"))
+        })
         .min_by_key(|credit| {
             credit
                 .get("expiresAt")
@@ -342,7 +354,13 @@ fn available_reset_credit_id(rates: &Value) -> Option<String> {
                 .and_then(Value::as_i64)
                 .unwrap_or(i64::MAX)
         })
-        .and_then(|credit| credit.get("id").and_then(Value::as_str))
+        .and_then(|credit| {
+            credit
+                .get("creditId")
+                .or_else(|| credit.get("credit_id"))
+                .or_else(|| credit.get("id"))
+                .and_then(Value::as_str)
+        })
         .map(str::to_owned)
 }
 

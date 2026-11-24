@@ -151,6 +151,24 @@ async fn post(
         .map_err(|_| "Usage unavailable".to_owned())
 }
 
+/// Failure rows when the shared HTTP client cannot be created.
+pub(crate) fn unavailable_rows(slots: &[AgySlot], error: &str) -> Vec<Fetched> {
+    if !crate::agy_cred::shared().0.available() {
+        return Vec::new();
+    }
+    if slots.is_empty() {
+        return vec![row(AGY_ID, "Antigravity", error)];
+    }
+    slots
+        .iter()
+        .map(|slot| {
+            let id = format!("{AGY_ID}:{}", slot.id);
+            let label = format!("Antigravity · {}", slot.name);
+            row(&id, &label, error)
+        })
+        .collect()
+}
+
 /// One row per saved agy account (the active one from agy's live login, the others from their Harness copies);
 /// without saved accounts one row for the live login. Empty when the credential store does not exist here.
 pub(crate) async fn fetch(client: &reqwest::Client, slots: &[AgySlot]) -> Vec<Fetched> {

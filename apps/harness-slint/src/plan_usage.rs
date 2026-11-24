@@ -156,7 +156,7 @@ pub(crate) fn redeem_codex_reset() {
             .as_ref()
             .err()
             .filter(|error| error.preserve_key)
-            .map(|error| error.credit_id.clone());
+            .and_then(|error| error.credit_id.clone());
         let clear_quota = matches!(
             &result,
             Ok(crate::codex_usage::ResetOutcome::Reset)
@@ -196,7 +196,7 @@ pub(crate) fn redeem_codex_reset() {
                         s.codex_reset_attempts.remove(&attempt_account_id);
                     } else if let Some(credit_id) = retry_credit_id {
                         if let Some(attempt) = s.codex_reset_attempts.get_mut(&attempt_account_id) {
-                            attempt.credit_id = credit_id;
+                            attempt.credit_id = Some(credit_id);
                         }
                     }
                 }
@@ -414,10 +414,14 @@ async fn fetch_all(list: Vec<Account>, agy: Vec<crate::agy_usage::AgySlot>) -> V
     {
         Ok(client) => client,
         Err(error) => {
-            return list
-                .into_iter()
-                .map(|a| failed(a, &format!("http client: {error}")))
-                .collect();
+            let error = format!("http client: {error}");
+            let mut out: Vec<_> = list.into_iter().map(|a| failed(a, &error)).collect();
+            let (codex, agy) = tokio::join!(crate::codex_usage::fetch(), async {
+                crate::agy_usage::unavailable_rows(&agy, &error)
+            },);
+            out.push(codex);
+            out.extend(agy);
+            return out;
         }
     };
     let accounts_client = client.clone();
