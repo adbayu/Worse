@@ -9,6 +9,8 @@ use serde_json::Value;
 use crate::agents::ErrorDialect;
 use crate::util::now_secs;
 
+pub(crate) const CODEX_USAGE_LIMIT_WINDOW_SECS: i64 = 5 * 60 * 60;
+
 /// What we know about one agent failure.
 #[derive(Debug, Clone, Default)]
 pub struct AgentErrorInfo {
@@ -316,6 +318,28 @@ impl QuotaRegistry {
             Some(state) => state.clone(),
             None => QuotaState::Ok,
         }
+    }
+
+    /// Clears a quota only when it is still the state whose reset timer fired.
+    pub fn clear_expired_if_unchanged(&self, agent: &AgentId, expected: &QuotaState) -> bool {
+        let QuotaState::Exhausted {
+            resets_at: Some(reset),
+            ..
+        } = expected
+        else {
+            return false;
+        };
+        if *reset > now_secs() {
+            return false;
+        }
+        let Ok(mut map) = self.inner.lock() else {
+            return false;
+        };
+        if map.get(agent) != Some(expected) {
+            return false;
+        }
+        map.insert(agent.clone(), QuotaState::Ok);
+        true
     }
 
     /// True when the agent may be selected by failover.
