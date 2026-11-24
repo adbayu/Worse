@@ -22,6 +22,12 @@ struct Account {
     dir: PathBuf,
 }
 
+#[derive(Clone)]
+struct CodexResetAttempt {
+    idempotency_key: String,
+    credit_id: Option<String>,
+}
+
 struct State {
     window: slint::Weak<AppWindow>,
     accounts: Vec<Account>,
@@ -30,7 +36,7 @@ struct State {
     busy: bool,
     wanted: bool,
     codex_reset_busy: bool,
-    codex_reset_keys: std::collections::HashMap<String, String>,
+    codex_reset_attempts: std::collections::HashMap<String, CodexResetAttempt>,
     codex_account_id: Option<String>,
     codex_reset_message: String,
     codex_reset_error: bool,
@@ -51,7 +57,7 @@ pub fn install(window: &AppWindow) {
             busy: false,
             wanted: false,
             codex_reset_busy: false,
-            codex_reset_keys: std::collections::HashMap::new(),
+            codex_reset_attempts: std::collections::HashMap::new(),
             codex_account_id: None,
             codex_reset_message: String::new(),
             codex_reset_error: false,
@@ -95,7 +101,7 @@ pub(crate) fn redeem_codex_reset() {
         let mut cell = cell.borrow_mut();
         let s = cell.as_mut()?;
         let account_id = s.codex_account_id.clone()?;
-        let retry = s.codex_reset_keys.contains_key(&account_id);
+        let retry = s.codex_reset_attempts.contains_key(&account_id);
         if s.codex_reset_busy
             || s.busy
             || s.wanted
@@ -109,17 +115,21 @@ pub(crate) fn redeem_codex_reset() {
         s.codex_reset_busy = true;
         s.codex_reset_error = false;
         s.codex_reset_message = "Redeeming saved Codex reset…".into();
-        let key = s
-            .codex_reset_keys
+        let attempt = s
+            .codex_reset_attempts
             .entry(account_id.clone())
-            .or_insert_with(|| uuid::Uuid::new_v4().to_string())
+            .or_insert_with(|| CodexResetAttempt {
+                idempotency_key: uuid::Uuid::new_v4().to_string(),
+                credit_id: None,
+            })
             .clone();
-        Some((key, account_id, retry))
+        Some((attempt, account_id, retry))
     });
-    let Some((idempotency_key, expected_account_id, retry)) = started else {
+    let Some((attempt, expected_account_id, retry)) = started else {
         return;
     };
     let attempt_account_id = expected_account_id.clone();
+    let retry_credit_id = attempt.credit_id.clone();
     publish();
     std::thread::spawn(move || {
         let result = match tokio::runtime::Builder::new_current_thread()
@@ -127,19 +137,26 @@ pub(crate) fn redeem_codex_reset() {
             .build()
         {
             Ok(runtime) => runtime.block_on(crate::codex_usage::consume_reset(
-                idempotency_key,
+                attempt.idempotency_key,
                 expected_account_id,
                 retry,
+                retry_credit_id.clone(),
             )),
             Err(error) => Err(crate::codex_usage::ResetError {
                 message: format!("Codex reset runtime: {error}"),
                 preserve_key: retry,
+                credit_id: retry_credit_id.clone(),
             }),
         };
         let clear_attempt = match &result {
             Ok(_) => true,
             Err(error) => !error.preserve_key,
         };
+        let retry_credit_id = result
+            .as_ref()
+            .err()
+            .filter(|error| error.preserve_key)
+            .map(|error| error.credit_id.clone());
         let clear_quota = matches!(
             &result,
             Ok(crate::codex_usage::ResetOutcome::Reset)
@@ -176,7 +193,11 @@ pub(crate) fn redeem_codex_reset() {
                     s.codex_reset_message = message;
                     s.codex_reset_error = error;
                     if clear_attempt {
-                        s.codex_reset_keys.remove(&attempt_account_id);
+                        s.codex_reset_attempts.remove(&attempt_account_id);
+                    } else if let Some(credit_id) = retry_credit_id {
+                        if let Some(attempt) = s.codex_reset_attempts.get_mut(&attempt_account_id) {
+                            attempt.credit_id = credit_id;
+                        }
                     }
                 }
             });
@@ -348,7 +369,7 @@ fn publish() {
             s.codex_reset_busy || s.busy || s.wanted,
             s.codex_account_id
                 .as_ref()
-                .is_some_and(|id| s.codex_reset_keys.contains_key(id))
+                .is_some_and(|id| s.codex_reset_attempts.contains_key(id))
                 && !s.codex_reset_busy,
             s.codex_reset_message.clone(),
             s.codex_reset_error,
@@ -399,12 +420,21 @@ async fn fetch_all(list: Vec<Account>, agy: Vec<crate::agy_usage::AgySlot>) -> V
                 .collect();
         }
     };
-    let mut out = Vec::new();
-    for account in list {
-        out.push(fetch_one(&client, account).await);
-    }
-    out.push(crate::codex_usage::fetch().await);
-    out.extend(crate::agy_usage::fetch(&client, &agy).await);
+    let accounts_client = client.clone();
+    let accounts = async move {
+        let mut rows = Vec::with_capacity(list.len());
+        for account in list {
+            rows.push(fetch_one(&accounts_client, account).await);
+        }
+        rows
+    };
+    let (mut out, codex, agy) = tokio::join!(
+        accounts,
+        crate::codex_usage::fetch(),
+        crate::agy_usage::fetch(&client, &agy),
+    );
+    out.push(codex);
+    out.extend(agy);
     out
 }
 

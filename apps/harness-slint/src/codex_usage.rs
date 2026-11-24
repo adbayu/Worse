@@ -25,27 +25,23 @@ pub(crate) enum ResetOutcome {
 pub(crate) struct ResetError {
     pub message: String,
     pub preserve_key: bool,
+    pub credit_id: Option<String>,
 }
 
 impl ResetError {
-    fn before_consume(message: impl Into<String>) -> Self {
-        Self {
-            message: message.into(),
-            preserve_key: false,
-        }
-    }
-
-    fn after_consume(message: impl Into<String>) -> Self {
+    fn after_consume(message: impl Into<String>, credit_id: String) -> Self {
         Self {
             message: message.into(),
             preserve_key: true,
+            credit_id: Some(credit_id),
         }
     }
 
-    fn retry_preflight(message: impl Into<String>, retry: bool) -> Self {
+    fn retry_preflight(message: impl Into<String>, retry: bool, credit_id: Option<String>) -> Self {
         Self {
             message: message.into(),
             preserve_key: retry,
+            credit_id,
         }
     }
 }
@@ -148,11 +144,18 @@ pub(crate) async fn consume_reset(
     idempotency_key: String,
     expected_account_id: String,
     retry: bool,
+    retry_credit_id: Option<String>,
 ) -> Result<ResetOutcome, ResetError> {
     let mut app_server = tokio::time::timeout(Duration::from_secs(20), AppServer::start())
         .await
-        .map_err(|_| ResetError::retry_preflight("Codex app-server start timed out", retry))?
-        .map_err(|error| ResetError::retry_preflight(error, retry))?;
+        .map_err(|_| {
+            ResetError::retry_preflight(
+                "Codex app-server start timed out",
+                retry,
+                retry_credit_id.clone(),
+            )
+        })?
+        .map_err(|error| ResetError::retry_preflight(error, retry, retry_credit_id.clone()))?;
     let rates_response = tokio::time::timeout(
         Duration::from_secs(20),
         app_server.request(
@@ -167,17 +170,23 @@ pub(crate) async fn consume_reset(
         ResetError::retry_preflight(
             "Codex account verification timed out; saved reset was not used",
             retry,
+            retry_credit_id.clone(),
         )
     })?
-    .map_err(|error| ResetError::retry_preflight(error, retry))?;
+    .map_err(|error| ResetError::retry_preflight(error, retry, retry_credit_id.clone()))?;
     if rates_response.get("error").is_some() {
         return Err(ResetError::retry_preflight(
             "Codex account verification failed; saved reset was not used",
             retry,
+            retry_credit_id.clone(),
         ));
     }
     let rates = rates_response.get("result").ok_or_else(|| {
-        ResetError::retry_preflight("Codex account verification returned no usage data", retry)
+        ResetError::retry_preflight(
+            "Codex account verification returned no usage data",
+            retry,
+            retry_credit_id.clone(),
+        )
     })?;
     let account_id = rates
         .get("accountId")
@@ -188,15 +197,17 @@ pub(crate) async fn consume_reset(
             ResetError::retry_preflight(
                 "Cannot verify Codex login; saved reset was not used",
                 retry,
+                retry_credit_id.clone(),
             )
         })?;
     if account_id != expected_account_id {
         return Err(ResetError::retry_preflight(
             "Codex login changed since usage was read; saved reset was not used",
             retry,
+            retry_credit_id.clone(),
         ));
     }
-    if !retry {
+    if retry_credit_id.is_none() {
         let available = rates
             .get("rateLimitResetCredits")
             .or_else(|| rates.get("rate_limit_reset_credits"))
@@ -206,7 +217,13 @@ pub(crate) async fn consume_reset(
                     .or_else(|| credits.get("available_count"))
             })
             .and_then(Value::as_i64)
-            .ok_or_else(|| ResetError::before_consume("Codex did not report saved reset count"))?;
+            .ok_or_else(|| {
+                ResetError::retry_preflight(
+                    "Codex did not report saved reset count",
+                    retry,
+                    retry_credit_id.clone(),
+                )
+            })?;
         if available <= 0 {
             return Ok(ResetOutcome::NoCredit);
         }
@@ -214,6 +231,15 @@ pub(crate) async fn consume_reset(
             return Ok(ResetOutcome::NothingToReset);
         }
     }
+    let credit_id = retry_credit_id
+        .or_else(|| available_reset_credit_id(rates))
+        .ok_or_else(|| {
+            ResetError::retry_preflight(
+                "Codex did not return a saved reset ID; update Codex CLI before redeeming",
+                retry,
+                None,
+            )
+        })?;
     let response = tokio::time::timeout(
         Duration::from_secs(30),
         app_server.request(
@@ -222,19 +248,20 @@ pub(crate) async fn consume_reset(
                 "jsonrpc": "2.0",
                 "id": 3,
                 "method": "account/rateLimitResetCredit/consume",
-                "params": {"idempotencyKey": idempotency_key}
+                "params": {"idempotencyKey": idempotency_key, "creditId": credit_id}
             }),
         ),
     )
     .await
-    .map_err(|_| ResetError::after_consume("Codex reset request timed out"))?
-    .map_err(ResetError::after_consume)?;
+    .map_err(|_| ResetError::after_consume("Codex reset request timed out", credit_id.clone()))?
+    .map_err(|error| ResetError::after_consume(error, credit_id.clone()))?;
     if response.get("error").is_some() {
         return Err(ResetError::after_consume(
             response
                 .pointer("/error/message")
                 .and_then(Value::as_str)
                 .unwrap_or("Codex reset request failed"),
+            credit_id.clone(),
         ));
     }
     let outcome = match response.pointer("/result/outcome").and_then(Value::as_str) {
@@ -245,6 +272,7 @@ pub(crate) async fn consume_reset(
         _ => {
             return Err(ResetError::after_consume(
                 "Codex returned an unknown reset result",
+                credit_id.clone(),
             ));
         }
     };
@@ -258,15 +286,24 @@ pub(crate) async fn consume_reset(
         ),
     )
     .await
-    .map_err(|_| ResetError::after_consume("Codex reset applied, but recovery status timed out"))?
-    .map_err(ResetError::after_consume)?;
+    .map_err(|_| {
+        ResetError::after_consume(
+            "Codex reset applied, but recovery status timed out",
+            credit_id.clone(),
+        )
+    })?
+    .map_err(|error| ResetError::after_consume(error, credit_id.clone()))?;
     if current_response.get("error").is_some() {
         return Err(ResetError::after_consume(
             "Codex reset applied, but recovery status could not be read",
+            credit_id.clone(),
         ));
     }
     let current = current_response.get("result").ok_or_else(|| {
-        ResetError::after_consume("Codex reset applied, but recovery status was missing")
+        ResetError::after_consume(
+            "Codex reset applied, but recovery status was missing",
+            credit_id.clone(),
+        )
     })?;
     let current_account_id = current
         .get("accountId")
@@ -275,6 +312,7 @@ pub(crate) async fn consume_reset(
     if current_account_id != Some(expected_account_id.as_str()) {
         return Err(ResetError::after_consume(
             "Codex reset applied, but the account changed before recovery could be verified",
+            credit_id.clone(),
         ));
     }
     match current
@@ -286,6 +324,26 @@ pub(crate) async fn consume_reset(
         Some(false) => Ok(ResetOutcome::UsageStillBlocked),
         None => Ok(ResetOutcome::UsageStatusUnavailable),
     }
+}
+
+fn available_reset_credit_id(rates: &Value) -> Option<String> {
+    let credits = rates
+        .get("rateLimitResetCredits")
+        .or_else(|| rates.get("rate_limit_reset_credits"))?
+        .get("credits")?
+        .as_array()?;
+    credits
+        .iter()
+        .filter(|credit| credit.get("status").and_then(Value::as_str) == Some("available"))
+        .min_by_key(|credit| {
+            credit
+                .get("expiresAt")
+                .or_else(|| credit.get("expires_at"))
+                .and_then(Value::as_i64)
+                .unwrap_or(i64::MAX)
+        })
+        .and_then(|credit| credit.get("id").and_then(Value::as_str))
+        .map(str::to_owned)
 }
 
 pub(crate) fn has_eligible_limit(rates: &Value) -> bool {
