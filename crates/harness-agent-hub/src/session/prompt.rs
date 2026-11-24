@@ -4,6 +4,7 @@ use super::{
 };
 
 impl SessionActor {
+    #[allow(clippy::too_many_lines)]
     pub(super) async fn prompt_blocks(
         &self,
         turn_id: &TurnId,

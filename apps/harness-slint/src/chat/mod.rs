@@ -11,6 +11,7 @@ mod composer;
 mod export;
 mod fuzzy;
 mod hooks;
+mod links;
 mod mention;
 mod nav;
 mod palette;
@@ -34,10 +35,11 @@ use crate::ui::{AppWindow, ChatUi, ChipRow, Labels, PaletteRow};
 pub use commands::{command, skill_count};
 pub use hooks::{
     add_work_comment, agent_commands, agent_mentions, drop_hover, dropped, exported, files_walked,
-    open_link, open_path, paste_image, pick_files, prepare_send, restore_composer, save_attachment,
+    open_path, paste_image, pick_files, prepare_send, restore_composer, save_attachment,
     sessions_changed, set_workspace, toast_label, toast_text,
 };
 use hooks::{attachments_dir, chip_image, remove_image_chip};
+pub use links::open_link;
 pub use wire::install;
 
 /// `ZCode` `LONG_PASTE_TEXT_ATTACHMENT_CHAR_THRESHOLD` (`packages/ui/src/lib/chatAttachments.ts`).

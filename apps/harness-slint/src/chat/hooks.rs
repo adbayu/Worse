@@ -112,7 +112,7 @@ pub fn open_path(raw: &str) {
     let path = if literal.as_ref().is_some_and(|path| path.exists()) {
         literal.unwrap_or_default()
     } else {
-        let trimmed = strip_location_suffix(trimmed);
+        let trimmed = super::links::strip_location_suffix(trimmed);
         if Path::new(trimmed).is_absolute() {
             PathBuf::from(trimmed)
         } else if let Some(workspace) = workspace {
@@ -145,171 +145,12 @@ pub fn open_path(raw: &str) {
     });
 }
 
-fn workspace_path(workspace: &Path, relative: &str) -> PathBuf {
+pub(super) fn workspace_path(workspace: &Path, relative: &str) -> PathBuf {
     // Agent paths use forward slashes; join components for the current platform.
     relative
         .split(['/', '\\'])
         .filter(|part| !part.is_empty() && *part != ".")
         .fold(workspace.to_path_buf(), |acc, part| acc.join(part))
-}
-
-fn strip_location_suffix(mut path: &str) -> &str {
-    loop {
-        let Some((head, suffix)) = path.rsplit_once(':') else {
-            break;
-        };
-        if head.len() == 1 && head.as_bytes()[0].is_ascii_alphabetic() {
-            break;
-        }
-        let suffix = suffix.strip_prefix('L').unwrap_or(suffix);
-        let is_line = |value: &str| !value.is_empty() && value.bytes().all(|b| b.is_ascii_digit());
-        let is_location = if let Some((first, last)) = suffix.split_once('-') {
-            is_line(first.strip_prefix('L').unwrap_or(first))
-                && is_line(last.strip_prefix('L').unwrap_or(last))
-        } else {
-            is_line(suffix)
-        };
-        if is_location {
-            path = head;
-        } else {
-            break;
-        }
-    }
-    path
-}
-
-/// Opens a Markdown link when it points to a local path or `file://` URI.
-pub fn open_link(raw: &str) {
-    let target = raw.trim();
-    if target.is_empty() || target.starts_with('#') {
-        return;
-    }
-
-    let mut target = target.to_owned();
-    if let Ok(url) = url::Url::parse(&target) {
-        if url.scheme() == "file" {
-            let host = url.host_str();
-            let drive_host = cfg!(windows)
-                && host.is_some_and(|host| {
-                    host.len() == 2
-                        && host.as_bytes()[0].is_ascii_alphabetic()
-                        && host.as_bytes()[1] == b':'
-                });
-            if host.is_some_and(|host| !host.is_empty() && !host.eq_ignore_ascii_case("localhost"))
-                && !drive_host
-            {
-                return;
-            }
-            if drive_host {
-                let Some(drive) = host.and_then(|host| host.chars().next()) else {
-                    return;
-                };
-                let file_url = format!("file:///{drive}:{}", url.path());
-                let Some(path) = url::Url::parse(&file_url)
-                    .ok()
-                    .and_then(|url| url.to_file_path().ok())
-                else {
-                    return;
-                };
-                open_path(&path.to_string_lossy());
-                return;
-            }
-            if let Ok(path) = url.to_file_path() {
-                open_path(&path.to_string_lossy());
-                return;
-            }
-            // `file:relative/path` is not an absolute file URI; resolve it against the workspace below.
-            target = url.path().trim_start_matches('/').to_owned();
-        } else if target.contains("://") {
-            // External URLs are not local files.
-            return;
-        }
-    }
-
-    #[cfg(windows)]
-    {
-        if target.starts_with(r"\\") || target.starts_with("//") {
-            return;
-        }
-        if target.starts_with('/')
-            && target
-                .as_bytes()
-                .get(1)
-                .is_some_and(|byte| byte.is_ascii_alphabetic())
-            && target.as_bytes().get(2) == Some(&b':')
-        {
-            target.remove(0);
-        } else if target.starts_with('/') {
-            target.remove(0);
-        }
-    }
-
-    let workspace = with_state(|s| s.workspace.clone());
-    if (Path::new(&target).is_absolute() && Path::new(&target).exists())
-        || workspace
-            .as_deref()
-            .is_some_and(|workspace| workspace_path(workspace, &target).exists())
-    {
-        open_path(&target);
-        return;
-    }
-
-    let target = strip_location_suffix(&target);
-
-    #[cfg(windows)]
-    if target.len() > 2
-        && target.as_bytes()[0].is_ascii_alphabetic()
-        && target.as_bytes()[1] == b':'
-        && !matches!(target.as_bytes()[2], b'/' | b'\\')
-    {
-        if let Ok(path) = Path::new(target).canonicalize() {
-            open_path(&path.to_string_lossy());
-        }
-        return;
-    }
-
-    if Path::new(target).is_absolute() {
-        if Path::new(target).exists() {
-            open_path(target);
-            return;
-        }
-        let path = if target.contains('%') || target.contains('#') || target.contains('?') {
-            absolute_file_url_path(target).unwrap_or_else(|| PathBuf::from(target))
-        } else {
-            PathBuf::from(target)
-        };
-        open_path(&path.to_string_lossy());
-        return;
-    }
-
-    let Some(workspace) = workspace else {
-        return;
-    };
-    if workspace_path(&workspace, target).exists() {
-        open_path(target);
-        return;
-    }
-    let Some(base) = url::Url::from_directory_path(workspace).ok() else {
-        return;
-    };
-    let Ok(url) = base.join(&format!("./{target}")) else {
-        return;
-    };
-    if url.scheme() == "file" {
-        if let Ok(path) = url.to_file_path() {
-            open_path(&path.to_string_lossy());
-        }
-    }
-}
-
-fn absolute_file_url_path(path: &str) -> Option<PathBuf> {
-    let path = path.replace('\\', "/");
-    let url = if cfg!(windows) && path.as_bytes().get(1) == Some(&b':') {
-        format!("file:///{path}")
-    } else {
-        format!("file://{path}")
-    };
-    url::Url::parse(&url).ok()?.to_file_path().ok()
 }
 
 fn open_with_os(path: &Path) -> std::io::Result<()> {

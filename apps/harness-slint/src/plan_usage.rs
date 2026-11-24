@@ -4,12 +4,15 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use harness_core_api as api;
-use serde_json::Value;
 use slint::ComponentHandle;
 
 use crate::ui::{AppWindow, ChatUi, PlanLimit};
 
+mod claude;
+use claude::fetch_one;
+mod codex_reset;
 mod row;
+pub(crate) use codex_reset::redeem_codex_reset;
 use row::{now_ms, sv, title_case, to_row, window_of};
 pub(crate) use row::{parse_rfc3339, resets_in};
 
@@ -28,6 +31,7 @@ struct CodexResetAttempt {
     credit_id: Option<String>,
 }
 
+#[allow(clippy::struct_excessive_bools)]
 struct State {
     window: slint::Weak<AppWindow>,
     accounts: Vec<Account>,
@@ -94,120 +98,6 @@ fn refresh_with(force: bool) {
             crate::core::AccountsCall::List,
         ));
     }
-}
-
-pub(crate) fn redeem_codex_reset() {
-    let started = STATE.with(|cell| {
-        let mut cell = cell.borrow_mut();
-        let s = cell.as_mut()?;
-        let account_id = s.codex_account_id.clone()?;
-        let retry = s.codex_reset_attempts.contains_key(&account_id);
-        if s.codex_reset_busy
-            || s.busy
-            || s.wanted
-            || (!retry
-                && !s.all.iter().any(|row| {
-                    row.id.as_str() == "codex" && row.reset_count > 0 && row.reset_eligible
-                }))
-        {
-            return None;
-        }
-        s.codex_reset_busy = true;
-        s.codex_reset_error = false;
-        s.codex_reset_message = "Redeeming saved Codex reset…".into();
-        let attempt = s
-            .codex_reset_attempts
-            .entry(account_id.clone())
-            .or_insert_with(|| CodexResetAttempt {
-                idempotency_key: uuid::Uuid::new_v4().to_string(),
-                credit_id: None,
-            })
-            .clone();
-        Some((attempt, account_id, retry))
-    });
-    let Some((attempt, expected_account_id, retry)) = started else {
-        return;
-    };
-    let attempt_account_id = expected_account_id.clone();
-    let retry_credit_id = attempt.credit_id.clone();
-    publish();
-    std::thread::spawn(move || {
-        let result = match tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-        {
-            Ok(runtime) => runtime.block_on(crate::codex_usage::consume_reset(
-                attempt.idempotency_key,
-                expected_account_id,
-                retry,
-                retry_credit_id.clone(),
-            )),
-            Err(error) => Err(crate::codex_usage::ResetError {
-                message: format!("Codex reset runtime: {error}"),
-                preserve_key: retry,
-                credit_id: retry_credit_id.clone(),
-            }),
-        };
-        let clear_attempt = match &result {
-            Ok(_) => true,
-            Err(error) => !error.preserve_key,
-        };
-        let retry_credit_id = result
-            .as_ref()
-            .err()
-            .filter(|error| error.preserve_key)
-            .and_then(|error| error.credit_id.clone());
-        let clear_quota = matches!(
-            &result,
-            Ok(crate::codex_usage::ResetOutcome::Reset)
-                | Ok(crate::codex_usage::ResetOutcome::AlreadyRedeemed)
-        );
-        let _ = slint::invoke_from_event_loop(move || {
-            let (message, error) = match result {
-                Ok(crate::codex_usage::ResetOutcome::Reset) => {
-                    ("Reset applied; refreshing Codex usage.".to_owned(), false)
-                }
-                Ok(crate::codex_usage::ResetOutcome::NothingToReset) => {
-                    ("No covered Codex limit needs a reset yet.".to_owned(), true)
-                }
-                Ok(crate::codex_usage::ResetOutcome::NoCredit) => {
-                    ("No saved Codex reset is available.".to_owned(), true)
-                }
-                Ok(crate::codex_usage::ResetOutcome::UsageStillBlocked) => (
-                    "Codex consumed the reset, but still reports usage blocked. Local quota stays paused.".to_owned(),
-                    true,
-                ),
-                Ok(crate::codex_usage::ResetOutcome::UsageStatusUnavailable) => (
-                    "Codex consumed the reset, but recovery status is unavailable. Local quota stays paused.".to_owned(),
-                    true,
-                ),
-                Ok(crate::codex_usage::ResetOutcome::AlreadyRedeemed) => (
-                    "Reset already applied; refreshing Codex usage.".to_owned(),
-                    false,
-                ),
-                Err(error) => (error.message, true),
-            };
-            STATE.with(|cell| {
-                if let Some(s) = cell.borrow_mut().as_mut() {
-                    s.codex_reset_busy = false;
-                    s.codex_reset_message = message;
-                    s.codex_reset_error = error;
-                    if clear_attempt {
-                        s.codex_reset_attempts.remove(&attempt_account_id);
-                    } else if let Some(credit_id) = retry_credit_id {
-                        if let Some(attempt) = s.codex_reset_attempts.get_mut(&attempt_account_id) {
-                            attempt.credit_id = Some(credit_id);
-                        }
-                    }
-                }
-            });
-            if clear_quota {
-                crate::bridge::send(crate::core::Command::ClearAgentQuota("codex".into()));
-            }
-            publish();
-            refresh_with(true);
-        });
-    });
 }
 
 /// Saved agy accounts (from every `Event::AgyAccounts`); each gets its own usage row.
@@ -440,100 +330,4 @@ async fn fetch_all(list: Vec<Account>, agy: Vec<crate::agy_usage::AgySlot>) -> V
     out.push(codex);
     out.extend(agy);
     out
-}
-
-async fn fetch_one(client: &reqwest::Client, account: Account) -> Fetched {
-    let email = account_email(&account).await;
-    let mut row = fetch_usage(client, account).await;
-    row.email = email;
-    row
-}
-
-/// Email of the Claude account (`oauthAccount.emailAddress` in `.claude.json`): inside the profile folder, or
-/// next to the default `~/.claude` folder.
-async fn account_email(account: &Account) -> String {
-    let mut files = vec![account.dir.join(".claude.json")];
-    if account.id == "claude-code" {
-        if let Some(parent) = account.dir.parent() {
-            files.push(parent.join(".claude.json"));
-        }
-    }
-    for file in files {
-        let Ok(bytes) = tokio::fs::read(&file).await else {
-            continue;
-        };
-        let Ok(json) = serde_json::from_slice::<Value>(&bytes) else {
-            continue;
-        };
-        if let Some(email) = json["oauthAccount"]["emailAddress"]
-            .as_str()
-            .map(str::trim)
-            .filter(|e| !e.is_empty())
-        {
-            return email.to_owned();
-        }
-    }
-    String::new()
-}
-
-async fn fetch_usage(client: &reqwest::Client, account: Account) -> Fetched {
-    let path = account.dir.join(".credentials.json");
-    let bytes = match tokio::fs::read(&path).await {
-        Ok(bytes) => bytes,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            return failed(account, "Not signed in");
-        }
-        Err(_) => return failed(account, "Cannot read login"),
-    };
-    let Ok(json) = serde_json::from_slice::<Value>(&bytes) else {
-        return failed(account, "Cannot read login");
-    };
-    drop(bytes);
-    let oauth = &json["claudeAiOauth"];
-    let plan = oauth["subscriptionType"]
-        .as_str()
-        .map(title_case)
-        .unwrap_or_default();
-    let Some(token) = oauth["accessToken"].as_str().filter(|t| !t.is_empty()) else {
-        return failed(account, "Not signed in");
-    };
-    let expired = oauth["expiresAt"].as_u64().is_some_and(|ms| ms <= now_ms());
-    if expired {
-        let mut row = failed(account, "Login expired; run Claude Code once to refresh it");
-        row.plan = plan;
-        return row;
-    }
-    let response = client
-        .get(USAGE_URL)
-        .bearer_auth(token)
-        .header("anthropic-beta", "oauth-2025-04-20")
-        .header("accept", "application/json")
-        .send()
-        .await;
-    let mut row = failed(account, "");
-    row.plan = plan;
-    let Ok(response) = response else {
-        row.error = "Network error".into();
-        return row;
-    };
-    let status = response.status();
-    if !status.is_success() {
-        row.error = if status.as_u16() == 401 {
-            "Login expired; run Claude Code once to refresh it".into()
-        } else {
-            format!("Usage unavailable (HTTP {})", status.as_u16())
-        };
-        return row;
-    }
-    let Ok(body) = response.json::<Value>().await else {
-        row.error = "Usage unavailable".into();
-        return row;
-    };
-    row.five = window_of(&body["five_hour"]);
-    row.week = window_of(&body["seven_day"]);
-    row.opus = window_of(&body["seven_day_opus"]);
-    if row.five.is_none() && row.week.is_none() {
-        row.error = "Usage unavailable".into();
-    }
-    row
 }

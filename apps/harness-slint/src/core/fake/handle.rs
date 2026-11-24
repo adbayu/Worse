@@ -124,8 +124,6 @@ impl FakeCore {
                 );
                 self.persist_session(&session).await;
             }
-            Command::ClearAgentQuota(_) => {}
-
             Command::SetFallbackOrder(order) => {
                 self.settings.fallback_order = order;
                 self.persist_settings().await;
@@ -188,7 +186,10 @@ impl FakeCore {
             ),
             Command::Settings(call) => self.settings_call(call).await,
             // fake core 不会启动失败，也不产生类型化失败：RetryInit 没有可重试的内容。
-            Command::Shutdown | Command::RetryInit { .. } | Command::StopBackgroundTask { .. } => {}
+            Command::Shutdown
+            | Command::RetryInit { .. }
+            | Command::StopBackgroundTask { .. }
+            | Command::ClearAgentQuota(_) => {}
         }
     }
 }
