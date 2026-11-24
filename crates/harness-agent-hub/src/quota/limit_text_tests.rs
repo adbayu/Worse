@@ -44,6 +44,14 @@ fn clock_reset_rolls_to_tomorrow_when_passed() {
     assert_eq!(at_recent, recent.timestamp());
 }
 
+/// 固定"现在"为 10:00：真实时钟落在 13:31–13:46 时，"刚过去 15 分钟内"规则会返回当前时间，测试随运行时刻失败。
+fn assert_clock_at_1331(message: &str) {
+    let now = Local.with_ymd_and_hms(2026, 11, 24, 10, 0, 0).unwrap();
+    let at = parse_reset_from_text_at(message, now.timestamp()).unwrap();
+    let dt = Local.timestamp_opt(at, 0).unwrap();
+    assert_eq!((dt.hour(), dt.minute()), (13, 31));
+}
+
 #[test]
 fn codex_try_again_at_parsed() {
     let info = AgentErrorInfo {
@@ -52,12 +60,7 @@ fn codex_try_again_at_parsed() {
         data: None,
     };
     match classify_generic(&info, ErrorDialect::Codex) {
-        ErrorClass::QuotaExhausted {
-            resets_at: Some(at),
-        } => {
-            let dt = Local.timestamp_opt(at, 0).unwrap();
-            assert_eq!((dt.hour(), dt.minute()), (13, 31));
-        }
+        ErrorClass::QuotaExhausted { resets_at: Some(_) } => assert_clock_at_1331(&info.message),
         other => panic!("expected quota with reset, got {other:?}"),
     }
 }
@@ -70,12 +73,7 @@ fn codex_try_again_at_with_date_and_url_parsed() {
         data: None,
     };
     match classify_generic(&info, ErrorDialect::Codex) {
-        ErrorClass::QuotaExhausted {
-            resets_at: Some(at),
-        } => {
-            let dt = Local.timestamp_opt(at, 0).unwrap();
-            assert_eq!((dt.hour(), dt.minute()), (13, 31));
-        }
+        ErrorClass::QuotaExhausted { resets_at: Some(_) } => assert_clock_at_1331(&info.message),
         other => panic!("expected quota with reset, got {other:?}"),
     }
 }
