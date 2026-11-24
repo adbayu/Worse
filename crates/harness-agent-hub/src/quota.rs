@@ -24,15 +24,20 @@ pub struct AgentErrorInfo {
 #[must_use]
 pub fn classify_generic(info: &AgentErrorInfo, dialect: ErrorDialect) -> ErrorClass {
     let data = info.data.as_ref();
-    let resets_at = data
+    let mut resets_at = data
         .and_then(find_resets_at)
         .or_else(|| parse_reset_from_text(&info.message));
+    let fallback_5h = || Some(now_secs() + 5 * 3600);
     if let Some(kind) = data
         .and_then(|d| d.get("harnessErrorKind"))
         .and_then(Value::as_str)
     {
         match kind {
-            "quota_exhausted" => return ErrorClass::QuotaExhausted { resets_at },
+            "quota_exhausted" => {
+                return ErrorClass::QuotaExhausted {
+                    resets_at: resets_at.or_else(fallback_5h),
+                }
+            }
             "transient" => {
                 return ErrorClass::Transient {
                     retry_after_secs: data
@@ -49,7 +54,9 @@ pub fn classify_generic(info: &AgentErrorInfo, dialect: ErrorDialect) -> ErrorCl
         if let Some(kind) = info_kind.as_str() {
             match kind {
                 "usageLimitExceeded" | "sessionBudgetExceeded" => {
-                    return ErrorClass::QuotaExhausted { resets_at }
+                    return ErrorClass::QuotaExhausted {
+                        resets_at: resets_at.or_else(fallback_5h),
+                    }
                 }
                 "rateLimitExceeded" | "serverOverloaded" | "internalServerError" => {
                     return ErrorClass::Transient {
@@ -105,6 +112,10 @@ pub fn classify_generic(info: &AgentErrorInfo, dialect: ErrorDialect) -> ErrorCl
         ],
     };
     if quota_markers.iter().any(|m| text.contains(m)) {
+        if resets_at.is_none() && matches!(dialect, ErrorDialect::Codex | ErrorDialect::ClaudeCode)
+        {
+            resets_at = fallback_5h();
+        }
         return ErrorClass::QuotaExhausted { resets_at };
     }
     let transient_markers = [
@@ -162,7 +173,7 @@ fn normalize_epoch(n: i64) -> i64 {
     }
 }
 
-/// `…|<unix>` suffix (Claude Code) or `resets at <ISO-8601>`.
+/// `…|<unix>` suffix (Claude Code) or `resets at <ISO-8601>`, `try again at <clock>`, etc.
 fn parse_reset_from_text(text: &str) -> Option<i64> {
     if let Some((_, tail)) = text.rsplit_once('|') {
         if let Ok(n) = tail.trim().parse::<i64>() {
@@ -170,34 +181,54 @@ fn parse_reset_from_text(text: &str) -> Option<i64> {
         }
     }
     let lower = text.to_ascii_lowercase();
-    if let Some(index) = lower.find("resets at ") {
-        let rest = text.get(index + "resets at ".len()..)?;
-        let token = rest.split_whitespace().next()?;
-        if let Some(n) = parse_epoch_or_iso(token.trim_end_matches(&[')', '.', ','][..])) {
-            return Some(n);
+    for marker in ["resets at ", "resets in ", "try again at ", "resets "] {
+        if let Some(index) = lower.find(marker) {
+            let rest = &lower[index + marker.len()..];
+            if let Some(token) = rest.split_whitespace().next() {
+                let clean = token.trim_end_matches(&[')', '.', ',', ';'][..]);
+                if let Some(n) = parse_epoch_or_iso(clean) {
+                    return Some(n);
+                }
+            }
+            if let Some(n) = parse_clock_from_rest(rest, chrono::Local::now()) {
+                return Some(n);
+            }
         }
     }
-    let index = lower.find("resets ")?;
-    let token = lower
-        .get(index + "resets ".len()..)?
-        .split_whitespace()
-        .next()?;
-    parse_clock(token, chrono::Local::now())
+    None
 }
 
-/// 修复：Claude Code 的 "resets 10:40am (Asia/Bangkok)" 没有被解析，额度耗尽后没有恢复时间。
+fn parse_clock_from_rest(rest: &str, now: chrono::DateTime<chrono::Local>) -> Option<i64> {
+    let mut words = rest.split_whitespace();
+    let first = words.next()?.trim_end_matches(&[')', '.', ',', ';'][..]);
+    if first.ends_with("am") || first.ends_with("pm") {
+        return parse_clock(first, now);
+    }
+    if let Some(second) = words.next() {
+        let second = second.trim_end_matches(&[')', '.', ',', ';'][..]);
+        if second == "am" || second == "pm" {
+            let combined = format!("{first}{second}");
+            return parse_clock(&combined, now);
+        }
+    }
+    parse_clock(first, now)
+}
+
+/// 修复：Claude Code 的 "resets 10:40am (Asia/Bangkok)" 与 Codex 的 "try again at 1:31 PM" 没有被解析，额度耗尽后没有恢复时间。
 /// 按本机时区取下一次出现的该时刻。
 fn parse_clock(token: &str, now: chrono::DateTime<chrono::Local>) -> Option<i64> {
     use chrono::{Duration, NaiveTime, TimeZone};
-    let token = token.trim_end_matches(&[')', '.', ','][..]);
+    let token = token
+        .trim_end_matches(&[')', '.', ',', ';'][..])
+        .to_ascii_lowercase();
     let (clock, pm) = if let Some(c) = token.strip_suffix("pm") {
-        (c, true)
+        (c.trim(), true)
     } else {
-        (token.strip_suffix("am")?, false)
+        (token.strip_suffix("am")?.trim(), false)
     };
     let (hour, minute) = match clock.split_once(':') {
-        Some((h, m)) => (h.parse::<u32>().ok()?, m.parse::<u32>().ok()?),
-        None => (clock.parse::<u32>().ok()?, 0),
+        Some((h, m)) => (h.trim().parse::<u32>().ok()?, m.trim().parse::<u32>().ok()?),
+        None => (clock.trim().parse::<u32>().ok()?, 0),
     };
     if !(1..=12).contains(&hour) {
         return None;
@@ -296,6 +327,16 @@ impl QuotaRegistry {
     /// Sets the state.
     pub fn set(&self, agent: &AgentId, state: QuotaState) {
         if let Ok(mut map) = self.inner.lock() {
+            let state = match state {
+                QuotaState::Exhausted {
+                    resets_at: None,
+                    reason,
+                } => QuotaState::Exhausted {
+                    resets_at: Some(now_secs() + 5 * 3600),
+                    reason,
+                },
+                other => other,
+            };
             map.insert(agent.clone(), state);
         }
     }
@@ -381,5 +422,42 @@ mod limit_text_tests {
                 .unwrap()
                 .timestamp()
         );
+    }
+
+    #[test]
+    fn codex_try_again_at_parsed() {
+        let info = AgentErrorInfo {
+            code: None,
+            message: "You’ve hit your usage limit. Upgrade to Pro, or try again at 1:31 PM.".into(),
+            data: None,
+        };
+        match classify_generic(&info, ErrorDialect::Codex) {
+            ErrorClass::QuotaExhausted {
+                resets_at: Some(at),
+            } => {
+                let dt = Local.timestamp_opt(at, 0).unwrap();
+                assert_eq!((dt.hour(), dt.minute()), (13, 31));
+            }
+            other => panic!("expected quota with reset, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn codex_exhaustion_without_time_falls_back_to_5h() {
+        let info = AgentErrorInfo {
+            code: None,
+            message: "You've hit your usage limit.".into(),
+            data: None,
+        };
+        let before = now_secs();
+        match classify_generic(&info, ErrorDialect::Codex) {
+            ErrorClass::QuotaExhausted {
+                resets_at: Some(at),
+            } => {
+                assert!(at >= before + 5 * 3600 - 5);
+                assert!(at <= before + 5 * 3600 + 5);
+            }
+            other => panic!("expected quota with 5h fallback, got {other:?}"),
+        }
     }
 }

@@ -79,6 +79,8 @@ fn row(id: &str, label: &str, error: &str) -> Fetched {
         five: None,
         week: None,
         opus: None,
+        reset_count: None,
+        reset_eligible: false,
         labels: Default::default(),
         summary: String::new(),
         bars: Vec::new(),

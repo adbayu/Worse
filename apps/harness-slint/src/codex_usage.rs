@@ -12,6 +12,14 @@ use crate::plan_usage::{resets_in, Fetched};
 
 const USAGE_URL: &str = "https://chatgpt.com/backend-api/wham/usage";
 
+#[derive(Clone, Copy)]
+pub(crate) enum ResetOutcome {
+    Reset,
+    NothingToReset,
+    NoCredit,
+    AlreadyRedeemed,
+}
+
 pub(crate) async fn fetch() -> Fetched {
     match tokio::time::timeout(Duration::from_secs(25), fetch_usage()).await {
         Ok(Ok(value)) => row(&value),
@@ -76,6 +84,48 @@ async fn fetch_usage() -> Result<Value, String> {
 }
 
 async fn fetch_app_server() -> Result<Value, String> {
+    let response = app_server_request(json!({
+        "jsonrpc": "2.0", "id": 2, "method": "account/rateLimits/read", "params": {}
+    }))
+    .await?;
+    if response.get("error").is_some() {
+        return Err("Codex app-server usage unavailable".into());
+    }
+    response
+        .get("result")
+        .cloned()
+        .ok_or_else(|| "Codex returned no usage data".into())
+}
+
+pub(crate) async fn consume_reset(idempotency_key: String) -> Result<ResetOutcome, String> {
+    let response = tokio::time::timeout(
+        Duration::from_secs(30),
+        app_server_request(json!({
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "account/rateLimitResetCredit/consume",
+            "params": {"idempotencyKey": idempotency_key}
+        })),
+    )
+    .await
+    .map_err(|_| "Codex reset request timed out".to_owned())??;
+    if response.get("error").is_some() {
+        return Err(response
+            .pointer("/error/message")
+            .and_then(Value::as_str)
+            .unwrap_or("Codex reset request failed")
+            .to_owned());
+    }
+    match response.pointer("/result/outcome").and_then(Value::as_str) {
+        Some("reset") => Ok(ResetOutcome::Reset),
+        Some("nothingToReset") => Ok(ResetOutcome::NothingToReset),
+        Some("noCredit") => Ok(ResetOutcome::NoCredit),
+        Some("alreadyRedeemed") => Ok(ResetOutcome::AlreadyRedeemed),
+        _ => Err("Codex returned an unknown reset result".into()),
+    }
+}
+
+async fn app_server_request(request: Value) -> Result<Value, String> {
     let program = harness_agent_hub::agents::resolve_program("codex")
         .unwrap_or_else(|| PathBuf::from("codex"));
     let mut command = Command::new(program);
@@ -118,19 +168,8 @@ async fn fetch_app_server() -> Result<Value, String> {
         json!({"jsonrpc":"2.0", "method":"initialized", "params":{}}),
     )
     .await?;
-    send(
-        &mut input,
-        json!({"jsonrpc":"2.0", "id":2, "method":"account/rateLimits/read", "params":{}}),
-    )
-    .await?;
-    let result = response(&mut output, 2).await?;
-    if result.get("error").is_some() {
-        return Err("Codex app-server usage unavailable".into());
-    }
-    result
-        .get("result")
-        .cloned()
-        .ok_or_else(|| "Codex returned no usage data".into())
+    send(&mut input, request).await?;
+    response(&mut output, 2).await
 }
 
 async fn send(input: &mut tokio::process::ChildStdin, value: Value) -> Result<(), String> {
@@ -243,6 +282,19 @@ fn row(value: &Value) -> Fetched {
         .or_else(|| limits.get("planType"))
         .and_then(Value::as_str)
         .unwrap_or_default();
+    let reset_count = value
+        .get("rate_limit_reset_credits")
+        .or_else(|| value.get("rateLimitResetCredits"))
+        .and_then(|credits| {
+            credits
+                .get("available_count")
+                .or_else(|| credits.get("availableCount"))
+        })
+        .and_then(Value::as_i64)
+        .filter(|count| *count >= 0)
+        .and_then(|count| i32::try_from(count).ok());
+    let reset_eligible = five.as_ref().is_some_and(|(used, _)| *used > 20.0)
+        || week.as_ref().is_some_and(|(used, _)| *used > 20.0);
     let mut summary = Vec::new();
     if let Some((used, reset)) = &five {
         summary.push(if reset.is_empty() {
@@ -272,6 +324,8 @@ fn row(value: &Value) -> Fetched {
         five,
         week,
         opus: None,
+        reset_count,
+        reset_eligible,
         labels: Default::default(),
         summary: summary.join(" · "),
         bars: Vec::new(),
@@ -288,6 +342,8 @@ fn failed(error: &str) -> Fetched {
         five: None,
         week: None,
         opus: None,
+        reset_count: None,
+        reset_eligible: false,
         labels: Default::default(),
         summary: String::new(),
         bars: Vec::new(),

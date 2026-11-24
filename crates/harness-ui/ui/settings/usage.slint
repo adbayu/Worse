@@ -2,9 +2,11 @@ import { Theme } from "../theme/tokens.slint";
 import { ChatUi } from "../chat/globals.slint";
 import { LimitBar } from "../components/limit_bar.slint";
 import { RCard, Sep, RButton } from "./remote_parts.slint";
+import { ConfirmDialog } from "./parts.slint";
 
 export component UsagePage inherits VerticalLayout {
     in property <bool> stacked;
+    property <bool> confirm-codex-reset;
     spacing: 16px;
     init => {
         ChatUi.usage-action("refreshPlan");
@@ -61,6 +63,35 @@ export component UsagePage inherits VerticalLayout {
                 color: Theme.foreground-subtle;
                 wrap: word-wrap;
             }
+            if p.id == "codex" && p.reset_count >= 0: HorizontalLayout {
+                spacing: 10px;
+                Text {
+                    text: p.reset_text;
+                    font-size: 12px;
+                    color: Theme.foreground-subtle;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                }
+                if p.reset_count > 0: RButton {
+                    text: ChatUi.codex-reset-busy ? "Redeeming…" : "Use saved reset";
+                    enabled: p.reset_eligible && !ChatUi.codex-reset-busy;
+                    clicked => {
+                        root.confirm-codex-reset = true;
+                    }
+                }
+            }
+            if p.id == "codex" && p.reset_count > 0 && !p.reset_eligible: Text {
+                text: "Use it when a covered limit has less than 80% remaining.";
+                font-size: 12px;
+                color: Theme.foreground-subtle;
+                wrap: word-wrap;
+            }
+            if p.id == "codex" && ChatUi.codex-reset-message != "": Text {
+                text: ChatUi.codex-reset-message;
+                font-size: 12px;
+                color: ChatUi.codex-reset-error ? Theme.warning-surface-foreground : Theme.foreground-subtle;
+                wrap: word-wrap;
+            }
             if p.id != "codex" && p.known: LimitBar {
                 label: p.five-label != "" ? p.five-label : "5-hour limit";
                 reset: p.five-reset;
@@ -81,6 +112,19 @@ export component UsagePage inherits VerticalLayout {
                 reset: b.reset;
                 value: b.value;
             }
+        }
+    }
+    if root.confirm-codex-reset: ConfirmDialog {
+        title: "Use one saved Codex reset?";
+        message: "This immediately uses one saved reset and restores eligible Codex limits. It may change your next reset time.";
+        confirm-text: "Use saved reset";
+        destructive: true;
+        close => {
+            root.confirm-codex-reset = false;
+        }
+        confirm => {
+            root.confirm-codex-reset = false;
+            ChatUi.usage-action("redeemCodexReset");
         }
     }
     RCard {

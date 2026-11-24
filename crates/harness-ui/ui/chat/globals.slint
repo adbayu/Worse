@@ -69,6 +69,9 @@ export global ChatUi {
     in property <string> usage-free-text;
     in property <string> usage-free-auto-text;
     callback usage-action(string);
+    in property <bool> codex-reset-busy;
+    in property <string> codex-reset-message;
+    in property <bool> codex-reset-error;
     in-out property <bool> subagents-open: true;
     in-out property <string> subagent-expanded;
     // Right panel Subagents list: false shows only running / waiting subagents, true shows finished ones too.

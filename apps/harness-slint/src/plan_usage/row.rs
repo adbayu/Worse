@@ -24,6 +24,13 @@ pub(super) fn to_row(f: Fetched) -> PlanLimit {
     let (five, five_reset) = f.five.unwrap_or_default();
     let (week, week_reset) = f.week.unwrap_or_default();
     let (opus, opus_reset) = f.opus.clone().unwrap_or_default();
+    let reset_count = f.reset_count.unwrap_or(-1);
+    let reset_text = match reset_count {
+        0 => "No saved resets available".to_owned(),
+        1 => "1 saved reset available".to_owned(),
+        n if n > 1 => format!("{n} saved resets available"),
+        _ => String::new(),
+    };
     PlanLimit {
         id: sv(&f.id),
         label: sv(&f.label),
@@ -38,6 +45,9 @@ pub(super) fn to_row(f: Fetched) -> PlanLimit {
         has_opus: f.opus.is_some(),
         opus: opus / 100.0,
         opus_reset: sv(&opus_reset),
+        reset_count,
+        reset_text: sv(&reset_text),
+        reset_eligible: f.reset_eligible,
         five_label: sv(&f.labels[0]),
         week_label: sv(&f.labels[1]),
         opus_label: sv(&f.labels[2]),

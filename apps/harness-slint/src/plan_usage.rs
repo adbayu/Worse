@@ -7,10 +7,10 @@ use harness_core_api as api;
 use serde_json::Value;
 use slint::ComponentHandle;
 
-use crate::ui::{AppWindow, PlanLimit};
+use crate::ui::{AppWindow, ChatUi, PlanLimit};
 
 mod row;
-use row::{now_ms, title_case, to_row, window_of};
+use row::{now_ms, sv, title_case, to_row, window_of};
 pub(crate) use row::{parse_rfc3339, resets_in};
 
 const USAGE_URL: &str = "https://api.anthropic.com/api/oauth/usage";
@@ -29,6 +29,10 @@ struct State {
     last: Option<Instant>,
     busy: bool,
     wanted: bool,
+    codex_reset_busy: bool,
+    codex_reset_key: Option<String>,
+    codex_reset_message: String,
+    codex_reset_error: bool,
     all: Vec<PlanLimit>,
 }
 
@@ -45,18 +49,26 @@ pub fn install(window: &AppWindow) {
             last: None,
             busy: false,
             wanted: false,
+            codex_reset_busy: false,
+            codex_reset_key: None,
+            codex_reset_message: String::new(),
+            codex_reset_error: false,
             all: Vec::new(),
         });
     });
 }
 
 pub fn refresh() {
+    refresh_with(false);
+}
+
+fn refresh_with(force: bool) {
     let due = STATE.with(|cell| {
         let mut cell = cell.borrow_mut();
         let Some(s) = cell.as_mut() else {
             return false;
         };
-        if s.busy || s.last.is_some_and(|t| t.elapsed() < MIN_INTERVAL) {
+        if s.busy || s.wanted || (!force && s.last.is_some_and(|t| t.elapsed() < MIN_INTERVAL)) {
             return false;
         }
         s.wanted = true;
@@ -70,6 +82,82 @@ pub fn refresh() {
             crate::core::AccountsCall::List,
         ));
     }
+}
+
+pub(crate) fn redeem_codex_reset() {
+    let started = STATE.with(|cell| {
+        let mut cell = cell.borrow_mut();
+        let s = cell.as_mut()?;
+        if s.codex_reset_busy
+            || s.busy
+            || s.wanted
+            || !s
+                .all
+                .iter()
+                .any(|row| row.id.as_str() == "codex" && row.reset_count > 0 && row.reset_eligible)
+        {
+            return None;
+        }
+        s.codex_reset_busy = true;
+        s.codex_reset_error = false;
+        s.codex_reset_message = "Redeeming saved Codex reset…".into();
+        let key = s
+            .codex_reset_key
+            .get_or_insert_with(|| uuid::Uuid::new_v4().to_string())
+            .clone();
+        Some(key)
+    });
+    let Some(idempotency_key) = started else {
+        return;
+    };
+    publish();
+    std::thread::spawn(move || {
+        let result = match tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+        {
+            Ok(runtime) => runtime.block_on(crate::codex_usage::consume_reset(idempotency_key)),
+            Err(error) => Err(format!("Codex reset runtime: {error}")),
+        };
+        let completed = result.is_ok();
+        let refresh = matches!(
+            &result,
+            Ok(crate::codex_usage::ResetOutcome::Reset)
+                | Ok(crate::codex_usage::ResetOutcome::AlreadyRedeemed)
+        );
+        let _ = slint::invoke_from_event_loop(move || {
+            let (message, error) = match result {
+                Ok(crate::codex_usage::ResetOutcome::Reset) => {
+                    ("Reset applied; refreshing Codex usage.".to_owned(), false)
+                }
+                Ok(crate::codex_usage::ResetOutcome::NothingToReset) => {
+                    ("No covered Codex limit needs a reset yet.".to_owned(), true)
+                }
+                Ok(crate::codex_usage::ResetOutcome::NoCredit) => {
+                    ("No saved Codex reset is available.".to_owned(), true)
+                }
+                Ok(crate::codex_usage::ResetOutcome::AlreadyRedeemed) => (
+                    "Reset already applied; refreshing Codex usage.".to_owned(),
+                    false,
+                ),
+                Err(error) => (error, true),
+            };
+            STATE.with(|cell| {
+                if let Some(s) = cell.borrow_mut().as_mut() {
+                    s.codex_reset_busy = false;
+                    s.codex_reset_message = message;
+                    s.codex_reset_error = error;
+                    if completed {
+                        s.codex_reset_key = None;
+                    }
+                }
+            });
+            publish();
+            if refresh {
+                refresh_with(true);
+            }
+        });
+    });
 }
 
 /// Saved agy accounts (from every `Event::AgyAccounts`); each gets its own usage row.
@@ -151,6 +239,8 @@ pub(crate) struct Fetched {
     pub five: Option<(f32, String)>,
     pub week: Option<(f32, String)>,
     pub opus: Option<(f32, String)>,
+    pub reset_count: Option<i32>,
+    pub reset_eligible: bool,
     pub labels: [String; 3],
     pub summary: String,
     pub bars: Vec<(String, f32, String)>,
@@ -216,9 +306,20 @@ fn publish() {
             .filter(|a| a.active)
             .map(|a| a.id.clone())
             .collect();
-        Some((s.window.upgrade()?, s.all.clone(), active))
+        Some((
+            s.window.upgrade()?,
+            s.all.clone(),
+            active,
+            s.codex_reset_busy || s.busy || s.wanted,
+            s.codex_reset_message.clone(),
+            s.codex_reset_error,
+        ))
     });
-    if let Some((window, all, active)) = job {
+    if let Some((window, all, active, busy, message, error)) = job {
+        let chat = window.global::<ChatUi>();
+        chat.set_codex_reset_busy(busy);
+        chat.set_codex_reset_message(sv(&message));
+        chat.set_codex_reset_error(error);
         crate::plan_view::render(&window, &all, &active);
     }
 }
@@ -233,6 +334,8 @@ fn failed(a: Account, error: &str) -> Fetched {
         five: None,
         week: None,
         opus: None,
+        reset_count: None,
+        reset_eligible: false,
         labels: Default::default(),
         summary: String::new(),
         bars: Vec::new(),
