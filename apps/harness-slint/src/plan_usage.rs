@@ -259,6 +259,7 @@ async fn fetch_all(list: Vec<Account>, agy: Vec<crate::agy_usage::AgySlot>) -> V
     for account in list {
         out.push(fetch_one(&client, account).await);
     }
+    out.push(crate::codex_usage::fetch().await);
     out.extend(crate::agy_usage::fetch(&client, &agy).await);
     out
 }
