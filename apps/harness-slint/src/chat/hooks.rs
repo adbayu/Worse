@@ -188,10 +188,30 @@ pub fn open_link(raw: &str) {
     let mut target = target.to_owned();
     if let Ok(url) = url::Url::parse(&target) {
         if url.scheme() == "file" {
-            if url
-                .host_str()
-                .is_some_and(|host| !host.is_empty() && !host.eq_ignore_ascii_case("localhost"))
+            let host = url.host_str();
+            let drive_host = cfg!(windows)
+                && host.is_some_and(|host| {
+                    host.len() == 2
+                        && host.as_bytes()[0].is_ascii_alphabetic()
+                        && host.as_bytes()[1] == b':'
+                });
+            if host.is_some_and(|host| !host.is_empty() && !host.eq_ignore_ascii_case("localhost"))
+                && !drive_host
             {
+                return;
+            }
+            if drive_host {
+                let Some(drive) = host.and_then(|host| host.chars().next()) else {
+                    return;
+                };
+                let file_url = format!("file:///{drive}:{}", url.path());
+                let Some(path) = url::Url::parse(&file_url)
+                    .ok()
+                    .and_then(|url| url.to_file_path().ok())
+                else {
+                    return;
+                };
+                open_path(&path.to_string_lossy());
                 return;
             }
             if let Ok(path) = url.to_file_path() {
