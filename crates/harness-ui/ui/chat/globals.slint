@@ -72,6 +72,8 @@ export global ChatUi {
     in property <bool> codex-reset-busy;
     in property <string> codex-reset-message;
     in property <bool> codex-reset-error;
+    in property <bool> codex-reset-retry;
+    in-out property <bool> codex-reset-confirm-open;
     in-out property <bool> subagents-open: true;
     in-out property <string> subagent-expanded;
     // Right panel Subagents list: false shows only running / waiting subagents, true shows finished ones too.

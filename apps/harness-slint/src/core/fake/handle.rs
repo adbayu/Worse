@@ -124,6 +124,7 @@ impl FakeCore {
                 );
                 self.persist_session(&session).await;
             }
+            Command::ClearAgentQuota(_) => {}
 
             Command::SetFallbackOrder(order) => {
                 self.settings.fallback_order = order;

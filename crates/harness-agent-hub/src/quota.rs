@@ -99,6 +99,7 @@ pub fn classify_generic(info: &AgentErrorInfo, dialect: ErrorDialect) -> ErrorCl
             "usage limit",
             "usagelimitexceeded",
             "hit your usage limit",
+            "session limit",
             "quota",
         ],
         ErrorDialect::Agy | ErrorDialect::Generic => &[
@@ -195,6 +196,36 @@ fn normalize_epoch(n: i64) -> i64 {
 
 /// `…|<unix>` suffix (Claude Code) or `resets at <ISO-8601>`, `try again at <clock>`, etc.
 pub(crate) fn parse_reset_from_text(text: &str) -> Option<i64> {
+    parse_reset_from_text_at(text, now_secs())
+}
+
+pub(crate) fn is_codex_usage_limit_notice(text: &str) -> bool {
+    let text = text.trim_start().to_ascii_lowercase();
+    [
+        "you've hit your usage limit",
+        "you’ve hit your usage limit",
+        "you have hit your usage limit",
+        "you've reached your usage limit",
+        "you’ve reached your usage limit",
+        "you have reached your usage limit",
+        "your usage limit has been reached",
+        "your account has exceeded the usage limit",
+        "usage limit reached",
+        "you've hit your session limit",
+        "you’ve hit your session limit",
+        "you have hit your session limit",
+        "you've reached your session limit",
+        "you’ve reached your session limit",
+        "you have reached your session limit",
+        "session limit reached",
+        "quota exceeded",
+    ]
+    .iter()
+    .any(|prefix| text.starts_with(prefix))
+}
+
+/// Parses a reset deadline relative to the supplied Unix timestamp.
+pub(crate) fn parse_reset_from_text_at(text: &str, now_epoch: i64) -> Option<i64> {
     if let Some((_, tail)) = text.rsplit_once('|') {
         if let Ok(n) = tail.trim().parse::<i64>() {
             return Some(normalize_epoch(n));
@@ -212,7 +243,7 @@ pub(crate) fn parse_reset_from_text(text: &str) -> Option<i64> {
         if let Some(index) = lower.find(marker) {
             let rest = &lower[index + marker.len()..];
             if marker.ends_with("in ") {
-                if let Some(n) = parse_relative_duration(rest) {
+                if let Some(n) = parse_relative_duration(rest, now_epoch) {
                     return Some(n);
                 }
             }
@@ -222,7 +253,9 @@ pub(crate) fn parse_reset_from_text(text: &str) -> Option<i64> {
                     return Some(n);
                 }
             }
-            if let Some(n) = parse_clock_from_rest(rest, chrono::Local::now()) {
+            use chrono::TimeZone;
+            let now = chrono::Local.timestamp_opt(now_epoch, 0).single()?;
+            if let Some(n) = parse_clock_from_rest(rest, now) {
                 return Some(n);
             }
         }
@@ -230,7 +263,7 @@ pub(crate) fn parse_reset_from_text(text: &str) -> Option<i64> {
     None
 }
 
-fn parse_relative_duration(rest: &str) -> Option<i64> {
+fn parse_relative_duration(rest: &str, now_epoch: i64) -> Option<i64> {
     let mut words = rest.split_whitespace();
     let first = words.next()?.trim_end_matches(&[')', '.', ',', ';'][..]);
     if let Some(unit) = first.chars().last() {
@@ -245,7 +278,7 @@ fn parse_relative_duration(rest: &str) -> Option<i64> {
                     _ => 0,
                 };
                 if mult > 0 {
-                    return Some(now_secs() + num.saturating_mul(mult));
+                    return Some(now_epoch + num.saturating_mul(mult));
                 }
             }
         }
@@ -259,7 +292,7 @@ fn parse_relative_duration(rest: &str) -> Option<i64> {
         s if s.starts_with("day") || s == "d" => 86400,
         _ => return None,
     };
-    Some(now_secs() + num.saturating_mul(mult))
+    Some(now_epoch + num.saturating_mul(mult))
 }
 
 fn parse_clock_from_rest(rest: &str, now: chrono::DateTime<chrono::Local>) -> Option<i64> {

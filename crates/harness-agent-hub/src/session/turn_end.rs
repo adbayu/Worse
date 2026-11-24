@@ -66,17 +66,14 @@ impl SessionActor {
             .as_ref()
             .map(|r| r.text.clone())
             .unwrap_or_default();
-        if !partial.is_empty()
-            && (error.message == "Internal error"
-                || !error.message.to_ascii_lowercase().contains("try again"))
-        {
+        let error_is_generic_codex = agent.as_str() == "codex"
+            && error.message.trim().eq_ignore_ascii_case("Internal error");
+        let partial_is_codex_limit = crate::quota::is_codex_usage_limit_notice(&partial);
+        if error_is_generic_codex && partial_is_codex_limit {
             error.message = format!("{}: {}", error.message, partial.trim());
         }
         let class = self.ctx.classify(agent, &error);
-        if let ErrorClass::QuotaExhausted { mut resets_at } = class {
-            if let Some(parsed) = crate::quota::parse_reset_from_text(&partial) {
-                resets_at = Some(parsed);
-            }
+        if let ErrorClass::QuotaExhausted { resets_at } = class {
             let class = ErrorClass::QuotaExhausted { resets_at };
             // Spec §6.4 failover: record the partial attempt, mark the agent exhausted, re-run the same turn.
             self.cancel_pending_permissions();

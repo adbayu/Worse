@@ -18,17 +18,47 @@ pub(crate) enum ResetOutcome {
     NothingToReset,
     NoCredit,
     AlreadyRedeemed,
+    UsageStillBlocked,
+    UsageStatusUnavailable,
+}
+
+pub(crate) struct ResetError {
+    pub message: String,
+    pub preserve_key: bool,
+}
+
+impl ResetError {
+    fn before_consume(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+            preserve_key: false,
+        }
+    }
+
+    fn after_consume(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+            preserve_key: true,
+        }
+    }
+
+    fn retry_preflight(message: impl Into<String>, retry: bool) -> Self {
+        Self {
+            message: message.into(),
+            preserve_key: retry,
+        }
+    }
 }
 
 pub(crate) async fn fetch() -> Fetched {
     match tokio::time::timeout(Duration::from_secs(25), fetch_usage()).await {
-        Ok(Ok(value)) => row(&value),
+        Ok(Ok((value, account_id))) => row(&value, account_id),
         Ok(Err(error)) => failed(&error),
         Err(_) => failed("Codex usage request timed out"),
     }
 }
 
-async fn fetch_usage() -> Result<Value, String> {
+async fn fetch_usage() -> Result<(Value, Option<String>), String> {
     let Ok(path) = auth_path() else {
         return fetch_app_server().await;
     };
@@ -46,6 +76,10 @@ async fn fetch_usage() -> Result<Value, String> {
     else {
         return fetch_app_server().await;
     };
+    let account_id = tokens["account_id"]
+        .as_str()
+        .filter(|id| !id.is_empty())
+        .map(str::to_owned);
 
     let _ = rustls::crypto::ring::default_provider().install_default();
     let client = reqwest::Client::builder()
@@ -77,99 +111,293 @@ async fn fetch_usage() -> Result<Value, String> {
             status.as_u16()
         ));
     }
-    response
+    let value = response
         .json::<Value>()
         .await
-        .map_err(|_| "Codex returned invalid usage data".into())
+        .map_err(|_| "Codex returned invalid usage data")?;
+    Ok((value, account_id))
 }
 
-async fn fetch_app_server() -> Result<Value, String> {
-    let response = app_server_request(json!({
-        "jsonrpc": "2.0", "id": 2, "method": "account/rateLimits/read", "params": {}
-    }))
-    .await?;
+async fn fetch_app_server() -> Result<(Value, Option<String>), String> {
+    let mut app_server = AppServer::start().await?;
+    let response = app_server
+        .request(
+            2,
+            json!({
+                "jsonrpc": "2.0", "id": 2, "method": "account/rateLimits/read", "params": {}
+            }),
+        )
+        .await?;
     if response.get("error").is_some() {
         return Err("Codex app-server usage unavailable".into());
     }
-    response
+    let value = response
         .get("result")
         .cloned()
-        .ok_or_else(|| "Codex returned no usage data".into())
+        .ok_or_else(|| "Codex returned no usage data".to_owned())?;
+    let account_id = value
+        .get("accountId")
+        .or_else(|| value.get("account_id"))
+        .and_then(Value::as_str)
+        .filter(|id| !id.is_empty())
+        .map(str::to_owned);
+    Ok((value, account_id))
 }
 
-pub(crate) async fn consume_reset(idempotency_key: String) -> Result<ResetOutcome, String> {
-    let response = tokio::time::timeout(
-        Duration::from_secs(30),
-        app_server_request(json!({
-            "jsonrpc": "2.0",
-            "id": 2,
-            "method": "account/rateLimitResetCredit/consume",
-            "params": {"idempotencyKey": idempotency_key}
-        })),
+pub(crate) async fn consume_reset(
+    idempotency_key: String,
+    expected_account_id: String,
+    retry: bool,
+) -> Result<ResetOutcome, ResetError> {
+    let mut app_server = tokio::time::timeout(Duration::from_secs(20), AppServer::start())
+        .await
+        .map_err(|_| ResetError::retry_preflight("Codex app-server start timed out", retry))?
+        .map_err(|error| ResetError::retry_preflight(error, retry))?;
+    let rates_response = tokio::time::timeout(
+        Duration::from_secs(20),
+        app_server.request(
+            2,
+            json!({
+                "jsonrpc": "2.0", "id": 2, "method": "account/rateLimits/read", "params": {}
+            }),
+        ),
     )
     .await
-    .map_err(|_| "Codex reset request timed out".to_owned())??;
-    if response.get("error").is_some() {
-        return Err(response
-            .pointer("/error/message")
-            .and_then(Value::as_str)
-            .unwrap_or("Codex reset request failed")
-            .to_owned());
+    .map_err(|_| {
+        ResetError::retry_preflight(
+            "Codex account verification timed out; saved reset was not used",
+            retry,
+        )
+    })?
+    .map_err(|error| ResetError::retry_preflight(error, retry))?;
+    if rates_response.get("error").is_some() {
+        return Err(ResetError::retry_preflight(
+            "Codex account verification failed; saved reset was not used",
+            retry,
+        ));
     }
-    match response.pointer("/result/outcome").and_then(Value::as_str) {
-        Some("reset") => Ok(ResetOutcome::Reset),
-        Some("nothingToReset") => Ok(ResetOutcome::NothingToReset),
-        Some("noCredit") => Ok(ResetOutcome::NoCredit),
-        Some("alreadyRedeemed") => Ok(ResetOutcome::AlreadyRedeemed),
-        _ => Err("Codex returned an unknown reset result".into()),
+    let rates = rates_response.get("result").ok_or_else(|| {
+        ResetError::retry_preflight("Codex account verification returned no usage data", retry)
+    })?;
+    let account_id = rates
+        .get("accountId")
+        .or_else(|| rates.get("account_id"))
+        .and_then(Value::as_str)
+        .filter(|id| !id.is_empty())
+        .ok_or_else(|| {
+            ResetError::retry_preflight(
+                "Cannot verify Codex login; saved reset was not used",
+                retry,
+            )
+        })?;
+    if account_id != expected_account_id {
+        return Err(ResetError::retry_preflight(
+            "Codex login changed since usage was read; saved reset was not used",
+            retry,
+        ));
+    }
+    if !retry {
+        let available = rates
+            .get("rateLimitResetCredits")
+            .or_else(|| rates.get("rate_limit_reset_credits"))
+            .and_then(|credits| {
+                credits
+                    .get("availableCount")
+                    .or_else(|| credits.get("available_count"))
+            })
+            .and_then(Value::as_i64)
+            .ok_or_else(|| ResetError::before_consume("Codex did not report saved reset count"))?;
+        if available <= 0 {
+            return Ok(ResetOutcome::NoCredit);
+        }
+        if !has_eligible_limit(rates) {
+            return Ok(ResetOutcome::NothingToReset);
+        }
+    }
+    let response = tokio::time::timeout(
+        Duration::from_secs(30),
+        app_server.request(
+            3,
+            json!({
+                "jsonrpc": "2.0",
+                "id": 3,
+                "method": "account/rateLimitResetCredit/consume",
+                "params": {"idempotencyKey": idempotency_key}
+            }),
+        ),
+    )
+    .await
+    .map_err(|_| ResetError::after_consume("Codex reset request timed out"))?
+    .map_err(ResetError::after_consume)?;
+    if response.get("error").is_some() {
+        return Err(ResetError::after_consume(
+            response
+                .pointer("/error/message")
+                .and_then(Value::as_str)
+                .unwrap_or("Codex reset request failed"),
+        ));
+    }
+    let outcome = match response.pointer("/result/outcome").and_then(Value::as_str) {
+        Some("reset") => ResetOutcome::Reset,
+        Some("nothingToReset") => return Ok(ResetOutcome::NothingToReset),
+        Some("noCredit") => return Ok(ResetOutcome::NoCredit),
+        Some("alreadyRedeemed") => ResetOutcome::AlreadyRedeemed,
+        _ => {
+            return Err(ResetError::after_consume(
+                "Codex returned an unknown reset result",
+            ));
+        }
+    };
+    let current_response = tokio::time::timeout(
+        Duration::from_secs(20),
+        app_server.request(
+            4,
+            json!({
+                "jsonrpc": "2.0", "id": 4, "method": "account/rateLimits/read", "params": {}
+            }),
+        ),
+    )
+    .await
+    .map_err(|_| ResetError::after_consume("Codex reset applied, but recovery status timed out"))?
+    .map_err(ResetError::after_consume)?;
+    if current_response.get("error").is_some() {
+        return Err(ResetError::after_consume(
+            "Codex reset applied, but recovery status could not be read",
+        ));
+    }
+    let current = current_response.get("result").ok_or_else(|| {
+        ResetError::after_consume("Codex reset applied, but recovery status was missing")
+    })?;
+    let current_account_id = current
+        .get("accountId")
+        .or_else(|| current.get("account_id"))
+        .and_then(Value::as_str);
+    if current_account_id != Some(expected_account_id.as_str()) {
+        return Err(ResetError::after_consume(
+            "Codex reset applied, but the account changed before recovery could be verified",
+        ));
+    }
+    match current
+        .get("ordinaryUsageAllowed")
+        .or_else(|| current.get("ordinary_usage_allowed"))
+        .and_then(Value::as_bool)
+    {
+        Some(true) => Ok(outcome),
+        Some(false) => Ok(ResetOutcome::UsageStillBlocked),
+        None => Ok(ResetOutcome::UsageStatusUnavailable),
     }
 }
 
-async fn app_server_request(request: Value) -> Result<Value, String> {
-    let program = harness_agent_hub::agents::resolve_program("codex")
-        .unwrap_or_else(|| PathBuf::from("codex"));
-    let mut command = Command::new(program);
-    command
-        .args(["app-server", "--stdio"])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .kill_on_drop(true);
-    #[cfg(windows)]
-    command.creation_flags(0x08000000);
-    let mut child = command
-        .spawn()
-        .map_err(|error| format!("Cannot start Codex: {error}"))?;
-    let mut input = child.stdin.take().ok_or("Codex stdin unavailable")?;
-    let output = child.stdout.take().ok_or("Codex stdout unavailable")?;
-    let mut output = BufReader::new(output).lines();
-
-    send(
-        &mut input,
-        json!({
-            "jsonrpc": "2.0", "id": 1, "method": "initialize",
-            "params": {
-                "clientInfo": {
-                    "name": "worse-harness",
-                    "title": "Worse Harness",
-                    "version": env!("CARGO_PKG_VERSION")
-                },
-                "capabilities": {}
-            }
-        }),
-    )
-    .await?;
-    let initialized = response(&mut output, 1).await?;
-    if initialized.get("error").is_some() {
-        return Err("Codex app-server initialization failed".into());
+pub(crate) fn has_eligible_limit(rates: &Value) -> bool {
+    let snapshot_is_eligible = |snapshot: &Value| {
+        [
+            "primary",
+            "primaryWindow",
+            "primary_window",
+            "secondary",
+            "secondaryWindow",
+            "secondary_window",
+        ]
+        .into_iter()
+        .any(|name| {
+            snapshot
+                .get(name)
+                .and_then(|window| {
+                    window
+                        .get("usedPercent")
+                        .or_else(|| window.get("used_percent"))
+                })
+                .and_then(Value::as_f64)
+                .is_some_and(|used| used > 20.0)
+        })
+    };
+    if rates
+        .get("rateLimits")
+        .or_else(|| rates.get("rate_limits"))
+        .or_else(|| rates.get("rate_limit"))
+        .is_some_and(snapshot_is_eligible)
+    {
+        return true;
     }
-    send(
-        &mut input,
-        json!({"jsonrpc":"2.0", "method":"initialized", "params":{}}),
-    )
-    .await?;
-    send(&mut input, request).await?;
-    response(&mut output, 2).await
+    rates
+        .get("rateLimitsByLimitId")
+        .or_else(|| rates.get("rate_limits_by_limit_id"))
+        .and_then(Value::as_object)
+        .is_some_and(|limits| limits.values().any(snapshot_is_eligible))
+        || rates
+            .get("additionalRateLimits")
+            .or_else(|| rates.get("additional_rate_limits"))
+            .and_then(Value::as_array)
+            .is_some_and(|limits| {
+                limits.iter().any(|limit| {
+                    limit
+                        .get("rateLimit")
+                        .or_else(|| limit.get("rate_limit"))
+                        .is_some_and(snapshot_is_eligible)
+                })
+            })
+}
+
+struct AppServer {
+    _child: tokio::process::Child,
+    input: tokio::process::ChildStdin,
+    output: tokio::io::Lines<BufReader<tokio::process::ChildStdout>>,
+}
+
+impl AppServer {
+    async fn start() -> Result<Self, String> {
+        let program = harness_agent_hub::agents::resolve_program("codex")
+            .unwrap_or_else(|| PathBuf::from("codex"));
+        let mut command = Command::new(program);
+        command
+            .args(["app-server", "--stdio"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .kill_on_drop(true);
+        #[cfg(windows)]
+        command.creation_flags(0x08000000);
+        let mut child = command
+            .spawn()
+            .map_err(|error| format!("Cannot start Codex: {error}"))?;
+        let input = child.stdin.take().ok_or("Codex stdin unavailable")?;
+        let output = child.stdout.take().ok_or("Codex stdout unavailable")?;
+        let mut app_server = Self {
+            _child: child,
+            input,
+            output: BufReader::new(output).lines(),
+        };
+        send(
+            &mut app_server.input,
+            json!({
+                "jsonrpc": "2.0", "id": 1, "method": "initialize",
+                "params": {
+                    "clientInfo": {
+                        "name": "worse-harness",
+                        "title": "Worse Harness",
+                        "version": env!("CARGO_PKG_VERSION")
+                    },
+                    "capabilities": {}
+                }
+            }),
+        )
+        .await?;
+        let initialized = response(&mut app_server.output, 1).await?;
+        if initialized.get("error").is_some() {
+            return Err("Codex app-server initialization failed".into());
+        }
+        send(
+            &mut app_server.input,
+            json!({"jsonrpc":"2.0", "method":"initialized", "params":{}}),
+        )
+        .await?;
+        Ok(app_server)
+    }
+
+    async fn request(&mut self, id: u64, request: Value) -> Result<Value, String> {
+        send(&mut self.input, request).await?;
+        response(&mut self.output, id).await
+    }
 }
 
 async fn send(input: &mut tokio::process::ChildStdin, value: Value) -> Result<(), String> {
@@ -213,7 +441,7 @@ fn auth_path() -> Result<PathBuf, String> {
         .ok_or_else(|| "Cannot find Codex login".into())
 }
 
-fn row(value: &Value) -> Fetched {
+fn row(value: &Value, account_id: Option<String>) -> Fetched {
     let limits = value
         .get("rate_limit")
         .or_else(|| {
@@ -305,8 +533,7 @@ fn row(value: &Value) -> Fetched {
         .and_then(Value::as_i64)
         .filter(|count| *count >= 0)
         .and_then(|count| i32::try_from(count).ok());
-    let reset_eligible = five.as_ref().is_some_and(|(used, _)| *used > 20.0)
-        || week.as_ref().is_some_and(|(used, _)| *used > 20.0);
+    let reset_eligible = account_id.is_some() && has_eligible_limit(value);
     let mut summary = Vec::new();
     if let Some((used, reset)) = &five {
         summary.push(if reset.is_empty() {
@@ -325,6 +552,7 @@ fn row(value: &Value) -> Fetched {
     let unavailable = five.is_none() && week.is_none();
     Fetched {
         id: "codex".into(),
+        account_id,
         label: "Codex".into(),
         plan: plan.into(),
         email: String::new(),
@@ -347,6 +575,7 @@ fn row(value: &Value) -> Fetched {
 fn failed(error: &str) -> Fetched {
     Fetched {
         id: "codex".into(),
+        account_id: None,
         label: "Codex".into(),
         plan: String::new(),
         email: String::new(),

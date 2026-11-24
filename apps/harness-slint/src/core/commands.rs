@@ -110,6 +110,7 @@ pub enum Command {
         session: SessionId,
         agent: AgentId,
     },
+    ClearAgentQuota(AgentId),
     SetFallbackOrder(Vec<AgentId>),
     /// Requests the modes / models / efforts an agent advertised (answered by `Event::AgentOptions`, R7).
     AgentOptions(AgentId),

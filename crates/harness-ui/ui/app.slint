@@ -31,7 +31,7 @@ export { ScreenUi, ScreenAct }
 export * from "panels/globals.slint";
 import { SettingsShell, FallbackRow } from "./settings/shell.slint";
 import { SettingsUi, DiffUi, ConfigUi, SkillsUi, DocUi, ShortcutsUi, AgentsUi, AccountRow, AgyAccountRow, ProviderRow, ProjectsUi, ArchiveUi, NavEntry, DiffLine, ResRow, SkillRow, FormField, ShortcutRow, AgentCard, ProjectRow, ArchiveRow, RecallUi, RecallRow, GraphUi, DecisionUi } from "./settings/globals.slint";
-import { SelectOption } from "./settings/parts.slint";
+import { ConfirmDialog, SelectOption } from "./settings/parts.slint";
 import { Labels } from "./settings/labels.slint";
 import { ChatUi, FleetGroup, PaletteRow, ChipRow, ToolPart, OutputRow, UsagePart, PlanLimit, PlanSimple, PlanBar, ChangeRow, PlanRow, GroupRow, ScheduleRow } from "./chat/globals.slint";
 import { TextDialog, SchedulesDialog } from "./chat/turns.slint";
@@ -332,6 +332,10 @@ export component AppWindow inherits Window {
                 }
             }
             if event.text == Key.Escape {
+                if ChatUi.codex-reset-confirm-open {
+                    ChatUi.codex-reset-confirm-open = false;
+                    return accept;
+                }
                 if ChatUi.palette-open {
                     ChatUi.palette-open = false;
                     return accept;
@@ -711,6 +715,19 @@ export component AppWindow inherits Window {
             open-settings => { root.settings-open = true; }
         }
         if AgentsUi.provider-open: ProviderDialog { }
+        if ChatUi.codex-reset-confirm-open: ConfirmDialog {
+            title: "Use one saved Codex reset?";
+            message: "This immediately uses one saved reset and restores eligible Codex limits. It may change your next reset time.";
+            confirm-text: "Use saved reset";
+            destructive: true;
+            close => {
+                ChatUi.codex-reset-confirm-open = false;
+            }
+            confirm => {
+                ChatUi.codex-reset-confirm-open = false;
+                ChatUi.usage-action("redeemCodexReset");
+            }
+        }
     }
 }
 

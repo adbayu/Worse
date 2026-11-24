@@ -40,14 +40,27 @@ pub(crate) fn load_quota(c: &Connection) -> Result<HashMap<AgentId, QuotaState>,
     if get_setting(c, migration)?.is_none() {
         let tx = c.unchecked_transaction()?;
         let now = crate::util::now_secs();
-        let latest_reset: Option<i64> = tx
-            .query_row(
-                "SELECT partial_text FROM turn_attempts WHERE agent_id = 'codex' AND status = 'quotaExhausted' ORDER BY turn_id DESC LIMIT 1",
-                [],
-                |r| r.get::<_, String>(0),
-            )
-            .ok()
-            .and_then(|text| crate::quota::parse_reset_from_text(&text));
+        let reset_sources = {
+            let mut statement = tx.prepare(
+                "SELECT DISTINCT ta.partial_text, aq.updated_at
+                 FROM agent_quota aq
+                 JOIN turn_attempts ta ON ta.agent_id = aq.agent_id
+                 WHERE aq.agent_id = 'codex' AND aq.state = 'exhausted'
+                   AND ta.status = 'quotaExhausted' AND ta.error = aq.reason",
+            )?;
+            let rows = statement
+                .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))?
+                .collect::<Result<Vec<_>, _>>()?;
+            rows
+        };
+        let latest_reset = if reset_sources.len() == 1 {
+            let (text, attempted_at) = &reset_sources[0];
+            crate::quota::is_codex_usage_limit_notice(text)
+                .then(|| crate::quota::parse_reset_from_text_at(text, *attempted_at))
+                .flatten()
+        } else {
+            None
+        };
 
         if let Some(parsed) = latest_reset {
             if parsed <= now {

@@ -72,6 +72,7 @@ fn platform_enum() -> u8 {
 fn row(id: &str, label: &str, error: &str) -> Fetched {
     Fetched {
         id: id.into(),
+        account_id: None,
         label: label.into(),
         plan: String::new(),
         email: String::new(),

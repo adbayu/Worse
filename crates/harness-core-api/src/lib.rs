@@ -117,6 +117,12 @@ pub trait HarnessCore: Send + Sync {
         agent: AgentId,
     ) -> BoxFuture<'_, ApiResult<()>>;
 
+    /// Clears an agent's exhaustion mark and wakes sessions paused by quota exhaustion.
+    fn clear_agent_quota(&self, agent: AgentId) -> BoxFuture<'_, ApiResult<()>> {
+        let _ = agent;
+        unsupported("clear_agent_quota")
+    }
+
     /// Cancels the running turn of a session. Queued turns stay queued.
     fn stop(&self, session_id: SessionId) -> BoxFuture<'_, ApiResult<()>>;
 
