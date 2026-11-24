@@ -23,15 +23,20 @@ pub(crate) fn redeem_codex_reset() {
         }
         s.codex_reset_busy = true;
         s.codex_reset_error = false;
-        s.codex_reset_message = "Redeeming saved Codex reset…".into();
         let attempt = s
             .codex_reset_attempts
             .entry(account_id.clone())
             .or_insert_with(|| CodexResetAttempt {
                 idempotency_key: uuid::Uuid::new_v4().to_string(),
                 credit_id: None,
+                recovery_pending: false,
             })
             .clone();
+        s.codex_reset_message = if attempt.recovery_pending {
+            "Checking Codex reset status…".into()
+        } else {
+            "Redeeming saved Codex reset…".into()
+        };
         Some((attempt, account_id, retry))
     });
     let Some((attempt, expected_account_id, retry)) = started else {
@@ -45,6 +50,9 @@ pub(crate) fn redeem_codex_reset() {
             .enable_all()
             .build()
         {
+            Ok(runtime) if attempt.recovery_pending => {
+                Ok(runtime.block_on(crate::codex_usage::verify_reset(&expected_account_id)))
+            }
             Ok(runtime) => runtime.block_on(crate::codex_usage::consume_reset(
                 attempt.idempotency_key,
                 expected_account_id,
@@ -57,8 +65,9 @@ pub(crate) fn redeem_codex_reset() {
                 credit_id: retry_credit_id.clone(),
             }),
         };
+        let recovery_pending = matches!(&result, Ok(ResetOutcome::RecoveryPending(_)));
         let clear_attempt = match &result {
-            Ok(_) => true,
+            Ok(_) => !recovery_pending,
             Err(error) => !error.preserve_key,
         };
         let retry_credit_id = result
@@ -79,8 +88,11 @@ pub(crate) fn redeem_codex_reset() {
                     s.codex_reset_error = error;
                     if clear_attempt {
                         s.codex_reset_attempts.remove(&attempt_account_id);
-                    } else if let Some(credit_id) = retry_credit_id {
-                        if let Some(attempt) = s.codex_reset_attempts.get_mut(&attempt_account_id) {
+                    } else if let Some(attempt) =
+                        s.codex_reset_attempts.get_mut(&attempt_account_id)
+                    {
+                        attempt.recovery_pending |= recovery_pending;
+                        if let Some(credit_id) = retry_credit_id {
                             attempt.credit_id = Some(credit_id);
                         }
                     }
@@ -110,8 +122,8 @@ fn reset_message(result: Result<ResetOutcome, ResetError>) -> (String, bool) {
             "Codex consumed the reset, but still reports usage blocked. Local quota stays paused.".to_owned(),
             true,
         ),
-        Ok(ResetOutcome::UsageStatusUnavailable) => (
-            "Codex consumed the reset, but recovery status is unavailable. Local quota stays paused.".to_owned(),
+        Ok(ResetOutcome::RecoveryPending(reason)) => (
+            format!("Reset applied, but usage could not be verified. {reason}. Check the reset status again."),
             true,
         ),
         Ok(ResetOutcome::AlreadyRedeemed) => (

@@ -4,7 +4,7 @@ use serde_json::{json, Value};
 
 use std::time::Duration;
 
-use super::{has_eligible_limit, AppServer, ResetError, ResetOutcome};
+use super::{AppServer, ResetError, ResetOutcome};
 
 #[allow(clippy::too_many_lines)]
 pub(crate) async fn consume_reset(
@@ -94,9 +94,6 @@ pub(crate) async fn consume_reset(
         if available <= 0 {
             return Ok(ResetOutcome::NoCredit);
         }
-        if !has_eligible_limit(rates) {
-            return Ok(ResetOutcome::NothingToReset);
-        }
     }
     let credit_id = retry_credit_id
         .or_else(|| available_reset_credit_id(rates))
@@ -142,6 +139,37 @@ pub(crate) async fn consume_reset(
             ));
         }
     };
+    Ok(check_usage_after_reset(&mut app_server, &expected_account_id, outcome).await)
+}
+
+/// Recheck an acknowledged reset without issuing another consumption request.
+pub(crate) async fn verify_reset(expected_account_id: &str) -> ResetOutcome {
+    let mut app_server = match tokio::time::timeout(Duration::from_secs(20), AppServer::start())
+        .await
+    {
+        Ok(Ok(app_server)) => app_server,
+        Ok(Err(error)) => return ResetOutcome::RecoveryPending(error),
+        Err(_) => return ResetOutcome::RecoveryPending("Codex app-server start timed out".into()),
+    };
+    check_usage_after_reset(&mut app_server, expected_account_id, ResetOutcome::Reset).await
+}
+
+async fn check_usage_after_reset(
+    app_server: &mut AppServer,
+    expected_account_id: &str,
+    outcome: ResetOutcome,
+) -> ResetOutcome {
+    match read_usage_allowed(app_server, expected_account_id).await {
+        Ok(true) => outcome,
+        Ok(false) => ResetOutcome::UsageStillBlocked,
+        Err(error) => ResetOutcome::RecoveryPending(error),
+    }
+}
+
+async fn read_usage_allowed(
+    app_server: &mut AppServer,
+    expected_account_id: &str,
+) -> Result<bool, String> {
     let current_response = tokio::time::timeout(
         Duration::from_secs(20),
         app_server.request(
@@ -152,44 +180,25 @@ pub(crate) async fn consume_reset(
         ),
     )
     .await
-    .map_err(|_| {
-        ResetError::after_consume(
-            "Codex reset applied, but recovery status timed out",
-            credit_id.clone(),
-        )
-    })?
-    .map_err(|error| ResetError::after_consume(error, credit_id.clone()))?;
+    .map_err(|_| "Codex usage status request timed out")??;
     if current_response.get("error").is_some() {
-        return Err(ResetError::after_consume(
-            "Codex reset applied, but recovery status could not be read",
-            credit_id.clone(),
-        ));
+        return Err("Codex did not return usage status".into());
     }
-    let current = current_response.get("result").ok_or_else(|| {
-        ResetError::after_consume(
-            "Codex reset applied, but recovery status was missing",
-            credit_id.clone(),
-        )
-    })?;
+    let current = current_response
+        .get("result")
+        .ok_or("Codex usage status was missing")?;
     let current_account_id = current
         .get("accountId")
         .or_else(|| current.get("account_id"))
         .and_then(Value::as_str);
-    if current_account_id != Some(expected_account_id.as_str()) {
-        return Err(ResetError::after_consume(
-            "Codex reset applied, but the account changed before recovery could be verified",
-            credit_id.clone(),
-        ));
+    if current_account_id != Some(expected_account_id) {
+        return Err("Codex login could not be verified".into());
     }
-    match current
+    current
         .get("ordinaryUsageAllowed")
         .or_else(|| current.get("ordinary_usage_allowed"))
         .and_then(Value::as_bool)
-    {
-        Some(true) => Ok(outcome),
-        Some(false) => Ok(ResetOutcome::UsageStillBlocked),
-        None => Ok(ResetOutcome::UsageStatusUnavailable),
-    }
+        .ok_or_else(|| "Codex did not report whether usage is allowed".into())
 }
 
 fn available_reset_credit_id(rates: &Value) -> Option<String> {

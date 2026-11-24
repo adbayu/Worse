@@ -29,6 +29,7 @@ struct Account {
 struct CodexResetAttempt {
     idempotency_key: String,
     credit_id: Option<String>,
+    recovery_pending: bool,
 }
 
 #[allow(clippy::struct_excessive_bools)]
@@ -252,23 +253,26 @@ fn publish() {
             .filter(|a| a.active)
             .map(|a| a.id.clone())
             .collect();
+        let reset_attempt = s
+            .codex_account_id
+            .as_ref()
+            .and_then(|id| s.codex_reset_attempts.get(id));
         Some((
             s.window.upgrade()?,
             s.all.clone(),
             active,
             s.codex_reset_busy || s.busy || s.wanted,
-            s.codex_account_id
-                .as_ref()
-                .is_some_and(|id| s.codex_reset_attempts.contains_key(id))
-                && !s.codex_reset_busy,
+            reset_attempt.is_some(),
+            reset_attempt.is_some_and(|attempt| attempt.recovery_pending),
             s.codex_reset_message.clone(),
             s.codex_reset_error,
         ))
     });
-    if let Some((window, all, active, busy, retry, message, error)) = job {
+    if let Some((window, all, active, busy, retry, recovery_pending, message, error)) = job {
         let chat = window.global::<ChatUi>();
         chat.set_codex_reset_busy(busy);
         chat.set_codex_reset_retry(retry);
+        chat.set_codex_reset_check(recovery_pending);
         chat.set_codex_reset_message(sv(&message));
         chat.set_codex_reset_error(error);
         crate::plan_view::render(&window, &all, &active);

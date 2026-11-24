@@ -33,10 +33,11 @@ pub struct AgentErrorInfo {
 #[allow(clippy::too_many_lines)]
 pub fn classify_generic(info: &AgentErrorInfo, dialect: ErrorDialect) -> ErrorClass {
     let data = info.data.as_ref();
-    let mut resets_at = data
+    let resets_at = data
         .and_then(find_resets_at)
         .or_else(|| parse_reset_from_text(&info.message));
-    let fallback_5h = || Some(now_secs() + CODEX_USAGE_LIMIT_WINDOW_SECS);
+    let fallback_5h =
+        || (dialect == ErrorDialect::Codex).then(|| now_secs() + CODEX_USAGE_LIMIT_WINDOW_SECS);
     if let Some(kind) = data
         .and_then(|d| d.get("harnessErrorKind"))
         .and_then(Value::as_str)
@@ -122,11 +123,9 @@ pub fn classify_generic(info: &AgentErrorInfo, dialect: ErrorDialect) -> ErrorCl
         ],
     };
     if quota_markers.iter().any(|m| text.contains(m)) {
-        if resets_at.is_none() && matches!(dialect, ErrorDialect::Codex | ErrorDialect::ClaudeCode)
-        {
-            resets_at = fallback_5h();
-        }
-        return ErrorClass::QuotaExhausted { resets_at };
+        return ErrorClass::QuotaExhausted {
+            resets_at: resets_at.or_else(fallback_5h),
+        };
     }
     let transient_markers = [
         "rate limit",
@@ -169,24 +168,27 @@ fn find_resets_at(data: &Value) -> Option<i64> {
         "retry_after",
         "retryAfter",
     ] {
-        if let Some(value) = find_key(data, key) {
-            if key == "reset_after_seconds"
-                || key == "resetAfterSeconds"
-                || key == "retry_after"
-                || key == "retryAfter"
-            {
-                if let Some(secs) = value.as_i64() {
+        let Some(value) = find_key(data, key) else {
+            continue;
+        };
+        if matches!(
+            key,
+            "reset_after_seconds" | "resetAfterSeconds" | "retry_after" | "retryAfter"
+        ) {
+            let text = value.as_str().map(str::trim);
+            if let Some(secs) = value.as_i64().or_else(|| text?.parse::<i64>().ok()) {
+                if secs >= 0 {
                     return Some(now_secs().saturating_add(secs));
                 }
+            } else if let Some(at) = text.and_then(parse_iso8601_utc) {
+                return Some(at);
             }
-            if let Some(n) = value.as_i64() {
-                return Some(normalize_epoch(n));
-            }
-            if let Some(s) = value.as_str() {
-                if let Some(n) = parse_epoch_or_iso(s) {
-                    return Some(n);
-                }
-            }
+        } else if let Some(at) = value
+            .as_i64()
+            .map(normalize_epoch)
+            .or_else(|| value.as_str().and_then(parse_epoch_or_iso))
+        {
+            return Some(at);
         }
     }
     None
@@ -262,16 +264,6 @@ impl QuotaRegistry {
     /// Sets the state.
     pub fn set(&self, agent: &AgentId, state: QuotaState) {
         if let Ok(mut map) = self.inner.lock() {
-            let state = match state {
-                QuotaState::Exhausted {
-                    resets_at: None,
-                    reason,
-                } => QuotaState::Exhausted {
-                    resets_at: Some(now_secs() + 5 * 3600),
-                    reason,
-                },
-                other => other,
-            };
             map.insert(agent.clone(), state);
         }
     }

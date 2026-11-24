@@ -11,18 +11,17 @@ mod app_server;
 mod reset;
 
 use app_server::AppServer;
-pub(crate) use reset::consume_reset;
+pub(crate) use reset::{consume_reset, verify_reset};
 
 const USAGE_URL: &str = "https://chatgpt.com/backend-api/wham/usage";
 
-#[derive(Clone, Copy)]
 pub(crate) enum ResetOutcome {
     Reset,
     NothingToReset,
     NoCredit,
     AlreadyRedeemed,
     UsageStillBlocked,
-    UsageStatusUnavailable,
+    RecoveryPending(String),
 }
 
 pub(crate) struct ResetError {
@@ -151,56 +150,6 @@ async fn fetch_app_server() -> Result<(Value, Option<String>), String> {
     Ok((value, account_id))
 }
 
-pub(crate) fn has_eligible_limit(rates: &Value) -> bool {
-    let snapshot_is_eligible = |snapshot: &Value| {
-        [
-            "primary",
-            "primaryWindow",
-            "primary_window",
-            "secondary",
-            "secondaryWindow",
-            "secondary_window",
-        ]
-        .into_iter()
-        .any(|name| {
-            snapshot
-                .get(name)
-                .and_then(|window| {
-                    window
-                        .get("usedPercent")
-                        .or_else(|| window.get("used_percent"))
-                })
-                .and_then(Value::as_f64)
-                .is_some_and(|used| used > 20.0)
-        })
-    };
-    if rates
-        .get("rateLimits")
-        .or_else(|| rates.get("rate_limits"))
-        .or_else(|| rates.get("rate_limit"))
-        .is_some_and(snapshot_is_eligible)
-    {
-        return true;
-    }
-    rates
-        .get("rateLimitsByLimitId")
-        .or_else(|| rates.get("rate_limits_by_limit_id"))
-        .and_then(Value::as_object)
-        .is_some_and(|limits| limits.values().any(snapshot_is_eligible))
-        || rates
-            .get("additionalRateLimits")
-            .or_else(|| rates.get("additional_rate_limits"))
-            .and_then(Value::as_array)
-            .is_some_and(|limits| {
-                limits.iter().any(|limit| {
-                    limit
-                        .get("rateLimit")
-                        .or_else(|| limit.get("rate_limit"))
-                        .is_some_and(snapshot_is_eligible)
-                })
-            })
-}
-
 fn auth_path() -> Result<PathBuf, String> {
     if let Some(home) = std::env::var_os("CODEX_HOME").filter(|path| !path.is_empty()) {
         return Ok(PathBuf::from(home).join("auth.json"));
@@ -225,14 +174,18 @@ fn row(value: &Value, account_id: Option<String>) -> Fetched {
         .unwrap_or(value);
     let primary = limits
         .get("primary_window")
+        .or_else(|| limits.get("primaryWindow"))
         .or_else(|| limits.get("primary"));
     let secondary = limits
         .get("secondary_window")
+        .or_else(|| limits.get("secondaryWindow"))
         .or_else(|| limits.get("secondary"));
+
     let mut five = None;
     let mut week = None;
-    for (position, window) in [("primary", primary), ("secondary", secondary)] {
-        let Some(window) = window.filter(|value| value.is_object()) else {
+    let mut without_duration = [None, None];
+    for (position, window) in [primary, secondary].into_iter().enumerate() {
+        let Some(window) = window else {
             continue;
         };
         let Some(used) = window
@@ -244,21 +197,15 @@ fn row(value: &Value, account_id: Option<String>) -> Fetched {
         };
         let duration = window
             .get("limit_window_seconds")
+            .or_else(|| window.get("limitWindowSeconds"))
             .and_then(Value::as_i64)
             .or_else(|| {
                 window
                     .get("windowDurationMins")
+                    .or_else(|| window.get("window_duration_mins"))
                     .and_then(Value::as_i64)
                     .map(|minutes| minutes.saturating_mul(60))
             });
-        // Duration identifies windows even when Codex returns them in reverse order.
-        let target = match duration {
-            Some(18_000) => &mut five,
-            Some(604_800) => &mut week,
-            Some(_) => continue,
-            None if position == "primary" => &mut five,
-            None => &mut week,
-        };
         let reset = window
             .get("reset_at")
             .or_else(|| window.get("resetsAt"))
@@ -286,7 +233,21 @@ fn row(value: &Value, account_id: Option<String>) -> Fetched {
         } else {
             reset.map(resets_in).unwrap_or_default()
         };
-        *target = Some((used_val, reset_label));
+        let slot = match duration {
+            Some(18_000) => &mut five,
+            Some(604_800) => &mut week,
+            Some(_) => continue,
+            None => &mut without_duration[position],
+        };
+        slot.get_or_insert((used_val, reset_label));
+    }
+
+    // A window without a duration may fill an empty slot but cannot replace an explicit match.
+    match (five.is_some(), week.is_some()) {
+        (false, false) => [five, week] = without_duration,
+        (false, true) => five = without_duration.into_iter().flatten().next(),
+        (true, false) => week = without_duration.into_iter().flatten().next(),
+        (true, true) => {}
     }
     let plan = value
         .get("plan_type")
@@ -305,7 +266,7 @@ fn row(value: &Value, account_id: Option<String>) -> Fetched {
         .and_then(Value::as_i64)
         .filter(|count| *count >= 0)
         .and_then(|count| i32::try_from(count).ok());
-    let reset_eligible = account_id.is_some() && has_eligible_limit(value);
+    let reset_eligible = account_id.is_some();
     let mut summary = Vec::new();
     if let Some((used, reset)) = &five {
         summary.push(if reset.is_empty() {
@@ -360,5 +321,53 @@ fn failed(error: &str) -> Fetched {
         labels: Default::default(),
         summary: String::new(),
         bars: Vec::new(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::row;
+    use serde_json::json;
+
+    #[test]
+    fn duration_metadata_wins_over_window_position() {
+        for (primary, secondary, expected) in [
+            (Some(300), Some(10_080), (Some(20.0), Some(80.0))),
+            (Some(10_080), Some(300), (Some(80.0), Some(20.0))),
+            (Some(10_080), None, (Some(80.0), Some(20.0))),
+            (None, Some(300), (Some(80.0), Some(20.0))),
+            (None, None, (Some(20.0), Some(80.0))),
+            (Some(60), Some(300), (Some(80.0), None)),
+            (Some(60), None, (None, Some(80.0))),
+            (Some(300), Some(300), (Some(20.0), None)),
+        ] {
+            let result = row(
+                &json!({
+                    "rateLimits": {
+                        "primary": { "usedPercent": 20, "windowDurationMins": primary },
+                        "secondary": { "usedPercent": 80, "windowDurationMins": secondary }
+                    }
+                }),
+                None,
+            );
+            assert_eq!(
+                (
+                    result.five.map(|(used, _)| used),
+                    result.week.map(|(used, _)| used)
+                ),
+                expected,
+                "primary duration {primary:?}, secondary duration {secondary:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn reset_request_requires_account_but_no_local_usage_threshold() {
+        let data = json!({
+            "rateLimits": { "primary": { "usedPercent": 5 } },
+            "rateLimitResetCredits": { "availableCount": 1 }
+        });
+        assert!(!row(&data, None).reset_eligible);
+        assert!(row(&data, Some("test-account".into())).reset_eligible);
     }
 }
