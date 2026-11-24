@@ -20,6 +20,7 @@ mod board;
 mod board_sync;
 mod bus;
 pub mod catchup;
+mod codex_delegate;
 pub mod config;
 mod context;
 pub mod decision;

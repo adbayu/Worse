@@ -96,6 +96,12 @@ impl SessionActor {
         {
             blocks.push(text_block(hint));
         }
+        if let Some(hint) =
+            crate::codex_delegate::hint(&self.ctx, agent, &self.row.id, fresh, &turn.user_text)
+                .await
+        {
+            blocks.push(text_block(hint));
+        }
         let mut user = None;
         if let Some((name, input)) = crate::hub_chat::skill_call(&turn.user_text) {
             if let Some(skill) = crate::hub_chat::harness_skills(&self.ctx)
