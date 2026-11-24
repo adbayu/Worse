@@ -96,10 +96,7 @@ impl SessionActor {
         {
             blocks.push(text_block(hint));
         }
-        if let Some(hint) =
-            crate::codex_delegate::hint(&self.ctx, agent, &self.row.id, fresh, &turn.user_text)
-                .await
-        {
+        if let Some(hint) = crate::codex_delegate::hint(&self.ctx, agent, &self.row.id).await {
             blocks.push(text_block(hint));
         }
         let mut user = None;

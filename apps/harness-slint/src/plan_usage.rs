@@ -26,6 +26,7 @@ struct Account {
 struct CodexResetAttempt {
     idempotency_key: String,
     credit_id: Option<String>,
+    recovery_pending: bool,
 }
 
 struct State {
@@ -114,15 +115,20 @@ pub(crate) fn redeem_codex_reset() {
         }
         s.codex_reset_busy = true;
         s.codex_reset_error = false;
-        s.codex_reset_message = "Redeeming saved Codex reset…".into();
         let attempt = s
             .codex_reset_attempts
             .entry(account_id.clone())
             .or_insert_with(|| CodexResetAttempt {
                 idempotency_key: uuid::Uuid::new_v4().to_string(),
                 credit_id: None,
+                recovery_pending: false,
             })
             .clone();
+        s.codex_reset_message = if attempt.recovery_pending {
+            "Checking Codex reset status…".into()
+        } else {
+            "Redeeming saved Codex reset…".into()
+        };
         Some((attempt, account_id, retry))
     });
     let Some((attempt, expected_account_id, retry)) = started else {
@@ -136,6 +142,9 @@ pub(crate) fn redeem_codex_reset() {
             .enable_all()
             .build()
         {
+            Ok(runtime) if attempt.recovery_pending => {
+                Ok(runtime.block_on(crate::codex_usage::verify_reset(&expected_account_id)))
+            }
             Ok(runtime) => runtime.block_on(crate::codex_usage::consume_reset(
                 attempt.idempotency_key,
                 expected_account_id,
@@ -148,8 +157,12 @@ pub(crate) fn redeem_codex_reset() {
                 credit_id: retry_credit_id.clone(),
             }),
         };
+        let recovery_pending = matches!(
+            &result,
+            Ok(crate::codex_usage::ResetOutcome::RecoveryPending(_))
+        );
         let clear_attempt = match &result {
-            Ok(_) => true,
+            Ok(_) => !recovery_pending,
             Err(error) => !error.preserve_key,
         };
         let retry_credit_id = result
@@ -177,8 +190,8 @@ pub(crate) fn redeem_codex_reset() {
                     "Codex consumed the reset, but still reports usage blocked. Local quota stays paused.".to_owned(),
                     true,
                 ),
-                Ok(crate::codex_usage::ResetOutcome::UsageStatusUnavailable) => (
-                    "Codex consumed the reset, but recovery status is unavailable. Local quota stays paused.".to_owned(),
+                Ok(crate::codex_usage::ResetOutcome::RecoveryPending(reason)) => (
+                    format!("Reset applied, but usage could not be verified. {reason}. Check the reset status again."),
                     true,
                 ),
                 Ok(crate::codex_usage::ResetOutcome::AlreadyRedeemed) => (
@@ -194,8 +207,11 @@ pub(crate) fn redeem_codex_reset() {
                     s.codex_reset_error = error;
                     if clear_attempt {
                         s.codex_reset_attempts.remove(&attempt_account_id);
-                    } else if let Some(credit_id) = retry_credit_id {
-                        if let Some(attempt) = s.codex_reset_attempts.get_mut(&attempt_account_id) {
+                    } else if let Some(attempt) =
+                        s.codex_reset_attempts.get_mut(&attempt_account_id)
+                    {
+                        attempt.recovery_pending |= recovery_pending;
+                        if let Some(credit_id) = retry_credit_id {
                             attempt.credit_id = Some(credit_id);
                         }
                     }
@@ -362,23 +378,26 @@ fn publish() {
             .filter(|a| a.active)
             .map(|a| a.id.clone())
             .collect();
+        let reset_attempt = s
+            .codex_account_id
+            .as_ref()
+            .and_then(|id| s.codex_reset_attempts.get(id));
         Some((
             s.window.upgrade()?,
             s.all.clone(),
             active,
             s.codex_reset_busy || s.busy || s.wanted,
-            s.codex_account_id
-                .as_ref()
-                .is_some_and(|id| s.codex_reset_attempts.contains_key(id))
-                && !s.codex_reset_busy,
+            reset_attempt.is_some(),
+            reset_attempt.is_some_and(|attempt| attempt.recovery_pending),
             s.codex_reset_message.clone(),
             s.codex_reset_error,
         ))
     });
-    if let Some((window, all, active, busy, retry, message, error)) = job {
+    if let Some((window, all, active, busy, retry, recovery_pending, message, error)) = job {
         let chat = window.global::<ChatUi>();
         chat.set_codex_reset_busy(busy);
         chat.set_codex_reset_retry(retry);
+        chat.set_codex_reset_check(recovery_pending);
         chat.set_codex_reset_message(sv(&message));
         chat.set_codex_reset_error(error);
         crate::plan_view::render(&window, &all, &active);

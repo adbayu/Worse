@@ -1,5 +1,6 @@
 //! Keeps Codex orchestrator sessions on Harness-managed Orchestra delegation.
 
+use harness_agent_config::AgentKind;
 use harness_core_api::{AgentId, Orchestra, SessionId};
 
 use crate::hub::HubCtx;
@@ -9,34 +10,21 @@ When the user asks to spawn, use or deploy subagents, delegate work, split work 
 Do not use Codex's built-in subagent or `spawn_agent` tools for this: they create Codex-native children outside the user's Harness Orchestra. If `harness-delegate` or `delegate` is unavailable or returns an error, report that exact error; do not silently do the delegated task yourself.\n\
 </harness-subagents>";
 
-const TRIGGERS: [&str; 12] = [
-    "subagent",
-    "sub-agent",
-    "sub agent",
-    "delegate",
-    "delegasi",
-    "spawn",
-    "agent lain",
-    "agen lain",
-    "other agent",
-    "another agent",
-    "parallel",
-    "paralel",
-];
+/// Identifies whether `agent` is a Codex agent.
+pub(crate) fn is_codex(ctx: &HubCtx, agent: &AgentId) -> bool {
+    agent.as_str() == "codex" || ctx.config.agent_kinds.get(agent) == Some(&AgentKind::Codex)
+}
 
 /// Adds explicit Harness delegation instructions to Codex orchestrator prompts.
 pub(crate) async fn hint(
     ctx: &HubCtx,
     agent: &AgentId,
     session: &SessionId,
-    fresh: bool,
-    user_text: &str,
 ) -> Option<&'static str> {
-    if agent.as_str() != "codex"
+    if !is_codex(ctx, agent)
         || ctx.subagents.endpoint.get().is_none()
         || ctx.subagents.is_child(session)
         || ctx.routers.is_router(session)
-        || !(fresh || mentions(user_text))
     {
         return None;
     }
@@ -52,9 +40,4 @@ pub(crate) async fn hint(
         .orchestrator()
         .is_some_and(|node| &node.agent == agent)
         .then_some(HINT)
-}
-
-fn mentions(text: &str) -> bool {
-    let text = text.to_lowercase();
-    TRIGGERS.iter().any(|word| text.contains(word))
 }

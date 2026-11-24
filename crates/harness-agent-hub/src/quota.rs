@@ -26,10 +26,11 @@ pub struct AgentErrorInfo {
 #[must_use]
 pub fn classify_generic(info: &AgentErrorInfo, dialect: ErrorDialect) -> ErrorClass {
     let data = info.data.as_ref();
-    let mut resets_at = data
+    let resets_at = data
         .and_then(find_resets_at)
         .or_else(|| parse_reset_from_text(&info.message));
-    let fallback_5h = || Some(now_secs() + CODEX_USAGE_LIMIT_WINDOW_SECS);
+    let fallback_5h =
+        || (dialect == ErrorDialect::Codex).then(|| now_secs() + CODEX_USAGE_LIMIT_WINDOW_SECS);
     if let Some(kind) = data
         .and_then(|d| d.get("harnessErrorKind"))
         .and_then(Value::as_str)
@@ -115,11 +116,9 @@ pub fn classify_generic(info: &AgentErrorInfo, dialect: ErrorDialect) -> ErrorCl
         ],
     };
     if quota_markers.iter().any(|m| text.contains(m)) {
-        if resets_at.is_none() && matches!(dialect, ErrorDialect::Codex | ErrorDialect::ClaudeCode)
-        {
-            resets_at = fallback_5h();
-        }
-        return ErrorClass::QuotaExhausted { resets_at };
+        return ErrorClass::QuotaExhausted {
+            resets_at: resets_at.or_else(fallback_5h),
+        };
     }
     let transient_markers = [
         "rate limit",
@@ -162,24 +161,27 @@ fn find_resets_at(data: &Value) -> Option<i64> {
         "retry_after",
         "retryAfter",
     ] {
-        if let Some(value) = find_key(data, key) {
-            if key == "reset_after_seconds"
-                || key == "resetAfterSeconds"
-                || key == "retry_after"
-                || key == "retryAfter"
-            {
-                if let Some(secs) = value.as_i64() {
+        let Some(value) = find_key(data, key) else {
+            continue;
+        };
+        if matches!(
+            key,
+            "reset_after_seconds" | "resetAfterSeconds" | "retry_after" | "retryAfter"
+        ) {
+            let text = value.as_str().map(str::trim);
+            if let Some(secs) = value.as_i64().or_else(|| text?.parse::<i64>().ok()) {
+                if secs >= 0 {
                     return Some(now_secs().saturating_add(secs));
                 }
+            } else if let Some(at) = text.and_then(parse_iso8601_utc) {
+                return Some(at);
             }
-            if let Some(n) = value.as_i64() {
-                return Some(normalize_epoch(n));
-            }
-            if let Some(s) = value.as_str() {
-                if let Some(n) = parse_epoch_or_iso(s) {
-                    return Some(n);
-                }
-            }
+        } else if let Some(at) = value
+            .as_i64()
+            .map(normalize_epoch)
+            .or_else(|| value.as_str().and_then(parse_epoch_or_iso))
+        {
+            return Some(at);
         }
     }
     None
@@ -546,16 +548,6 @@ impl QuotaRegistry {
     /// Sets the state.
     pub fn set(&self, agent: &AgentId, state: QuotaState) {
         if let Ok(mut map) = self.inner.lock() {
-            let state = match state {
-                QuotaState::Exhausted {
-                    resets_at: None,
-                    reason,
-                } => QuotaState::Exhausted {
-                    resets_at: Some(now_secs() + 5 * 3600),
-                    reason,
-                },
-                other => other,
-            };
             map.insert(agent.clone(), state);
         }
     }
@@ -728,5 +720,100 @@ mod limit_text_tests {
             }
             other => panic!("expected quota with 5h fallback, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn harness_error_quota_exhausted_fallback_only_for_codex() {
+        let info = AgentErrorInfo {
+            code: None,
+            message: "Quota exceeded".into(),
+            data: Some(serde_json::json!({
+                "harnessErrorKind": "quota_exhausted"
+            })),
+        };
+        let before = now_secs();
+        match classify_generic(&info, ErrorDialect::Codex) {
+            ErrorClass::QuotaExhausted {
+                resets_at: Some(at),
+            } => {
+                assert!(at >= before + CODEX_USAGE_LIMIT_WINDOW_SECS - 5);
+                assert!(at <= before + CODEX_USAGE_LIMIT_WINDOW_SECS + 5);
+            }
+            other => panic!("expected Codex quota with 5h fallback, got {other:?}"),
+        }
+
+        for non_codex in [
+            ErrorDialect::ClaudeCode,
+            ErrorDialect::Agy,
+            ErrorDialect::Generic,
+        ] {
+            match classify_generic(&info, non_codex) {
+                ErrorClass::QuotaExhausted { resets_at: None } => {}
+                other => panic!("expected indefinite quota for {non_codex:?}, got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn claude_exhaustion_without_time_is_indefinite() {
+        let info = AgentErrorInfo {
+            code: None,
+            message: "You've hit your usage limit.".into(),
+            data: None,
+        };
+        match classify_generic(&info, ErrorDialect::ClaudeCode) {
+            ErrorClass::QuotaExhausted { resets_at: None } => {}
+            other => panic!("expected indefinite quota for ClaudeCode, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn quota_registry_set_preserves_indefinite_exhaustion() {
+        let registry = QuotaRegistry::default();
+        let agent = AgentId::new("claude-code");
+        let indefinite = QuotaState::Exhausted {
+            resets_at: None,
+            reason: "monthly limit".into(),
+        };
+        registry.set(&agent, indefinite.clone());
+        assert_eq!(registry.get(&agent), indefinite);
+    }
+
+    #[test]
+    fn find_resets_at_parses_string_numeric_relative_and_preserves_absolute() {
+        let now = now_secs();
+
+        for (data, secs) in [
+            (serde_json::json!({ "retry_after": "120" }), 120),
+            (serde_json::json!({ "reset_after_seconds": "3600" }), 3600),
+            (serde_json::json!({ "retry_after": 60 }), 60),
+        ] {
+            assert!(find_resets_at(&data)
+                .is_some_and(|at| { (now + secs..=now_secs() + secs).contains(&at) }));
+        }
+
+        // Negative retry_after is rejected (not relative, and not epoch)
+        let data = serde_json::json!({ "retry_after": "-10" });
+        assert_eq!(find_resets_at(&data), None);
+        let data = serde_json::json!({ "retry_after": -10 });
+        assert_eq!(find_resets_at(&data), None);
+
+        // Genuine absolute ISO string in retry_after
+        let data = serde_json::json!({ "retry_after": "2026-11-24T15:00:00Z" });
+        assert_eq!(
+            find_resets_at(&data),
+            parse_iso8601_utc("2026-11-24T15:00:00Z")
+        );
+
+        // Genuine absolute epoch and ISO in resetsAt
+        let data = serde_json::json!({ "resetsAt": 1732450000 });
+        assert_eq!(find_resets_at(&data), Some(1732450000));
+        let data = serde_json::json!({ "resetsAt": "1732450000" });
+        assert_eq!(find_resets_at(&data), Some(1732450000));
+        let data = serde_json::json!({ "resetsAt": "2026-11-24T15:00:00Z" });
+        assert_eq!(
+            find_resets_at(&data),
+            parse_iso8601_utc("2026-11-24T15:00:00Z")
+        );
     }
 }
