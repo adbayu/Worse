@@ -29,7 +29,7 @@ pub fn classify_generic(info: &AgentErrorInfo, dialect: ErrorDialect) -> ErrorCl
     let mut resets_at = data
         .and_then(find_resets_at)
         .or_else(|| parse_reset_from_text(&info.message));
-    let fallback_5h = || Some(now_secs() + 5 * 3600);
+    let fallback_5h = || Some(now_secs() + CODEX_USAGE_LIMIT_WINDOW_SECS);
     if let Some(kind) = data
         .and_then(|d| d.get("harnessErrorKind"))
         .and_then(Value::as_str)
@@ -151,8 +151,26 @@ fn find_key<'a>(value: &'a Value, key: &str) -> Option<&'a Value> {
 }
 
 fn find_resets_at(data: &Value) -> Option<i64> {
-    for key in ["resetsAt", "resets_at", "resetAt"] {
+    for key in [
+        "resetsAt",
+        "resets_at",
+        "resetAt",
+        "reset_at",
+        "reset_after_seconds",
+        "resetAfterSeconds",
+        "retry_after",
+        "retryAfter",
+    ] {
         if let Some(value) = find_key(data, key) {
+            if key == "reset_after_seconds"
+                || key == "resetAfterSeconds"
+                || key == "retry_after"
+                || key == "retryAfter"
+            {
+                if let Some(secs) = value.as_i64() {
+                    return Some(now_secs().saturating_add(secs));
+                }
+            }
             if let Some(n) = value.as_i64() {
                 return Some(normalize_epoch(n));
             }
@@ -176,16 +194,28 @@ fn normalize_epoch(n: i64) -> i64 {
 }
 
 /// `…|<unix>` suffix (Claude Code) or `resets at <ISO-8601>`, `try again at <clock>`, etc.
-fn parse_reset_from_text(text: &str) -> Option<i64> {
+pub(crate) fn parse_reset_from_text(text: &str) -> Option<i64> {
     if let Some((_, tail)) = text.rsplit_once('|') {
         if let Ok(n) = tail.trim().parse::<i64>() {
             return Some(normalize_epoch(n));
         }
     }
     let lower = text.to_ascii_lowercase();
-    for marker in ["resets at ", "resets in ", "try again at ", "resets "] {
+    for marker in [
+        "resets at ",
+        "resets in ",
+        "try again at ",
+        "try again after ",
+        "try again in ",
+        "resets ",
+    ] {
         if let Some(index) = lower.find(marker) {
             let rest = &lower[index + marker.len()..];
+            if marker.ends_with("in ") {
+                if let Some(n) = parse_relative_duration(rest) {
+                    return Some(n);
+                }
+            }
             if let Some(token) = rest.split_whitespace().next() {
                 let clean = token.trim_end_matches(&[')', '.', ',', ';'][..]);
                 if let Some(n) = parse_epoch_or_iso(clean) {
@@ -200,50 +230,182 @@ fn parse_reset_from_text(text: &str) -> Option<i64> {
     None
 }
 
-fn parse_clock_from_rest(rest: &str, now: chrono::DateTime<chrono::Local>) -> Option<i64> {
+fn parse_relative_duration(rest: &str) -> Option<i64> {
     let mut words = rest.split_whitespace();
     let first = words.next()?.trim_end_matches(&[')', '.', ',', ';'][..]);
-    if first.ends_with("am") || first.ends_with("pm") {
-        return parse_clock(first, now);
-    }
-    if let Some(second) = words.next() {
-        let second = second.trim_end_matches(&[')', '.', ',', ';'][..]);
-        if second == "am" || second == "pm" {
-            let combined = format!("{first}{second}");
-            return parse_clock(&combined, now);
+    if let Some(unit) = first.chars().last() {
+        if unit.is_alphabetic() {
+            let num_part = &first[..first.len() - unit.len_utf8()];
+            if let Ok(num) = num_part.parse::<i64>() {
+                let mult = match unit {
+                    's' => 1,
+                    'm' => 60,
+                    'h' => 3600,
+                    'd' => 86400,
+                    _ => 0,
+                };
+                if mult > 0 {
+                    return Some(now_secs() + num.saturating_mul(mult));
+                }
+            }
         }
     }
-    parse_clock(first, now)
+    let num = first.parse::<i64>().ok()?;
+    let second = words.next()?.trim_end_matches(&[')', '.', ',', ';'][..]);
+    let mult = match second {
+        s if s.starts_with("sec") || s == "s" => 1,
+        s if s.starts_with("min") || s == "m" => 60,
+        s if s.starts_with("hour") || s == "hr" || s == "hrs" || s == "h" => 3600,
+        s if s.starts_with("day") || s == "d" => 86400,
+        _ => return None,
+    };
+    Some(now_secs() + num.saturating_mul(mult))
 }
 
-/// 修复：Claude Code 的 "resets 10:40am (Asia/Bangkok)" 与 Codex 的 "try again at 1:31 PM" 没有被解析，额度耗尽后没有恢复时间。
-/// 按本机时区取下一次出现的该时刻。
-fn parse_clock(token: &str, now: chrono::DateTime<chrono::Local>) -> Option<i64> {
-    use chrono::{Duration, NaiveTime, TimeZone};
+fn parse_clock_from_rest(rest: &str, now: chrono::DateTime<chrono::Local>) -> Option<i64> {
+    use chrono::{Datelike, NaiveDate, NaiveTime, TimeZone};
+
+    let months = [
+        ("jan", 1u32),
+        ("feb", 2),
+        ("mar", 3),
+        ("apr", 4),
+        ("may", 5),
+        ("jun", 6),
+        ("jul", 7),
+        ("aug", 8),
+        ("sep", 9),
+        ("oct", 10),
+        ("nov", 11),
+        ("dec", 12),
+    ];
+
+    let clean = rest.replace(',', " ").replace(';', " ").replace('.', " ");
+    let words: Vec<&str> = clean.split_whitespace().collect();
+
+    let mut month = None;
+    let mut day = None;
+    let mut year = None;
+    let mut clock_token = None;
+
+    let mut i = 0;
+    while i < words.len() {
+        let w = words[i].to_ascii_lowercase();
+        if month.is_none() {
+            for (prefix, m_val) in months {
+                if w.starts_with(prefix) {
+                    month = Some(m_val);
+                    if i + 1 < words.len() {
+                        let next = words[i + 1].trim_end_matches(|c: char| c.is_alphabetic());
+                        if let Ok(d) = next.parse::<u32>() {
+                            if (1..=31).contains(&d) {
+                                day = Some(d);
+                                i += 1;
+                                if i + 1 < words.len() {
+                                    if let Ok(y) = words[i + 1].parse::<i32>() {
+                                        if (2020..=2100).contains(&y) {
+                                            year = Some(y);
+                                            i += 1;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    break;
+                }
+            }
+            if month.is_some() {
+                i += 1;
+                continue;
+            }
+        }
+
+        if clock_token.is_none() && (w.contains(':') || w.ends_with("am") || w.ends_with("pm")) {
+            if w.ends_with("am") || w.ends_with("pm") || !w.contains(':') {
+                clock_token = Some(w);
+            } else if i + 1 < words.len() {
+                let next = words[i + 1].to_ascii_lowercase();
+                if next == "am" || next == "pm" {
+                    clock_token = Some(format!("{w}{next}"));
+                } else {
+                    clock_token = Some(w);
+                }
+            } else {
+                clock_token = Some(w);
+            }
+            break;
+        }
+
+        i += 1;
+    }
+
+    let clock_str = clock_token?;
+    let (h, m) = parse_clock(&clock_str)?;
+    let time = NaiveTime::from_hms_opt(h, m, 0)?;
+
+    let target_date = match (month, day) {
+        (Some(mo), Some(d)) => {
+            let y = year.unwrap_or_else(|| now.year());
+            NaiveDate::from_ymd_opt(y, mo, d)?
+        }
+        _ => now.date_naive(),
+    };
+
+    let mut at = chrono::Local
+        .from_local_datetime(&target_date.and_time(time))
+        .earliest()?;
+
+    if month.is_none() && at < now {
+        if (now - at).num_minutes() <= 15 {
+            at = now;
+        } else {
+            at += chrono::Duration::days(1);
+        }
+    }
+
+    Some(at.timestamp())
+}
+
+fn parse_clock(token: &str) -> Option<(u32, u32)> {
     let token = token
         .trim_end_matches(&[')', '.', ',', ';'][..])
         .to_ascii_lowercase();
     let (clock, pm) = if let Some(c) = token.strip_suffix("pm") {
-        (c.trim(), true)
+        (c.trim(), Some(true))
+    } else if let Some(c) = token.strip_suffix("am") {
+        (c.trim(), Some(false))
     } else {
-        (token.strip_suffix("am")?.trim(), false)
+        (token.as_str(), None)
     };
     let (hour, minute) = match clock.split_once(':') {
         Some((h, m)) => (h.trim().parse::<u32>().ok()?, m.trim().parse::<u32>().ok()?),
         None => (clock.trim().parse::<u32>().ok()?, 0),
     };
-    if !(1..=12).contains(&hour) {
+    if minute >= 60 {
         return None;
     }
-    let hour = hour % 12 + if pm { 12 } else { 0 };
-    let time = NaiveTime::from_hms_opt(hour, minute, 0)?;
-    let mut at = chrono::Local
-        .from_local_datetime(&now.date_naive().and_time(time))
-        .earliest()?;
-    if at <= now {
-        at += Duration::days(1);
-    }
-    Some(at.timestamp())
+    let hour = match pm {
+        Some(true) => {
+            if !(1..=12).contains(&hour) {
+                return None;
+            }
+            (hour % 12) + 12
+        }
+        Some(false) => {
+            if !(1..=12).contains(&hour) {
+                return None;
+            }
+            hour % 12
+        }
+        None => {
+            if hour >= 24 {
+                return None;
+            }
+            hour
+        }
+    };
+    Some((hour, minute))
 }
 
 fn parse_epoch_or_iso(s: &str) -> Option<i64> {
@@ -408,7 +570,7 @@ pub fn format_utc(secs: i64) -> String {
 mod limit_text_tests {
     #![allow(clippy::unwrap_used)]
     use super::*;
-    use chrono::{Local, TimeZone, Timelike};
+    use chrono::{Datelike, Local, TimeZone, Timelike};
 
     #[test]
     fn claude_five_hour_limit_is_quota_with_reset() {
@@ -430,7 +592,7 @@ mod limit_text_tests {
     #[test]
     fn clock_reset_rolls_to_tomorrow_when_passed() {
         let now = Local.with_ymd_and_hms(2026, 11, 15, 12, 0, 0).unwrap();
-        let at = parse_clock("10:40am", now).unwrap();
+        let at = parse_clock_from_rest("10:40am", now).unwrap();
         assert_eq!(
             at,
             Local
@@ -438,7 +600,7 @@ mod limit_text_tests {
                 .unwrap()
                 .timestamp()
         );
-        let pm = parse_clock("3pm", now).unwrap();
+        let pm = parse_clock_from_rest("3pm", now).unwrap();
         assert_eq!(
             pm,
             Local
@@ -446,6 +608,10 @@ mod limit_text_tests {
                 .unwrap()
                 .timestamp()
         );
+        // Recent time within 15 minutes resets immediately rather than jumping to tomorrow.
+        let recent = Local.with_ymd_and_hms(2026, 11, 15, 12, 5, 0).unwrap();
+        let at_recent = parse_clock_from_rest("12:01pm", recent).unwrap();
+        assert_eq!(at_recent, recent.timestamp());
     }
 
     #[test]
@@ -464,6 +630,52 @@ mod limit_text_tests {
             }
             other => panic!("expected quota with reset, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn codex_try_again_at_with_date_and_url_parsed() {
+        let info = AgentErrorInfo {
+            code: None,
+            message: "You’ve hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro), visit https://chatgpt.com/settings/usage to purchase more credits or try again at 1:31 PM.\n\n".into(),
+            data: None,
+        };
+        match classify_generic(&info, ErrorDialect::Codex) {
+            ErrorClass::QuotaExhausted {
+                resets_at: Some(at),
+            } => {
+                let dt = Local.timestamp_opt(at, 0).unwrap();
+                assert_eq!((dt.hour(), dt.minute()), (13, 31));
+            }
+            other => panic!("expected quota with reset, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn codex_try_again_at_with_date_parsed() {
+        let now = Local.with_ymd_and_hms(2026, 11, 24, 10, 0, 0).unwrap();
+        let at = parse_clock_from_rest("Nov 24th, 2026 1:31 PM.", now).unwrap();
+        let dt = Local.timestamp_opt(at, 0).unwrap();
+        assert_eq!(
+            (dt.year(), dt.month(), dt.day(), dt.hour(), dt.minute()),
+            (2026, 11, 24, 13, 31)
+        );
+    }
+
+    #[test]
+    fn codex_try_again_in_relative_duration() {
+        let text = "You've hit your usage limit. Try again in 20 minutes.";
+        let parsed = parse_reset_from_text(text).unwrap();
+        let now = now_secs();
+        assert!(parsed >= now + 1200 - 5);
+        assert!(parsed <= now + 1200 + 5);
+    }
+
+    #[test]
+    fn codex_24h_clock_parsed() {
+        let now = Local.with_ymd_and_hms(2026, 11, 24, 10, 0, 0).unwrap();
+        let at = parse_clock_from_rest("18:15", now).unwrap();
+        let dt = Local.timestamp_opt(at, 0).unwrap();
+        assert_eq!((dt.hour(), dt.minute()), (18, 15));
     }
 
     #[test]

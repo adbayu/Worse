@@ -36,6 +36,40 @@ pub(crate) fn load_handles(
 }
 
 pub(crate) fn load_quota(c: &Connection) -> Result<HashMap<AgentId, QuotaState>, HubError> {
+    let migration = "migration.codexQuotaRetry.v2";
+    if get_setting(c, migration)?.is_none() {
+        let tx = c.unchecked_transaction()?;
+        let now = crate::util::now_secs();
+        let latest_reset: Option<i64> = tx
+            .query_row(
+                "SELECT partial_text FROM turn_attempts WHERE agent_id = 'codex' AND status = 'quotaExhausted' ORDER BY turn_id DESC LIMIT 1",
+                [],
+                |r| r.get::<_, String>(0),
+            )
+            .ok()
+            .and_then(|text| crate::quota::parse_reset_from_text(&text));
+
+        if let Some(parsed) = latest_reset {
+            if parsed <= now {
+                tx.execute(
+                    "UPDATE agent_quota SET state = 'ok', resets_at = NULL, reason = NULL WHERE agent_id = 'codex'",
+                    [],
+                )?;
+            } else {
+                tx.execute(
+                    "UPDATE agent_quota SET resets_at = ?1 WHERE agent_id = 'codex' AND state = 'exhausted' AND (resets_at IS NULL OR resets_at > ?1)",
+                    [parsed],
+                )?;
+            }
+        }
+        tx.execute(
+            "UPDATE agent_quota SET state = 'ok', resets_at = NULL, reason = NULL
+             WHERE state = 'exhausted' AND resets_at IS NOT NULL AND resets_at <= ?1",
+            [now],
+        )?;
+        set_setting(&tx, migration, "1")?;
+        tx.commit()?;
+    }
     let mut statement = c.prepare("SELECT agent_id,state,resets_at,reason FROM agent_quota")?;
     let rows = statement
         .query_map([], |r| {

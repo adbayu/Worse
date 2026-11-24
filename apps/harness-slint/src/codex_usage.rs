@@ -262,7 +262,11 @@ fn row(value: &Value) -> Fetched {
         let reset = window
             .get("reset_at")
             .or_else(|| window.get("resetsAt"))
-            .and_then(Value::as_i64)
+            .and_then(|v| {
+                v.as_i64()
+                    .map(|n| if n > 100_000_000_000 { n / 1000 } else { n })
+                    .or_else(|| v.as_str().and_then(crate::plan_usage::parse_rfc3339))
+            })
             .or_else(|| {
                 let seconds = window
                     .get("reset_after_seconds")
@@ -271,10 +275,18 @@ fn row(value: &Value) -> Fetched {
                 let now = SystemTime::now().duration_since(UNIX_EPOCH).ok()?.as_secs();
                 Some(i64::try_from(now).ok()?.saturating_add(seconds))
             });
-        *target = Some((
-            used.clamp(0.0, 100.0) as f32,
-            reset.map(resets_in).unwrap_or_default(),
-        ));
+        let used_val = used.clamp(0.0, 100.0) as f32;
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .ok()
+            .and_then(|d| i64::try_from(d.as_secs()).ok())
+            .unwrap_or(0);
+        let reset_label = if used_val <= 0.0 || reset.is_some_and(|at| at <= now) {
+            String::new()
+        } else {
+            reset.map(resets_in).unwrap_or_default()
+        };
+        *target = Some((used_val, reset_label));
     }
     let plan = value
         .get("plan_type")
